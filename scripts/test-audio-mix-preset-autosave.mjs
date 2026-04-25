@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(repoRoot, "scripts", "party-operations.js");
 const audioPresetManagerPath = path.join(repoRoot, "scripts", "features", "audio-preset-manager.js");
 const audioUiPath = path.join(repoRoot, "scripts", "features", "audio-ui.js");
 const stylesPath = path.join(repoRoot, "styles", "party-operations.css");
 const templatePath = path.join(repoRoot, "templates", "gm-audio.hbs");
+const source = readLegacyRuntimeSource(["bootstrap-shared", "state-defaults-audio"]);
 
-const [source, audioPresetManagerSource, audioUiSource, styles, template] = await Promise.all([
-  readFile(sourcePath, "utf8"),
+const [audioPresetManagerSource, audioUiSource, styles, template] = await Promise.all([
   readFile(audioPresetManagerPath, "utf8"),
   readFile(audioUiPath, "utf8"),
   readFile(stylesPath, "utf8"),

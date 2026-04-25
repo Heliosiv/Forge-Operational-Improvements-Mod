@@ -33,6 +33,7 @@ const CHECK_COMMANDS = [
   [process.execPath, ["scripts/test-gm-quick-weather-draft.mjs"]],
   [process.execPath, ["scripts/test-integration-access.mjs"]],
   [process.execPath, ["scripts/test-launcher-state.mjs"]],
+  [process.execPath, ["scripts/test-legacy-source-map.mjs"]],
   [process.execPath, ["scripts/test-main-tab-registry.mjs"]],
   [process.execPath, ["scripts/test-main-tab-navigation.mjs"]],
   [process.execPath, ["scripts/test-module-api.mjs"]],

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -55,7 +55,9 @@ const context = vm.createContext({
   buildLootBucketBudgetContext(base = {}, targetGp = 0, targetCount = 0, options = {}) {
     return {
       ...base,
-      selectionCategory: String(options?.selectionCategory ?? base?.selectionCategory ?? "").trim().toLowerCase(),
+      selectionCategory: String(options?.selectionCategory ?? base?.selectionCategory ?? "")
+        .trim()
+        .toLowerCase(),
       targetItemBudgetGp: Math.max(0, Number(targetGp) || 0),
       targetCount: Math.max(1, Math.floor(Number(targetCount) || 1)),
       maxItems: Math.max(0, Number(options?.maxItems ?? base?.maxItems ?? 0) || 0)
@@ -64,7 +66,9 @@ const context = vm.createContext({
   pickLootItemsFromCandidates(pool = [], _count = 0, _draft = {}, options = {}) {
     const names = new Set(pool.map((entry) => String(entry?.name ?? "").trim()));
     const targetBudgetGp = Math.max(0, Number(options?.budgetContext?.targetItemBudgetGp ?? 0) || 0);
-    const selectionCategory = String(options?.selectionCategory ?? options?.budgetContext?.selectionCategory ?? "").trim().toLowerCase();
+    const selectionCategory = String(options?.selectionCategory ?? options?.budgetContext?.selectionCategory ?? "")
+      .trim()
+      .toLowerCase();
     if (selectionCategory === "premium") {
       context.__captured.generalBudgetInputs.push({ selectionCategory, targetBudgetGp });
       return makeArrayWithMeta([{ name: "Premium Pick", uuid: "premium-pick", itemValueGp: 120, kind: "premium" }]);
@@ -75,15 +79,21 @@ const context = vm.createContext({
     }
     if (names.has("Gallery Vase")) {
       context.__captured.valuablesBudgetInputs.push(targetBudgetGp);
-      return makeArrayWithMeta([{ name: "Gallery Vase", uuid: "art-pick", itemValueGp: 60, kind: "valuable", treasureKind: "art" }]);
+      return makeArrayWithMeta([
+        { name: "Gallery Vase", uuid: "art-pick", itemValueGp: 60, kind: "valuable", treasureKind: "art" }
+      ]);
     }
     if (names.has("Blue Quartz")) {
       context.__captured.valuablesBudgetInputs.push(targetBudgetGp);
-      return makeArrayWithMeta([{ name: "Blue Quartz", uuid: "gem-pick", itemValueGp: 20, kind: "valuable", treasureKind: "gem" }]);
+      return makeArrayWithMeta([
+        { name: "Blue Quartz", uuid: "gem-pick", itemValueGp: 20, kind: "valuable", treasureKind: "gem" }
+      ]);
     }
     if (names.has("Amber Idol")) {
       context.__captured.valuablesBudgetInputs.push(targetBudgetGp);
-      return makeArrayWithMeta([{ name: "Amber Idol", uuid: "mixed-pick", itemValueGp: 40, kind: "valuable", treasureKind: "art" }]);
+      return makeArrayWithMeta([
+        { name: "Amber Idol", uuid: "mixed-pick", itemValueGp: 40, kind: "valuable", treasureKind: "art" }
+      ]);
     }
     return makeArrayWithMeta([]);
   },
@@ -96,11 +106,14 @@ const context = vm.createContext({
   }
 });
 
-vm.runInContext(`${helperBlock}
+vm.runInContext(
+  `${helperBlock}
 result.getRemainingLootBudgetGp = getRemainingLootBudgetGp;
 result.getLootRemainingSelectionBudgetGp = getLootRemainingSelectionBudgetGp;
 result.buildLootCurrencyBudgetContext = buildLootCurrencyBudgetContext;
-result.pickLootItemsAcrossBudgetBuckets = pickLootItemsAcrossBudgetBuckets;`, context);
+result.pickLootItemsAcrossBudgetBuckets = pickLootItemsAcrossBudgetBuckets;`,
+  context
+);
 
 const {
   getRemainingLootBudgetGp,
@@ -110,11 +123,11 @@ const {
 } = context.result;
 
 assert.equal(getRemainingLootBudgetGp(300, 120), 180);
-assert.equal(
-  getLootRemainingSelectionBudgetGp(200, [{ itemValueGp: 60 }, { itemValueGp: 20 }]),
-  120
+assert.equal(getLootRemainingSelectionBudgetGp(200, [{ itemValueGp: 60 }, { itemValueGp: 20 }]), 120);
+const currencyBudgetContext = buildLootCurrencyBudgetContext(
+  { targetCurrencyBudgetGp: 180, targetCoinBudgetGp: 90 },
+  55
 );
-const currencyBudgetContext = buildLootCurrencyBudgetContext({ targetCurrencyBudgetGp: 180, targetCoinBudgetGp: 90 }, 55);
 assert.equal(currencyBudgetContext.targetCurrencyBudgetGp, 180);
 assert.equal(currencyBudgetContext.targetCoinBudgetGp, 125);
 

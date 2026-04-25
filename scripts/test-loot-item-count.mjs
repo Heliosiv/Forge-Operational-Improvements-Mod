@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -35,14 +35,14 @@ assert.equal(
 );
 
 assert.ok(
-  resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "standard", scale: "medium" }, 2400, 0)
-  > resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "standard", scale: "medium" }, 600, 0),
+  resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "standard", scale: "medium" }, 2400, 0) >
+    resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "standard", scale: "medium" }, 600, 0),
   "Larger horde item budgets should yield more items."
 );
 
 assert.ok(
-  resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "well", scale: "medium" }, 1000, 0)
-  < resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "poor", scale: "medium" }, 1000, 0),
+  resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "well", scale: "medium" }, 1000, 0) <
+    resolveDesiredItemCount({ mode: "horde", challenge: "mid", profile: "poor", scale: "medium" }, 1000, 0),
   "Higher-quality profiles should bias toward fewer, more valuable items."
 );
 

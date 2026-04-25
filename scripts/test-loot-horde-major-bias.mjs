@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
-import {
-  getLootPracticalHoardScore,
-  isLootPracticalHoardCandidate
-} from "./features/loot-practicality.js";
+import { getLootPracticalHoardScore, isLootPracticalHoardCandidate } from "./features/loot-practicality.js";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -58,13 +55,12 @@ const context = vm.createContext({
   result: {}
 });
 
-vm.runInContext(`${functionBlock}\nresult.getLootGeneralLanePool = getLootGeneralLanePool;\nresult.buildLootPremiumLaneConfig = buildLootPremiumLaneConfig;\nresult.getLootValuablesBudgetRatio = getLootValuablesBudgetRatio;`, context);
+vm.runInContext(
+  `${functionBlock}\nresult.getLootGeneralLanePool = getLootGeneralLanePool;\nresult.buildLootPremiumLaneConfig = buildLootPremiumLaneConfig;\nresult.getLootValuablesBudgetRatio = getLootValuablesBudgetRatio;`,
+  context
+);
 
-const {
-  getLootGeneralLanePool,
-  buildLootPremiumLaneConfig,
-  getLootValuablesBudgetRatio
-} = context.result;
+const { getLootGeneralLanePool, buildLootPremiumLaneConfig, getLootValuablesBudgetRatio } = context.result;
 
 const cheapFiller = {
   name: "Hunting Trap",
@@ -174,10 +170,7 @@ assert.ok(
   premiumLane.budgetRatio >= 0.4,
   "Major mid-tier hordes should reserve a meaningful share of the item budget for premium loot."
 );
-assert.ok(
-  premiumLane.targetCount >= 3,
-  "Major mid-tier hordes should plan for several premium picks."
-);
+assert.ok(premiumLane.targetCount >= 3, "Major mid-tier hordes should plan for several premium picks.");
 
 const standardPremiumLane = buildLootPremiumLaneConfig(
   { mode: "horde", challenge: "mid", scale: "medium", profile: "standard", hordeUncommonPlusChance: "standard" },
@@ -194,8 +187,15 @@ const highPremiumLane = buildLootPremiumLaneConfig(
 );
 
 assert.equal(standardPremiumLane.enabled, false, "Standard horde uncommon+ odds should still allow misses.");
-assert.equal(highPremiumLane.enabled, true, "High horde uncommon+ odds should convert the same roll into a premium lane hit.");
-assert.ok(highPremiumLane.budgetRatio > standardPremiumLane.budgetRatio, "Higher uncommon+ settings should reserve more budget for premium picks.");
+assert.equal(
+  highPremiumLane.enabled,
+  true,
+  "High horde uncommon+ odds should convert the same roll into a premium lane hit."
+);
+assert.ok(
+  highPremiumLane.budgetRatio > standardPremiumLane.budgetRatio,
+  "Higher uncommon+ settings should reserve more budget for premium picks."
+);
 
 const budgetAwarePremiumLane = buildLootPremiumLaneConfig(
   { mode: "horde", challenge: "mid", scale: "medium", profile: "standard", hordeUncommonPlusChance: "standard" },
@@ -221,12 +221,16 @@ const guaranteedPremiumLane = buildLootPremiumLaneConfig(
   () => 0.999
 );
 
-assert.equal(guaranteedPremiumLane.enabled, true, "Guaranteed horde uncommon+ odds should always open the premium lane.");
+assert.equal(
+  guaranteedPremiumLane.enabled,
+  true,
+  "Guaranteed horde uncommon+ odds should always open the premium lane."
+);
 assert.equal(guaranteedPremiumLane.chance, 1, "Guaranteed horde uncommon+ odds should normalize to a full hit chance.");
 
 assert.ok(
-  getLootValuablesBudgetRatio({ mode: "horde", challenge: "mid", scale: "major", profile: "standard" })
-  > getLootValuablesBudgetRatio({ mode: "horde", challenge: "mid", scale: "medium", profile: "standard" }),
+  getLootValuablesBudgetRatio({ mode: "horde", challenge: "mid", scale: "major", profile: "standard" }) >
+    getLootValuablesBudgetRatio({ mode: "horde", challenge: "mid", scale: "medium", profile: "standard" }),
   "Major hordes should allocate more of the currency budget into gems and art."
 );
 

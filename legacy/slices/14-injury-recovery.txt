@@ -1,0 +1,1299 @@
+# Injury Recovery
+
+Source: legacy/party-operations-monolith.js:45608-46897
+Feature IDs: operations, gm-pages
+Target Modules: scripts/features/injury-*
+
+Injury tables, healer kit tracking, recovery state, Simple Calendar sync, treatment checks, and recovery cycle.
+
+----- legacy source begins -----
+const INJURY_TABLE = [
+  {
+    key: "lost-limb",
+    min: 1,
+    max: 5,
+    label: "Lost Limb",
+    effect: "Lose an arm or leg (1d4). Limb is unusable. Movement halved if leg, no weapons/shields if arm.",
+    recovery: "Permanent. Only Regenerate or divine magic can restore.",
+    permanent: true,
+    kitCharges: 0
+  },
+  {
+    key: "crippling-injury",
+    min: 6,
+    max: 10,
+    label: "Crippling Injury",
+    effect: "Disadvantage on actions with that limb. Halved speed if leg. Shield bonus halved if arm.",
+    recovery: "1d4 days or 2 kit charges + DC 12 Medicine.",
+    dayMin: 1,
+    dayMax: 4,
+    kitCharges: 2,
+    treatmentDc: 12,
+    treatmentSkill: "med"
+  },
+  {
+    key: "concussion",
+    min: 11,
+    max: 15,
+    label: "Concussion",
+    effect: "Disadvantage on INT/WIS checks and saves. -5 Passive Perception.",
+    recovery: "1d4 days or 1 kit charge.",
+    dayMin: 1,
+    dayMax: 4,
+    kitCharges: 1
+  },
+  {
+    key: "broken-arm",
+    min: 16,
+    max: 20,
+    label: "Broken Arm",
+    effect: "Cannot use that arm for weapons, shields, or somatic spells.",
+    recovery: "2d4 days or 2 kit charges to downgrade to Crippling (half days).",
+    dayMin: 2,
+    dayMax: 8,
+    kitCharges: 2,
+    downgradeTo: "crippling-injury",
+    downgradeHalfDays: true
+  },
+  {
+    key: "fractured-ribs",
+    min: 21,
+    max: 25,
+    label: "Fractured Ribs",
+    effect: "Disadvantage on DEX saves and CON checks. Dash causes 1d4 damage.",
+    recovery: "1d4+1 days or 2 kit charges.",
+    dayMin: 2,
+    dayMax: 5,
+    kitCharges: 2
+  },
+  {
+    key: "internal-bleeding",
+    min: 26,
+    max: 30,
+    label: "Internal Bleeding",
+    effect: "At start of combat, roll 1d6. On a 1, take 1d4 damage.",
+    recovery: "3 kit charges + DC 15 Medicine or magic healing.",
+    dayMin: 3,
+    dayMax: 3,
+    kitCharges: 3,
+    treatmentDc: 15,
+    treatmentSkill: "med"
+  },
+  {
+    key: "deep-cut",
+    min: 31,
+    max: 35,
+    label: "Deep Cut",
+    effect: "Lose 1d6 max HP. Cannot regain until treated.",
+    recovery: "1 kit charge or 1 hour rest + DC 13 Medicine.",
+    dayMin: 1,
+    dayMax: 1,
+    kitCharges: 1,
+    treatmentDc: 13,
+    treatmentSkill: "med"
+  },
+  {
+    key: "loss-of-eye",
+    min: 36,
+    max: 40,
+    label: "Loss of Eye",
+    effect: "Disadvantage on Perception and ranged attacks.",
+    recovery: "Permanent unless magically restored.",
+    permanent: true,
+    kitCharges: 0
+  },
+  {
+    key: "loss-of-hearing",
+    min: 41,
+    max: 45,
+    label: "Loss of Hearing",
+    effect: "Disadvantage on sound-based Perception.",
+    recovery: "Permanent unless magically restored.",
+    permanent: true,
+    kitCharges: 0
+  },
+  {
+    key: "shattered-knee",
+    min: 46,
+    max: 50,
+    label: "Shattered Knee",
+    effect: "No Dash. Speed halved. Painful to move.",
+    recovery: "1 week or 3 kit charges. Becomes permanent if untreated.",
+    dayMin: 7,
+    dayMax: 7,
+    kitCharges: 3,
+    canBecomePermanent: true
+  },
+  {
+    key: "dislocated-shoulder",
+    min: 51,
+    max: 55,
+    label: "Dislocated Shoulder",
+    effect: "Disadvantage on STR checks and melee attacks.",
+    recovery: "1d6 days of rest.",
+    dayMin: 1,
+    dayMax: 6,
+    kitCharges: 0
+  },
+  {
+    key: "infection",
+    min: 56,
+    max: 60,
+    label: "Infection",
+    effect: "Lose 1 max HP after each long rest. DC 15 CON to resist.",
+    recovery: "2 kit charges.",
+    dayMin: 3,
+    dayMax: 3,
+    kitCharges: 2
+  },
+  {
+    key: "minor-injury",
+    min: 61,
+    max: 70,
+    label: "Minor Injury",
+    effect: "No combat effect. Bloodied, limping, or visibly bruised.",
+    recovery: "1 kit charge or 1d3 days rest.",
+    dayMin: 1,
+    dayMax: 3,
+    kitCharges: 1
+  },
+  {
+    key: "deep-scar",
+    min: 71,
+    max: 80,
+    label: "Deep Scar",
+    effect: "+1 Intimidation, -1 Persuasion (if visible).",
+    recovery: "Permanent.",
+    permanent: true,
+    kitCharges: 0
+  },
+  {
+    key: "psychic-trauma",
+    min: 81,
+    max: 90,
+    label: "Psychic Trauma",
+    effect: "Disadvantage on saves vs fear or charm.",
+    recovery: "1 week or 2 kit charges + DC 13 Insight (once).",
+    dayMin: 7,
+    dayMax: 7,
+    kitCharges: 2,
+    treatmentDc: 13,
+    treatmentSkill: "ins"
+  },
+  {
+    key: "nerve-damage",
+    min: 91,
+    max: 95,
+    label: "Nerve Damage",
+    effect: "1 ability score (roll 1d6) suffers -1 temporarily.",
+    recovery: "1 week or 2 kit charges. Permanent on failed DC 13 CON.",
+    dayMin: 7,
+    dayMax: 7,
+    kitCharges: 2,
+    treatmentDc: 13,
+    treatmentSkill: "con",
+    canBecomePermanent: true
+  },
+  {
+    key: "nightmares",
+    min: 96,
+    max: 99,
+    label: "Nightmares",
+    effect: "Disadvantage on first initiative roll daily. Long rests do not remove exhaustion.",
+    recovery: "Remove Curse or 4 kit charges to ease mental symptoms.",
+    dayMin: 7,
+    dayMax: 7,
+    kitCharges: 4
+  },
+  {
+    key: "soul-shaken",
+    min: 100,
+    max: 100,
+    label: "Soul-Shaken",
+    effect: "Permanent -1 to Wisdom saves. Shadows cling to your soul.",
+    recovery: "Permanent unless resolved through divine magic or narrative quest.",
+    permanent: true,
+    kitCharges: 0
+  }
+];
+
+function getInjuryDefinitionByKey(key) {
+  return INJURY_TABLE.find((entry) => entry.key === key) ?? null;
+}
+
+function findInjuryDefinitionByRoll(roll) {
+  const value = Math.max(1, Math.min(100, Number(roll) || 1));
+  return INJURY_TABLE.find((entry) => value >= entry.min && value <= entry.max) ?? INJURY_TABLE[0];
+}
+
+function rollInjuryDefinition() {
+  const roll = Math.floor(Math.random() * 100) + 1;
+  const injury = findInjuryDefinitionByRoll(roll);
+  return { roll, injury };
+}
+
+function rollInjuryRecoveryDays(definition, fallback = 3) {
+  const min = Number(definition?.dayMin ?? fallback);
+  const max = Number(definition?.dayMax ?? min);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return Math.max(1, Math.floor(fallback));
+  const low = Math.max(1, Math.floor(Math.min(min, max)));
+  const high = Math.max(low, Math.floor(Math.max(min, max)));
+  return low + Math.floor(Math.random() * (high - low + 1));
+}
+
+function getInjuryRecoveryFormula(definition, fallback = 3) {
+  if (definition?.permanent) return "Permanent";
+  const min = Number(definition?.dayMin ?? fallback);
+  const max = Number(definition?.dayMax ?? min);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return String(Math.max(1, Math.floor(fallback)));
+  const low = Math.max(1, Math.floor(Math.min(min, max)));
+  const high = Math.max(low, Math.floor(Math.max(min, max)));
+  if (low === high) return String(low);
+  const span = high - low + 1;
+  if (low === 1) return `1d${span}`;
+  return `1d${span}+${low - 1}`;
+}
+
+function buildInjuryTableHtml() {
+  const rows = INJURY_TABLE.map(
+    (entry) => `
+    <tr>
+      <td>${entry.min}-${entry.max}</td>
+      <td>${entry.label}</td>
+      <td>${entry.effect}</td>
+      <td>${entry.recovery}</td>
+    </tr>
+  `
+  ).join("");
+  return `
+    <div class="po-help">
+      <p><strong>Healer's Kit:</strong> Charges are consumed from the selected healer's kit item in Injury & Recovery.</p>
+      <table style="width:100%; border-collapse:collapse;">
+        <thead><tr><th style="text-align:left;">d100</th><th style="text-align:left;">Injury</th><th style="text-align:left;">Effect</th><th style="text-align:left;">Recovery</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function buildDefaultInjuryRecoveryState() {
+  return {
+    supplies: {
+      healersKitCharges: 10,
+      healersKitActorId: "",
+      healersKitItemId: ""
+    },
+    config: {
+      baseRecoveryDays: 3
+    },
+    injuries: {},
+    lastCycleAt: "-",
+    lastCycleSummary: "-"
+  };
+}
+
+function getInjuryRecoveryState() {
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.INJURY_RECOVERY);
+  return foundry.utils.mergeObject(buildDefaultInjuryRecoveryState(), stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+}
+
+async function updateInjuryRecoveryState(mutator) {
+  if (typeof mutator !== "function") return;
+  if (!canAccessAllPlayerOps()) {
+    logPlayerPermissionDebug(
+      "injury-gm-only",
+      "Injury Recovery update blocked because the user lacks shared Party Operations permissions.",
+      {}
+    );
+    ui.notifications?.warn("Only the GM can update injury recovery.");
+    return;
+  }
+  const state = getInjuryRecoveryState();
+  mutator(state);
+
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
+  if (!saved) return false;
+  if (game.user?.isGM) scheduleIntegrationSync("injury-recovery");
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.INJURY });
+  if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.INJURY });
+  return true;
+}
+
+function buildInjuryActorOptions(selectedActorId = "") {
+  const actorId = selectedActorId || resolveDefaultInjuryActorId();
+  return getOwnedPcActors()
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+    .map((actor) => ({
+      id: actor.id,
+      name: actor.name,
+      selected: actor.id === actorId
+    }));
+}
+
+function resolveDefaultInjuryActorId() {
+  const activeId = String(getActiveActorForUser()?.id ?? "");
+  if (activeId && getOwnedPcActors().some((actor) => actor.id === activeId)) return activeId;
+  return String(getOwnedPcActors()[0]?.id ?? "");
+}
+
+function normalizeHealersKitText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/['`]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isHealersKitItem(item) {
+  if (!item) return false;
+  const nameText = normalizeHealersKitText(item.name);
+  const idText = normalizeHealersKitText(item.system?.identifier ?? item.system?.slug ?? item.id);
+  const combined = `${nameText} ${idText}`.trim();
+  if (!combined) return false;
+  if (combined.includes("healers kit") || combined.includes("healer kit")) return true;
+  return combined.includes("healer") && combined.includes("kit");
+}
+
+function getHealersKitTrackedCharges(item) {
+  const uses = getItemUsesAvailableValue(item);
+  if (Number.isFinite(uses)) return uses;
+  const quantity = Number(item?.system?.quantity);
+  if (Number.isFinite(quantity)) return Math.max(0, Math.floor(quantity));
+  return 0;
+}
+
+async function setHealersKitTrackedCharges(item, value) {
+  const next = Math.max(0, Math.floor(Number(value) || 0));
+  if (item?.system?.uses && typeof item.system.uses === "object") {
+    await updateItemUsesAvailable(item, next);
+    return;
+  }
+  if (item?.system?.quantity !== undefined) {
+    await item.update({ "system.quantity": next });
+  }
+}
+
+function getHealersKitOwnerActors() {
+  return getOwnedPcActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function getHealersKitItems(actor, options = {}) {
+  if (!actor?.items?.contents) return [];
+  const includeDepleted = options?.includeDepleted === true;
+  return actor.items.contents
+    .filter((item) => isHealersKitItem(item))
+    .map((item) => ({
+      id: item.id,
+      name: String(item.name ?? "Healer's Kit").trim() || "Healer's Kit",
+      charges: getHealersKitTrackedCharges(item)
+    }))
+    .filter((item) => includeDepleted || item.charges > 0)
+    .sort((a, b) => {
+      const chargeDelta = Number(b.charges ?? 0) - Number(a.charges ?? 0);
+      if (chargeDelta !== 0) return chargeDelta;
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    });
+}
+
+function normalizeHealersKitSelection(supplies = {}) {
+  return {
+    actorId: String(supplies?.healersKitActorId ?? "").trim(),
+    itemId: String(supplies?.healersKitItemId ?? "").trim()
+  };
+}
+
+function getAllHealersKitEntries(options = {}) {
+  const includeDepleted = options?.includeDepleted === true;
+  const entries = [];
+  for (const actor of getHealersKitOwnerActors()) {
+    const items = getHealersKitItems(actor, { includeDepleted });
+    for (const item of items) {
+      entries.push({
+        actorId: actor.id,
+        actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+        itemId: item.id,
+        itemName: item.name,
+        charges: item.charges
+      });
+    }
+  }
+  return entries;
+}
+
+function buildHealersKitSelectionContext(state) {
+  const supplies = state?.supplies ?? {};
+  const selected = normalizeHealersKitSelection(supplies);
+  const actorRows = getHealersKitOwnerActors()
+    .map((actor) => {
+      const items = getHealersKitItems(actor, { includeDepleted: true });
+      if (items.length === 0) return null;
+      const totalCharges = items.reduce((sum, item) => sum + Math.max(0, Number(item.charges ?? 0)), 0);
+      return { actor, items, totalCharges };
+    })
+    .filter(Boolean);
+
+  const actorFallback = actorRows[0]?.actor.id ?? "";
+  const selectedActorId = actorRows.some((entry) => entry.actor.id === selected.actorId)
+    ? selected.actorId
+    : actorFallback;
+  const activeActorRow = actorRows.find((entry) => entry.actor.id === selectedActorId) ?? null;
+
+  let selectedItemId = selected.itemId;
+  const activeItems = activeActorRow?.items ?? [];
+  if (!activeItems.some((item) => item.id === selectedItemId && item.charges > 0)) {
+    selectedItemId = activeItems.find((item) => item.charges > 0)?.id ?? activeItems[0]?.id ?? "";
+  }
+
+  const actorOptions = [
+    { id: "", name: "None", selected: !selectedActorId },
+    ...actorRows.map((entry) => ({
+      id: entry.actor.id,
+      name: `${entry.actor.name} (${entry.totalCharges})`,
+      selected: entry.actor.id === selectedActorId
+    }))
+  ];
+  const itemOptions = [
+    { id: "", name: "None", selected: !selectedItemId },
+    ...activeItems.map((item) => ({
+      id: item.id,
+      name: `${item.name} (${item.charges})`,
+      selected: item.id === selectedItemId
+    }))
+  ];
+
+  const selectedItem = activeItems.find((item) => item.id === selectedItemId) ?? null;
+  const allEntries = getAllHealersKitEntries({ includeDepleted: false });
+  const totalCharges = allEntries.reduce((sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)), 0);
+  const chargeSourceMap = new Map();
+  for (const entry of allEntries) {
+    const actorId = String(entry.actorId ?? "").trim();
+    if (!actorId) continue;
+    if (!chargeSourceMap.has(actorId)) {
+      chargeSourceMap.set(actorId, {
+        actorId,
+        actorName: String(entry.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        totalCharges: 0,
+        itemRows: []
+      });
+    }
+    const row = chargeSourceMap.get(actorId);
+    const charges = Math.max(0, Number(entry.charges ?? 0));
+    row.totalCharges += charges;
+    row.itemRows.push(`${String(entry.itemName ?? "Healer's Kit").trim() || "Healer's Kit"} (${charges})`);
+  }
+  const actorChargeSources = Array.from(chargeSourceMap.values())
+    .sort((a, b) => {
+      const delta = Number(b.totalCharges ?? 0) - Number(a.totalCharges ?? 0);
+      if (delta !== 0) return delta;
+      return String(a.actorName ?? "").localeCompare(String(b.actorName ?? ""));
+    })
+    .map((row) => ({
+      actorId: row.actorId,
+      actorName: row.actorName,
+      totalCharges: row.totalCharges,
+      itemSummary: row.itemRows.join(", ")
+    }));
+  const chargeSourcesTooltip =
+    actorChargeSources.length > 0
+      ? actorChargeSources.map((row) => `${row.actorName}: ${row.totalCharges} (${row.itemSummary})`).join("\n")
+      : "No active Healer's Kit charges found on player character actors.";
+
+  return {
+    actorOptions,
+    itemOptions,
+    selectedActorId,
+    selectedItemId,
+    hasActor: Boolean(activeActorRow),
+    hasItem: Boolean(selectedItem),
+    selectedCharges: Math.max(0, Number(selectedItem?.charges ?? 0)),
+    selectedLabel: selectedItem ? `${String(activeActorRow?.actor?.name ?? "")} - ${selectedItem.name}` : "None",
+    totalCharges,
+    chargeSourcesTooltip,
+    actorChargeSources,
+    hasChargeSources: actorChargeSources.length > 0
+  };
+}
+
+function getOrderedHealersKitCandidates(state) {
+  const selected = normalizeHealersKitSelection(state?.supplies ?? {});
+  const allEntries = getAllHealersKitEntries({ includeDepleted: false });
+  if (allEntries.length === 0) return [];
+
+  const prioritized = [];
+  const pushEntry = (entry) => {
+    if (!entry) return;
+    const key = `${entry.actorId}:${entry.itemId}`;
+    if (prioritized.some((candidate) => `${candidate.actorId}:${candidate.itemId}` === key)) return;
+    prioritized.push(entry);
+  };
+
+  if (selected.actorId && selected.itemId) {
+    pushEntry(allEntries.find((entry) => entry.actorId === selected.actorId && entry.itemId === selected.itemId));
+  }
+  if (selected.actorId) {
+    for (const entry of allEntries.filter((candidate) => candidate.actorId === selected.actorId)) pushEntry(entry);
+  }
+  for (const entry of allEntries) pushEntry(entry);
+  return prioritized;
+}
+
+async function consumeHealersKitCharges(requiredCharges, state = null) {
+  const needed = Math.max(0, Math.floor(Number(requiredCharges) || 0));
+  if (needed <= 0) {
+    const context = buildHealersKitSelectionContext(state ?? getInjuryRecoveryState());
+    return {
+      ok: true,
+      needed: 0,
+      consumed: 0,
+      missing: 0,
+      details: [],
+      nextSelection: {
+        actorId: context.selectedActorId,
+        itemId: context.selectedItemId
+      },
+      totalCharges: context.totalCharges
+    };
+  }
+
+  const currentState = state ?? getInjuryRecoveryState();
+  const candidates = getOrderedHealersKitCandidates(currentState);
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      needed,
+      consumed: 0,
+      missing: needed,
+      details: [],
+      nextSelection: { actorId: "", itemId: "" },
+      totalCharges: 0
+    };
+  }
+  const availableCharges = candidates.reduce((sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)), 0);
+  if (availableCharges < needed) {
+    const context = buildHealersKitSelectionContext(currentState);
+    return {
+      ok: false,
+      needed,
+      consumed: 0,
+      missing: needed,
+      details: [],
+      nextSelection: {
+        actorId: context.selectedActorId,
+        itemId: context.selectedItemId
+      },
+      totalCharges: context.totalCharges
+    };
+  }
+
+  let remaining = needed;
+  const details = [];
+  for (const candidate of candidates) {
+    if (remaining <= 0) break;
+    const actor = game.actors.get(candidate.actorId);
+    const item = actor?.items?.get(candidate.itemId);
+    if (!actor || !item) continue;
+    const available = getHealersKitTrackedCharges(item);
+    if (available <= 0) continue;
+    const spent = Math.min(available, remaining);
+    await setHealersKitTrackedCharges(item, available - spent);
+    remaining -= spent;
+    details.push({
+      actorId: actor.id,
+      actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      itemId: item.id,
+      itemName: String(item.name ?? "Healer's Kit").trim() || "Healer's Kit",
+      spent,
+      remainingCharges: Math.max(0, available - spent)
+    });
+  }
+
+  const nextContext = buildHealersKitSelectionContext(currentState);
+  return {
+    ok: remaining <= 0,
+    needed,
+    consumed: needed - remaining,
+    missing: Math.max(0, remaining),
+    details,
+    nextSelection: {
+      actorId: nextContext.selectedActorId,
+      itemId: nextContext.selectedItemId
+    },
+    totalCharges: nextContext.totalCharges
+  };
+}
+
+function buildInjuryRecoveryContext() {
+  const state = getInjuryRecoveryState();
+  const config = state.config ?? {};
+  const defaultActorId = resolveDefaultInjuryActorId();
+  const healerKitSelection = buildHealersKitSelectionContext(state);
+  const entries = Object.entries(state.injuries ?? {})
+    .map(([actorId, entry]) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      const definition = getInjuryDefinitionByKey(entry.injuryKey);
+      const isPermanent = Boolean(entry.permanent || definition?.permanent);
+      const status = buildInjuryStatusSummary({
+        effect: String(entry.effect ?? definition?.effect ?? ""),
+        notes: String(entry.notes ?? ""),
+        stabilized: Boolean(entry.stabilized),
+        permanent: isPermanent,
+        recoveryDays: Number(entry.recoveryDays ?? 0)
+      });
+      return {
+        actorId,
+        actorName: actor.name,
+        injuryKey: String(entry.injuryKey ?? ""),
+        injuryName: String(entry.injuryName ?? definition?.label ?? "Injury"),
+        effect: status.effectText,
+        effectSummary: status.summary,
+        statusLabel: status.stateLabel,
+        recoveryDetailLabel: status.recoveryLabel,
+        recoveryRule: String(entry.recoveryRule ?? definition?.recovery ?? ""),
+        injuryRoll: Number(entry.injuryRoll ?? 0),
+        permanent: isPermanent,
+        stabilized: Boolean(entry.stabilized),
+        recoveryDays: Number(entry.recoveryDays ?? 0),
+        kitCharges: Math.max(0, Number(entry.kitCharges ?? definition?.kitCharges ?? 0)),
+        treatmentDc: Number(entry.treatmentDc ?? definition?.treatmentDc ?? 0),
+        treatmentSkill: String(entry.treatmentSkill ?? definition?.treatmentSkill ?? ""),
+        notes: entry.notes ?? "",
+        recoveryDueLabel: formatRecoveryDueLabel(entry.recoveryDueTs)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.actorName.localeCompare(b.actorName));
+
+  const unstableCount = entries.filter((entry) => !entry.stabilized && !entry.permanent).length;
+  const permanentCount = entries.filter((entry) => entry.permanent).length;
+
+  return {
+    supplies: {
+      healersKitCharges: Number(healerKitSelection.totalCharges ?? 0),
+      kitSelection: healerKitSelection
+    },
+    config: {
+      baseRecoveryDays: Number(config.baseRecoveryDays ?? 3)
+    },
+    actorOptions: buildInjuryActorOptions(defaultActorId),
+    defaultActorId,
+    injuryOptions: INJURY_TABLE.map((entry) => ({
+      key: entry.key,
+      value: entry.key,
+      label: `${entry.min}-${entry.max} ${entry.label}`,
+      selected: entry.key === INJURY_TABLE[0]?.key
+    })),
+    defaultRecoveryFormula: getInjuryRecoveryFormula(INJURY_TABLE[0], Number(config.baseRecoveryDays ?? 3)),
+    entries,
+    summary: {
+      activeInjuries: entries.length,
+      unstableCount,
+      permanentCount,
+      lastCycleAt: state.lastCycleAt ?? "-",
+      lastCycleSummary: state.lastCycleSummary ?? "-"
+    }
+  };
+}
+
+function buildInjuryCalendarPayload(actor, entry) {
+  const worldNow = getCurrentWorldTimestamp();
+  const recoveryDays = Math.max(0, Number(entry?.recoveryDays ?? 0));
+  const rawDueTimestamp = Number(entry?.recoveryDueTs);
+  const fallbackDueTimestamp = addCalendarDaysBridge(worldNow, recoveryDays, { gameRef: game, globalRef: globalThis });
+  const dueTimestamp = Number.isFinite(rawDueTimestamp) ? rawDueTimestamp : fallbackDueTimestamp;
+  const startTimestamp = Math.floor(worldNow);
+  const minimumEndTimestamp = addCalendarDaysBridge(startTimestamp, Math.max(1, recoveryDays), {
+    gameRef: game,
+    globalRef: globalThis
+  });
+  const endTimestamp = Math.max(Math.floor(dueTimestamp), Math.floor(minimumEndTimestamp));
+  const injuryName = String(entry?.injuryName ?? "Injury");
+  const stabilized = Boolean(entry?.stabilized);
+  const permanent = Boolean(entry?.permanent);
+  const note = String(entry?.notes ?? "").trim();
+  const title = permanent ? `${injuryName} - Permanent` : `${injuryName} - ${recoveryDays} day(s) left`;
+  const description = `${actor?.name ?? "Unknown"} | ${injuryName} | ${stabilized ? "Stabilized" : "Unstable"}${permanent ? " | Permanent" : ` | ${recoveryDays} day(s) remaining`}${note ? ` | ${note}` : ""}`;
+  return {
+    title,
+    name: title,
+    description,
+    content: description,
+    startTime: startTimestamp,
+    endTime: endTimestamp,
+    timestamp: startTimestamp,
+    startTimestamp,
+    endTimestamp,
+    allDay: true,
+    playerVisible: true,
+    visibleToPlayers: true,
+    visible: true,
+    public: true,
+    isPrivate: false,
+    flags: {
+      [MODULE_ID]: {
+        injuryActorId: actor?.id ?? "",
+        gmCreated: true
+      }
+    }
+  };
+}
+
+async function persistInjuryCalendarMetadata(actorId, fields) {
+  const state = getInjuryRecoveryState();
+  if (!state.injuries?.[actorId]) return;
+  state.injuries[actorId] = {
+    ...state.injuries[actorId],
+    ...fields
+  };
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
+}
+
+async function syncInjuryWithSimpleCalendar(actorId) {
+  if (!canAccessAllPlayerOps() || !isSimpleCalendarActive())
+    return { synced: false, reason: "Simple Calendar inactive or user is not GM.", entryId: "" };
+  const api = getSimpleCalendarMutationApi();
+  if (!api) {
+    logSimpleCalendarSyncDebug("Simple Calendar API missing during injury sync", { actorId });
+    return { synced: false, reason: "Simple Calendar mutation API not found.", entryId: "" };
+  }
+  const state = getInjuryRecoveryState();
+  const entry = state.injuries?.[actorId];
+  const actor = game.actors.get(actorId);
+  if (!entry || !actor) {
+    logSimpleCalendarSyncDebug("Injury sync skipped due to missing actor or entry", {
+      actorId,
+      hasEntry: Boolean(entry),
+      hasActor: Boolean(actor)
+    });
+    return { synced: false, reason: "Missing actor or injury entry.", entryId: "" };
+  }
+
+  const payload = buildInjuryCalendarPayload(actor, entry);
+  const existingId = String(entry.calendarEntryId ?? "");
+  let syncedId = existingId;
+  let synced = false;
+  let failureReason = "";
+
+  if (existingId) {
+    synced = await updateSimpleCalendarEntry(api, existingId, payload);
+    if (!synced) failureReason = `Update failed for calendar entry ${existingId}.`;
+  }
+
+  if (!synced) {
+    const created = await createSimpleCalendarEntry(api, payload);
+    if (created.success) {
+      synced = true;
+      if (created.id) syncedId = created.id;
+    } else {
+      failureReason = String(created.reason ?? "Create fallback failed.");
+      logSimpleCalendarSyncDebug("Create fallback failed for injury sync", {
+        actorId,
+        actorName: actor.name,
+        reason: String(created.reason ?? "unknown")
+      });
+    }
+  }
+
+  if (syncedId && syncedId !== existingId) {
+    await persistInjuryCalendarMetadata(actorId, { calendarEntryId: syncedId });
+  }
+
+  if (!synced) {
+    logSimpleCalendarSyncDebug("Injury sync failed after update/create attempts", {
+      actorId,
+      actorName: actor.name,
+      existingEntryId: existingId || "(none)",
+      reason: failureReason || "unknown"
+    });
+  }
+
+  return { synced, reason: synced ? "" : failureReason || "unknown", entryId: syncedId };
+}
+
+async function clearInjuryFromSimpleCalendar(entryId) {
+  if (!canAccessAllPlayerOps() || !isSimpleCalendarActive() || !entryId) return false;
+  const api = getSimpleCalendarMutationApi();
+  if (!api) return false;
+  return removeSimpleCalendarEntry(api, entryId);
+}
+
+async function syncAllInjuriesToSimpleCalendar() {
+  if (!canAccessAllPlayerOps()) return { synced: 0, total: 0 };
+  const injuries = Object.keys(getInjuryRecoveryState().injuries ?? {});
+  let synced = 0;
+  for (const actorId of injuries) {
+    if ((await syncInjuryWithSimpleCalendar(actorId)).synced) synced += 1;
+  }
+  return { synced, total: injuries.length };
+}
+
+async function setInjuryRecoveryConfig(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
+  const key = element?.dataset?.injuryConfig;
+  if (!key) return;
+  await updateInjuryRecoveryState((state) => {
+    if (!state.config) state.config = {};
+    if (!state.supplies) state.supplies = {};
+    const stringValue = String(element?.value ?? "").trim();
+
+    if (key === "healersKitActorId") {
+      state.supplies.healersKitActorId = stringValue;
+      if (!stringValue) {
+        state.supplies.healersKitItemId = "";
+      } else {
+        const actor = game.actors.get(stringValue);
+        const items = getHealersKitItems(actor, { includeDepleted: true });
+        const currentItemId = String(state.supplies.healersKitItemId ?? "").trim();
+        if (!items.some((item) => item.id === currentItemId && item.charges > 0)) {
+          state.supplies.healersKitItemId = items.find((item) => item.charges > 0)?.id ?? items[0]?.id ?? "";
+        }
+      }
+      state.supplies.healersKitCharges = getAllHealersKitEntries({ includeDepleted: false }).reduce(
+        (sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)),
+        0
+      );
+      return;
+    }
+
+    if (key === "healersKitItemId") {
+      state.supplies.healersKitItemId = stringValue;
+      state.supplies.healersKitCharges = getAllHealersKitEntries({ includeDepleted: false }).reduce(
+        (sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)),
+        0
+      );
+      return;
+    }
+
+    const raw = Number(element?.value ?? 0);
+    const value = Number.isFinite(raw) ? Math.max(0, raw) : 0;
+    if (key === "healersKitCharges" || key === "stabilizationKits") {
+      state.supplies.healersKitCharges = Math.floor(value);
+      return;
+    }
+    if (key === "baseRecoveryDays") {
+      state.config.baseRecoveryDays = Math.max(1, Math.floor(value));
+    }
+  });
+}
+
+async function showInjuryTable() {
+  await Dialog.prompt({
+    title: "Injury Table (d100)",
+    content: buildInjuryTableHtml(),
+    rejectClose: false,
+    callback: () => {}
+  });
+}
+
+async function rollInjuryTableForEditor(element) {
+  const root = element?.closest(".po-injury-editor");
+  if (!root) return;
+  const rollResult = await new Roll("1d100").evaluate();
+  try {
+    if (game.dice3d?.showForRoll) {
+      await game.dice3d.showForRoll(rollResult, game.user, true);
+    }
+  } catch {
+    // Dice So Nice is optional.
+  }
+  await rollResult.toMessage({
+    speaker: ChatMessage.getSpeaker({ alias: game.user?.name ?? "Party Operations" }),
+    flavor: "Injury Table Roll (d100)"
+  });
+
+  const roll = Math.max(1, Math.min(100, Number(rollResult.total ?? 1)));
+  const injury = findInjuryDefinitionByRoll(roll);
+  const injurySelect = root.querySelector("select[name='injuryKey']");
+  if (injurySelect) injurySelect.value = injury.key;
+  const rollInput = root.querySelector("input[name='injuryRoll']");
+  if (rollInput) rollInput.value = String(roll);
+  const formulaTarget = root.querySelector("[data-injury-recovery-formula]");
+  if (formulaTarget) {
+    formulaTarget.textContent = `Recovery Formula: ${getInjuryRecoveryFormula(injury, Math.max(1, Number(getInjuryRecoveryState().config?.baseRecoveryDays ?? 3)))}`;
+  }
+  const recoveryInput = root.querySelector("input[name='recoveryDays']");
+  if (recoveryInput)
+    recoveryInput.value = String(
+      rollInjuryRecoveryDays(injury, Math.max(1, Number(getInjuryRecoveryState().config?.baseRecoveryDays ?? 3)))
+    );
+  const notesInput = root.querySelector("input[name='notes']");
+  if (notesInput && !String(notesInput.value ?? "").trim()) notesInput.value = injury.effect;
+  ui.notifications?.info(`d100 ${roll}: ${injury.label}`);
+}
+
+function syncInjuryEditorFromSelection(element) {
+  const root = element?.closest(".po-injury-editor");
+  if (!root) return;
+  const injuryKey = String(root.querySelector("select[name='injuryKey']")?.value ?? "");
+  const injury = getInjuryDefinitionByKey(injuryKey);
+  if (!injury) return;
+  const fallbackDays = Math.max(1, Number(getInjuryRecoveryState().config?.baseRecoveryDays ?? 3));
+  const formulaTarget = root.querySelector("[data-injury-recovery-formula]");
+  if (formulaTarget) formulaTarget.textContent = `Recovery Formula: ${getInjuryRecoveryFormula(injury, fallbackDays)}`;
+  const recoveryInput = root.querySelector("input[name='recoveryDays']");
+  if (recoveryInput) recoveryInput.value = String(rollInjuryRecoveryDays(injury, fallbackDays));
+}
+
+async function rollTreatmentCheck(injuredActorId, treatmentSkill, dc) {
+  const dcValue = Math.max(1, Math.floor(Number(dc) || 0));
+  if (!dcValue || !treatmentSkill) return true;
+
+  if (treatmentSkill === "con") {
+    const actor = game.actors.get(injuredActorId);
+    if (!actor) return false;
+    const conMod = Number(actor.system?.abilities?.con?.mod ?? 0);
+    const roll = await new Roll("1d20 + @mod", { mod: conMod }).evaluate();
+    await roll.toMessage({
+      speaker: ChatMessage.getSpeaker({ actor }),
+      flavor: `Treatment Check: CON vs DC ${dcValue}`
+    });
+    return Number(roll.total ?? 0) >= dcValue;
+  }
+
+  const options = buildInjuryActorOptions();
+  const selectHtml = options.map((opt) => `<option value="${opt.id}">${opt.name}</option>`).join("");
+  const healerActorId = await Dialog.wait({
+    title: "Select Treating Actor",
+    content: `<div class="form-group"><label>Healer</label><select name="healerActorId">${selectHtml}</select></div>`,
+    buttons: {
+      ok: {
+        label: "Roll Check",
+        callback: (html) => String(html.find("select[name=healerActorId]").val() ?? "")
+      },
+      cancel: { label: "Cancel", callback: () => "" }
+    },
+    default: "ok",
+    close: () => ""
+  });
+
+  if (!healerActorId) return false;
+  const healer = game.actors.get(healerActorId);
+  if (!healer) return false;
+  const skill = treatmentSkill === "ins" ? "ins" : "med";
+  const rollResult = await healer.rollSkill(skill, { fastForward: true, chatMessage: false });
+  const total = Number(rollResult?.total ?? rollResult?.roll?.total ?? 0);
+  return total >= dcValue;
+}
+
+async function upsertInjuryEntry(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
+  const root = element?.closest(".po-injury-editor");
+  if (!root) return;
+  const actorId = root.querySelector("select[name='actorId']")?.value ?? "";
+  if (!actorId) {
+    ui.notifications?.warn("Select an actor for injury tracking.");
+    return;
+  }
+  const injuryKey = String(root.querySelector("select[name='injuryKey']")?.value ?? "");
+  const injuryDef = getInjuryDefinitionByKey(injuryKey);
+  if (!injuryDef) {
+    ui.notifications?.warn("Select an injury result from the table.");
+    return;
+  }
+  const injuryRollRaw = Number(root.querySelector("input[name='injuryRoll']")?.value ?? 0);
+  const injuryRoll = Number.isFinite(injuryRollRaw) ? Math.max(0, Math.floor(injuryRollRaw)) : 0;
+  const stabilized = Boolean(root.querySelector("input[name='stabilized']")?.checked);
+  const recoveryDaysRaw = Number(root.querySelector("input[name='recoveryDays']")?.value ?? 0);
+  const notes = root.querySelector("input[name='notes']")?.value ?? "";
+  let savedRecoveryDays = 0;
+
+  await updateInjuryRecoveryState((state) => {
+    if (!state.injuries) state.injuries = {};
+    const fallbackDays = Math.max(1, Number(state.config?.baseRecoveryDays ?? 3));
+    const rolledDays = rollInjuryRecoveryDays(injuryDef, fallbackDays);
+    const recoveryDays = injuryDef.permanent
+      ? 0
+      : Number.isFinite(recoveryDaysRaw) && recoveryDaysRaw > 0
+        ? Math.floor(recoveryDaysRaw)
+        : rolledDays;
+    savedRecoveryDays = recoveryDays;
+    const existing = state.injuries[actorId] ?? {};
+    state.injuries[actorId] = {
+      ...existing,
+      injuryKey: injuryDef.key,
+      injuryName: injuryDef.label,
+      injuryRoll,
+      effect: injuryDef.effect,
+      recoveryRule: injuryDef.recovery,
+      permanent: Boolean(injuryDef.permanent),
+      kitCharges: Math.max(0, Number(injuryDef.kitCharges ?? 0)),
+      treatmentDc: Math.max(0, Number(injuryDef.treatmentDc ?? 0)),
+      treatmentSkill: String(injuryDef.treatmentSkill ?? ""),
+      canBecomePermanent: Boolean(injuryDef.canBecomePermanent),
+      downgradeTo: String(injuryDef.downgradeTo ?? ""),
+      downgradeHalfDays: Boolean(injuryDef.downgradeHalfDays),
+      stabilized,
+      recoveryDays,
+      notes,
+      recoveryDueTs: addCalendarDaysBridge(getCurrentWorldTimestamp(), recoveryDays, {
+        gameRef: game,
+        globalRef: globalThis
+      })
+    };
+  });
+
+  if (game.user?.isGM) {
+    const hasMutationApi = Boolean(getSimpleCalendarMutationApi());
+    const syncResult = await syncInjuryWithSimpleCalendar(actorId);
+    if (isSimpleCalendarActive() && hasMutationApi && !syncResult.synced) {
+      const reason = String(syncResult.reason ?? "").trim();
+      const detail = reason ? ` (${reason.length > 120 ? `${reason.slice(0, 117)}...` : reason})` : "";
+      ui.notifications?.warn(
+        `Injury saved, but Simple Calendar sync was unavailable for ${game.actors.get(actorId)?.name ?? "actor"}${detail}.`
+      );
+    } else if (isSimpleCalendarActive() && !hasMutationApi) {
+      ui.notifications?.info("Injury saved. Simple Calendar API is not currently available in this session.");
+    } else if (syncResult.synced) {
+      ui.notifications?.info(
+        `Injury saved and scheduled in Simple Calendar (${savedRecoveryDays} day recovery window).`
+      );
+    }
+  } else {
+    ui.notifications?.info("Injury saved. Calendar sync will be applied by the GM session.");
+  }
+}
+
+function getInjuryReminderDayKey(timestamp = getCurrentWorldTimestamp()) {
+  return getCalendarDayKeyBridge(timestamp, { gameRef: game, globalRef: globalThis });
+}
+
+async function notifyDailyInjuryReminders() {
+  const dayKey = getInjuryReminderDayKey();
+  const lastKey = String(game.settings.get(MODULE_ID, SETTINGS.INJURY_REMINDER_DAY) ?? "");
+  if (dayKey === lastKey) return;
+
+  const context = buildInjuryRecoveryContext();
+  if (context.entries.length > 0) {
+    const summary = context.entries
+      .slice(0, 4)
+      .map(
+        (entry) =>
+          `${entry.actorName}: ${entry.injuryName}${entry.permanent ? " (Permanent)" : ` (${entry.recoveryDays}d left)`}`
+      )
+      .join(" | ");
+    const suffix = context.entries.length > 4 ? ` +${context.entries.length - 4} more` : "";
+    ui.notifications?.warn(`Injury Reminder: ${summary}${suffix}`);
+  }
+
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_REMINDER_DAY, dayKey);
+}
+
+async function stabilizeInjuryEntry(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
+  const actorId = element?.dataset?.actorId;
+  if (!actorId) return;
+  const recoveryState = getInjuryRecoveryState();
+  const initial = recoveryState.injuries?.[actorId];
+  if (!initial) return;
+  if (initial.permanent) {
+    ui.notifications?.warn("This injury is permanent and cannot be stabilized by kit treatment.");
+    return;
+  }
+
+  const requiredCharges = Math.max(0, Number(initial.kitCharges ?? 1));
+  const treatmentDc = Math.max(0, Number(initial.treatmentDc ?? 0));
+  const treatmentSkill = String(initial.treatmentSkill ?? "");
+
+  const kitResult = await consumeHealersKitCharges(requiredCharges, recoveryState);
+  await updateInjuryRecoveryState((state) => {
+    if (!state.supplies) state.supplies = {};
+    state.supplies.healersKitActorId = String(kitResult.nextSelection?.actorId ?? "");
+    state.supplies.healersKitItemId = String(kitResult.nextSelection?.itemId ?? "");
+    state.supplies.healersKitCharges = Math.max(0, Number(kitResult.totalCharges ?? 0));
+  });
+
+  const consumedSummary = kitResult.details
+    .map((entry) => `${entry.actorName} - ${entry.itemName} (-${entry.spent})`)
+    .join(", ");
+
+  if (!kitResult.ok) {
+    if (kitResult.consumed > 0) {
+      ui.notifications?.warn(
+        `Healer's Kit partially consumed (${consumedSummary || `${kitResult.consumed} charge(s)`}), but ${kitResult.missing} additional charge(s) are required.`
+      );
+      return;
+    }
+    ui.notifications?.warn("No usable Healer's Kit charges are available for this treatment.");
+    return;
+  }
+
+  const passedCheck = await rollTreatmentCheck(actorId, treatmentSkill, treatmentDc);
+  if (!passedCheck) {
+    if (kitResult.consumed > 0)
+      ui.notifications?.warn(`Treatment attempt failed after consuming ${kitResult.consumed} Healer's Kit charge(s).`);
+    await updateInjuryRecoveryState((state) => {
+      const entry = state.injuries?.[actorId];
+      if (!entry) return;
+      if (entry.canBecomePermanent && entry.injuryKey === "nerve-damage") {
+        entry.permanent = true;
+      }
+    });
+    await syncInjuryWithSimpleCalendar(actorId);
+    return;
+  }
+
+  await updateInjuryRecoveryState((state) => {
+    const entry = state.injuries?.[actorId];
+    if (!entry) return;
+    entry.stabilized = true;
+    if (entry.injuryKey === "broken-arm" && entry.downgradeTo) {
+      const nextDef = getInjuryDefinitionByKey(entry.downgradeTo);
+      if (nextDef) {
+        entry.injuryKey = nextDef.key;
+        entry.injuryName = nextDef.label;
+        entry.effect = nextDef.effect;
+        entry.recoveryRule = nextDef.recovery;
+        entry.kitCharges = Number(nextDef.kitCharges ?? 0);
+        entry.treatmentDc = Number(nextDef.treatmentDc ?? 0);
+        entry.treatmentSkill = String(nextDef.treatmentSkill ?? "");
+      }
+      entry.recoveryDays = Math.max(1, Math.ceil(Number(entry.recoveryDays ?? 0) / 2));
+    }
+  });
+
+  const consumedLabel = consumedSummary || `${kitResult.consumed} charge(s)`;
+  ui.notifications?.info(`Treatment succeeded. Consumed ${consumedLabel}.`);
+  await syncInjuryWithSimpleCalendar(actorId);
+}
+
+async function clearInjuryEntry(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
+  const actorId = element?.dataset?.actorId;
+  if (!actorId) return;
+  const state = getInjuryRecoveryState();
+  const calendarEntryId = String(state.injuries?.[actorId]?.calendarEntryId ?? "");
+  await updateInjuryRecoveryState((state) => {
+    if (!state.injuries) return;
+    delete state.injuries[actorId];
+  });
+  if (calendarEntryId) {
+    await clearInjuryFromSimpleCalendar(calendarEntryId);
+  }
+}
+
+async function applyRecoveryCycle(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return { applied: false, total: 0, reason: "gm-only" };
+  }
+  const silent = Boolean(options?.silent);
+  const suppressChat = Boolean(options?.suppressChat);
+  const state = getInjuryRecoveryState();
+
+  const entries = Object.entries(state.injuries ?? {});
+  if (entries.length === 0) {
+    if (!silent) ui.notifications?.info("No tracked injuries to process.");
+    return { applied: false, total: 0, reason: "no-entries" };
+  }
+
+  const lines = [];
+  const actorsToSync = new Set();
+  const calendarEntriesToClear = [];
+
+  await updateInjuryRecoveryState((mutable) => {
+    if (!mutable.injuries) mutable.injuries = {};
+    for (const [actorId, entry] of Object.entries(mutable.injuries)) {
+      if (entry.permanent) {
+        lines.push(`${game.actors.get(actorId)?.name ?? "Unknown"}: permanent condition`);
+        continue;
+      }
+
+      const progress = entry.stabilized ? 2 : 1;
+      const before = Math.max(0, Number(entry.recoveryDays ?? 0));
+      const after = Math.max(0, before - progress);
+      entry.recoveryDays = after;
+      const actorName = game.actors.get(actorId)?.name ?? "Unknown";
+      lines.push(`${actorName}: ${before}->${after} days (progress ${progress})`);
+
+      if (after === 0 && entry.canBecomePermanent && !entry.stabilized) {
+        entry.permanent = true;
+        lines.push(`${actorName}: untreated condition became permanent.`);
+      }
+
+      if (after === 0) {
+        if (entry.permanent) {
+          entry.recoveryDueTs = getCurrentWorldTimestamp();
+          actorsToSync.add(actorId);
+          continue;
+        }
+        const calendarEntryId = String(entry.calendarEntryId ?? "");
+        if (calendarEntryId) calendarEntriesToClear.push(calendarEntryId);
+        delete mutable.injuries[actorId];
+      } else {
+        entry.recoveryDueTs = addCalendarDaysBridge(getCurrentWorldTimestamp(), after, {
+          gameRef: game,
+          globalRef: globalThis
+        });
+        actorsToSync.add(actorId);
+      }
+    }
+    mutable.lastCycleAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    mutable.lastCycleSummary = "Table-based recovery cycle applied";
+  });
+
+  const summary = lines.join("<br>");
+  if (!suppressChat) {
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      content: `<p><strong>Recovery Cycle</strong></p><p>${summary}</p>`
+    });
+  }
+
+  for (const entryId of calendarEntriesToClear) {
+    await clearInjuryFromSimpleCalendar(entryId);
+  }
+  for (const actorId of actorsToSync) {
+    await syncInjuryWithSimpleCalendar(actorId);
+  }
+  return {
+    applied: true,
+    total: entries.length,
+    summary,
+    syncedActors: actorsToSync.size,
+    clearedCalendarEntries: calendarEntriesToClear.length
+  };
+}
+
+async function showRecoveryBrief() {
+  const context = buildInjuryRecoveryContext();
+  const entryLines = context.entries
+    .map(
+      (entry) =>
+        `<li>${entry.actorName}: ${entry.injuryName}${entry.injuryRoll ? ` (d100 ${entry.injuryRoll})` : ""} - ${entry.permanent ? "permanent" : `${entry.recoveryDays} day(s)`} - ${entry.stabilized ? "stabilized" : "unstable"}${entry.treatmentDc ? ` - DC ${entry.treatmentDc} ${entry.treatmentSkill === "ins" ? "Insight" : entry.treatmentSkill === "con" ? "CON" : "Medicine"}` : ""} - due ${entry.recoveryDueLabel}</li>`
+    )
+    .join("");
+  const content = `
+    <div class="po-help">
+      <p><strong>Active Injuries:</strong> ${context.summary.activeInjuries}</p>
+      <p><strong>Unstable:</strong> ${context.summary.unstableCount}</p>
+      <p><strong>Permanent:</strong> ${context.summary.permanentCount}</p>
+      <p><strong>Selected Healer's Kit:</strong> ${context.supplies.kitSelection.selectedLabel} (${context.supplies.kitSelection.selectedCharges})</p>
+      <p><strong>Total Healer's Kit Charges:</strong> ${context.supplies.kitSelection.totalCharges}</p>
+      <p><strong>Last Cycle:</strong> ${context.summary.lastCycleAt} (${context.summary.lastCycleSummary})</p>
+      <ul>${entryLines || "<li>No active injuries.</li>"}</ul>
+    </div>
+  `;
+  await Dialog.prompt({
+    title: "Injury & Recovery Brief",
+    content,
+    rejectClose: false,
+    callback: () => {}
+  });
+}
+

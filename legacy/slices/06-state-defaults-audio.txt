@@ -1,0 +1,3229 @@
+# Default State And Audio Runtime
+
+Source: legacy/party-operations-monolith.js:10811-14030
+Feature IDs: audio, loot, rest-watch
+Target Modules: scripts/runtime/state, scripts/features/audio-*, scripts/features/loot-*
+
+Default state builders, loot source config defaults, audio catalog, mix presets, playlist sync, and audio library search.
+
+----- legacy source begins -----
+function buildDefaultRestWatchState() {
+  return {
+    locked: false,
+    lockedBy: "",
+    visibility: "names-passives",
+    campfire: false,
+    campfireBySlot: {},
+    lastUpdatedAt: "-",
+    lastUpdatedBy: "-",
+    slots: buildStoredWatchSlots()
+  };
+}
+
+function buildDefaultActivityState() {
+  return {
+    dateCreated: new Date().toDateString(),
+    activities: {} // actorId => { exhaustion, activity, spellSlots: {...}, hitDice: {...} }
+  };
+}
+
+function buildLootWorldItemSourceEntry(input = {}) {
+  const weightRaw = Number(input?.weight ?? 1);
+  return {
+    id: LOOT_WORLD_ITEMS_SOURCE_ID,
+    label: String(input?.label ?? LOOT_WORLD_ITEMS_SOURCE_LABEL).trim() || LOOT_WORLD_ITEMS_SOURCE_LABEL,
+    sourceKind: "world-items",
+    enabled: input?.enabled !== false,
+    weight: Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1
+  };
+}
+
+function getLootGenerationItemPackSources() {
+  return getAvailableLootItemPackSources();
+}
+
+function buildLootWorldItemsFolderFilterId(folderId = "") {
+  const id = String(folderId ?? "").trim();
+  return id ? `${LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX}${id}` : "";
+}
+
+function parseLootWorldItemsFolderFilterId(selectionId = "") {
+  const id = String(selectionId ?? "").trim();
+  if (!id.startsWith(LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX)) return "";
+  const folderId = id.slice(LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX.length).trim();
+  return folderId || "";
+}
+
+function getLootWorldItemFolderParentId(folder) {
+  return String(folder?.folder?.id ?? folder?.folder ?? folder?.parent?.id ?? "").trim();
+}
+
+function getLootWorldItemFolderRows() {
+  const rows = (game.folders?.contents ?? [])
+    .filter((folder) => {
+      const type = String(folder?.type ?? folder?.documentName ?? "")
+        .trim()
+        .toLowerCase();
+      return type === "item";
+    })
+    .map((folder) => {
+      const id = String(folder?.id ?? "").trim();
+      const name = String(folder?.name ?? id).trim() || id;
+      const parentId = getLootWorldItemFolderParentId(folder);
+      return { id, name, parentId };
+    })
+    .filter((entry) => entry.id);
+
+  const byId = new Map(rows.map((entry) => [entry.id, entry]));
+  return rows
+    .map((entry) => {
+      const parts = [entry.name];
+      const visited = new Set([entry.id]);
+      let parentId = entry.parentId;
+      let depth = 0;
+      while (parentId && depth < 30) {
+        if (visited.has(parentId)) break;
+        visited.add(parentId);
+        const parent = byId.get(parentId);
+        if (!parent) break;
+        parts.unshift(parent.name);
+        parentId = parent.parentId;
+        depth += 1;
+      }
+      return {
+        ...entry,
+        pathLabel: parts.join(" / ")
+      };
+    })
+    .sort((a, b) => String(a.pathLabel ?? "").localeCompare(String(b.pathLabel ?? "")));
+}
+
+function buildLootWorldItemFolderScopeIds(folderId = "") {
+  const rootId = String(folderId ?? "").trim();
+  if (!rootId) return new Set();
+
+  const rows = getLootWorldItemFolderRows();
+  const childrenByParent = new Map();
+  for (const row of rows) {
+    const parentId = String(row?.parentId ?? "").trim();
+    if (!parentId) continue;
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(String(row?.id ?? "").trim());
+  }
+
+  const scopedIds = new Set([rootId]);
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    const children = childrenByParent.get(currentId) ?? [];
+    for (const childId of children) {
+      if (!childId || scopedIds.has(childId)) continue;
+      scopedIds.add(childId);
+      queue.push(childId);
+    }
+  }
+  return scopedIds;
+}
+
+function isValidLootManifestPackSelectionId(selectionId = "") {
+  const id = String(selectionId ?? "").trim();
+  if (!id) return false;
+
+  const validPackIds = new Set(
+    getLootGenerationItemPackSources()
+      .map((entry) => String(entry?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  if (validPackIds.has(id)) return true;
+
+  const folderId = parseLootWorldItemsFolderFilterId(id);
+  if (!folderId) return false;
+
+  const folder = game.folders?.get?.(folderId) ?? null;
+  if (!folder) return true;
+  const folderType = String(folder?.type ?? folder?.documentName ?? "")
+    .trim()
+    .toLowerCase();
+  return folderType === "item";
+}
+
+function buildLootManifestPackOptions(manifestPackId = "", itemPackOptions = []) {
+  const selectedId = String(manifestPackId ?? "").trim();
+  const options = [
+    {
+      value: "",
+      label: "Any enabled item source",
+      selected: !selectedId
+    }
+  ];
+
+  options.push(
+    ...(Array.isArray(itemPackOptions) ? itemPackOptions : []).map((entry) => ({
+      value: String(entry?.id ?? "").trim(),
+      label: String(entry?.label ?? entry?.id ?? "").trim() || String(entry?.id ?? "").trim(),
+      selected: String(entry?.id ?? "").trim() === selectedId
+    }))
+  );
+
+  const folderOptions = getLootWorldItemFolderRows().map((folder) => {
+    const value = buildLootWorldItemsFolderFilterId(folder.id);
+    return {
+      value,
+      label: `${LOOT_WORLD_ITEMS_SOURCE_LABEL}: ${folder.pathLabel}`,
+      selected: value === selectedId
+    };
+  });
+  options.push(...folderOptions);
+
+  if (selectedId && !options.some((entry) => String(entry?.value ?? "").trim() === selectedId)) {
+    const selectedFolderId = parseLootWorldItemsFolderFilterId(selectedId);
+    options.push({
+      value: selectedId,
+      label: selectedFolderId
+        ? `${LOOT_WORLD_ITEMS_SOURCE_LABEL}: ${selectedFolderId} (Unavailable)`
+        : `${selectedId} (Unavailable)`,
+      selected: true
+    });
+  }
+
+  return options;
+}
+
+function buildDefaultLootSourceConfig() {
+  return {
+    packs: [buildLootWorldItemSourceEntry()],
+    tables: [],
+    filters: {
+      allowedTypes: [...LOOT_DEFAULT_ITEM_TYPES],
+      rarityFloor: "",
+      rarityCeiling: "",
+      manifestPackId: "",
+      keywordIncludeMode: LOOT_KEYWORD_INCLUDE_MODES.ALL,
+      keywordIncludeTags: [],
+      keywordExcludeTags: []
+    },
+    updatedAt: 0,
+    updatedBy: ""
+  };
+}
+
+const AUDIO_LIBRARY_DEFAULT_SOURCE = "data";
+const AUDIO_LIBRARY_VERSION = 2;
+const AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION = 1;
+const AUDIO_LIBRARY_EXTENSIONS = Object.freeze(["mp3", "wav", "ogg", "webm", "flac", "m4a"]);
+const AUDIO_LIBRARY_FORGE_SOURCE = "forgevtt";
+const AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_MAX_FILES = 24;
+const AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_DELAY_MS = 200;
+const AUDIO_LIBRARY_METADATA_WARMUP_DELAY_MS = 1200;
+const AUDIO_LIBRARY_METADATA_WARMUP_CONCURRENCY = 2;
+const AUDIO_LIBRARY_METADATA_TIMEOUT_MS = 8000;
+const AUDIO_LIBRARY_SCAN_CACHE_TTL_MS = 45000;
+const AUDIO_LIBRARY_SCAN_CACHE_MAX_ENTRIES = 8;
+const AUDIO_LIBRARY_KIND_LABELS = Object.freeze({
+  all: "All Kinds",
+  music: "Music",
+  ambience: "Ambience",
+  sfx: "SFX",
+  voice: "Voice"
+});
+const AUDIO_LIBRARY_USAGE_LABELS = Object.freeze({
+  all: "All Usages",
+  general: "General",
+  rest: "Rest / Camp",
+  travel: "Travel",
+  combat: "Combat",
+  intrigue: "Intrigue",
+  tension: "Tension / Horror",
+  ambience: "Ambience",
+  foley: "Foley / World",
+  stinger: "Stinger / One-Shot",
+  town: "Town / Tavern",
+  voice: "Voicelines",
+  scifi: "Sci-Fi"
+});
+const AUDIO_LIBRARY_VIEW_IDS = Object.freeze({
+  LIBRARY: "library",
+  MIX: "mix"
+});
+const AUDIO_MIX_TRACK_BROWSER_VIEW_IDS = Object.freeze({
+  SUGGESTED: "suggested",
+  ALL: "all"
+});
+const AUDIO_MIX_TRACK_BROWSER_PAGE_SIZE = 40;
+const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
+const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
+const AUDIO_MIX_TRANSPORT_LABEL = "Party Operations Shared Mix";
+const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
+const AUDIO_MIX_PRESET_STORE_VERSION = 1;
+const AUDIO_MIX_CHANNEL_LABELS = Object.freeze({
+  music: "Music",
+  environment: "Environment",
+  interface: "Interface"
+});
+const AUDIO_MIX_PLAYBACK_MODE_LABELS = Object.freeze({
+  repeat: "Loop / Repeat",
+  single: "Single Pass"
+});
+const AUDIO_MIX_BUILT_IN_PRESETS = Object.freeze([
+  {
+    id: "camp",
+    label: "Camp",
+    description: "Restful campfire, downtime, and fireside beds.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["rest", "ambience", "general"],
+    searchTokens: ["camp", "night", "sleep", "blissful", "harp", "fire", "rest"],
+    channel: "music",
+    volume: 0.48,
+    fade: 1800,
+    repeat: true
+  },
+  {
+    id: "travel",
+    label: "Travel",
+    description: "Road, wilderness, and marching momentum.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["travel", "ambience", "general"],
+    searchTokens: ["travel", "journey", "road", "march", "path", "adventure"],
+    channel: "music",
+    volume: 0.52,
+    fade: 1400,
+    repeat: true
+  },
+  {
+    id: "intrigue",
+    label: "Intrigue",
+    description: "Courtly schemes, stealth, suspicion, and investigation.",
+    preferredKinds: ["music"],
+    preferredUsage: ["intrigue", "tension", "general"],
+    searchTokens: ["intrigue", "court", "waltz", "curiosity", "mystery", "shadow", "noble", "palace", "whisper"],
+    channel: "music",
+    volume: 0.46,
+    fade: 1600,
+    repeat: true
+  },
+  {
+    id: "combat",
+    label: "Combat",
+    description: "Pressure, battle, and spell-heavy action.",
+    preferredKinds: ["music", "sfx"],
+    preferredUsage: ["combat", "stinger", "general"],
+    searchTokens: ["action", "battle", "combat", "war", "spell", "melee", "archer", "fight"],
+    channel: "music",
+    volume: 0.64,
+    fade: 900,
+    repeat: true
+  },
+  {
+    id: "horror",
+    label: "Horror",
+    description: "Dread, anxiety, undead, and lurking danger.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["tension", "ambience", "intrigue"],
+    searchTokens: ["horror", "anxiety", "dark", "undead", "fear", "whisper", "creep", "shadow"],
+    channel: "environment",
+    volume: 0.44,
+    fade: 1900,
+    repeat: true
+  },
+  {
+    id: "town",
+    label: "Town",
+    description: "Taverns, courtyards, folk ambience, and street life.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["town", "foley", "general"],
+    searchTokens: ["town", "tavern", "market", "city", "courtyard", "folk", "cooking", "village"],
+    channel: "environment",
+    volume: 0.42,
+    fade: 1500,
+    repeat: true
+  },
+  {
+    id: "stingers",
+    label: "Stingers",
+    description: "Short one-shots and punctuation hits.",
+    preferredKinds: ["sfx", "voice"],
+    preferredUsage: ["stinger", "voice", "combat"],
+    searchTokens: ["stinger", "shot", "cinematic", "spell", "impact", "voice"],
+    channel: "interface",
+    volume: 0.6,
+    fade: 300,
+    repeat: false
+  }
+]);
+const audioLibraryUiState = {
+  draft: {
+    source: AUDIO_LIBRARY_DEFAULT_SOURCE,
+    rootPath: ""
+  },
+  view: AUDIO_LIBRARY_VIEW_IDS.LIBRARY,
+  filters: {
+    search: "",
+    kind: "all",
+    usage: "all",
+    selectedTags: []
+  },
+  selectedTrackId: "",
+  selectedTrackIds: [],
+  mixTrackBrowserView: AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED,
+  mixTrackBrowserPages: {
+    [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED]: 0,
+    [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL]: 0
+  },
+  selectedMixTrackIds: [],
+  selectedMixPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
+  previewVolume: AUDIO_PREVIEW_VOLUME_DEFAULT,
+  mixStatus: "",
+  error: ""
+};
+
+function normalizeAudioPreviewVolume(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return AUDIO_PREVIEW_VOLUME_DEFAULT;
+  return Math.max(0, Math.min(1, Math.round(numeric * 100) / 100));
+}
+
+function normalizeAudioMixVolume(value, fallback = 0.5) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return Math.max(0, Math.min(1, Number(fallback ?? 0.5) || 0.5));
+  return Math.max(0, Math.min(1, Math.round(numeric * 100) / 100));
+}
+
+function getAudioMixVolumePercent(value, fallback = 0.5) {
+  return Math.round(normalizeAudioMixVolume(value, fallback) * 100);
+}
+
+function getStoredAudioPreviewVolume() {
+  return normalizeAudioPreviewVolume(audioLibraryUiState.previewVolume);
+}
+
+function getAudioPreviewVolumeSetting() {
+  try {
+    const stored = game?.settings?.get?.(MODULE_ID, SETTINGS.AUDIO_PREVIEW_VOLUME);
+    const normalized = normalizeAudioPreviewVolume(stored);
+    audioLibraryUiState.previewVolume = normalized;
+    return normalized;
+  } catch {
+    return getStoredAudioPreviewVolume();
+  }
+}
+
+async function setAudioPreviewVolumeSetting(value) {
+  const normalized = normalizeAudioPreviewVolume(value);
+  audioLibraryUiState.previewVolume = normalized;
+  try {
+    const current = normalizeAudioPreviewVolume(game?.settings?.get?.(MODULE_ID, SETTINGS.AUDIO_PREVIEW_VOLUME));
+    if (Math.abs(current - normalized) > 0.0001) {
+      await game.settings.set(MODULE_ID, SETTINGS.AUDIO_PREVIEW_VOLUME, normalized);
+    }
+  } catch {
+    return normalized;
+  }
+  return normalized;
+}
+
+const audioStore = createAudioStore({
+  gameRef: game,
+  foundryRef: foundry,
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  audioLibraryUiState,
+  audioLibraryDefaultSource: AUDIO_LIBRARY_DEFAULT_SOURCE,
+  audioLibraryBlockedSources: [AUDIO_LIBRARY_FORGE_SOURCE],
+  audioLibraryVersion: AUDIO_LIBRARY_VERSION,
+  audioLibraryHiddenTrackStoreVersion: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
+  audioLibraryExtensions: AUDIO_LIBRARY_EXTENSIONS,
+  audioMixPresetStoreVersion: AUDIO_MIX_PRESET_STORE_VERSION,
+  audioMixBuiltInPresets: AUDIO_MIX_BUILT_IN_PRESETS,
+  audioMixPresetDefaultId: AUDIO_MIX_PRESET_DEFAULT_ID,
+  normalizeAudioMixChannel,
+  normalizeAudioMixPlaybackMode,
+  inferAudioMixChannelForKind,
+  normalizeAudioMixPresetSearchTokens,
+  normalizeAudioLibraryRootPath,
+  normalizeAudioLibraryKind,
+  normalizeAudioLibraryUsage,
+  normalizeAudioLibraryDurationSeconds,
+  normalizeAudioLibraryDurationResolvedAt,
+  safeDecodeAudioText,
+  setModuleSettingWithLocalRefreshSuppressed,
+  refreshOpenApps,
+  emitSocketRefresh
+});
+
+const audioMixPresetManager = createAudioMixPresetManager({
+  foundryRef: foundry,
+  windowRef: window,
+  uiRef: ui,
+  dialogClass: Dialog,
+  audioLibraryUiState,
+  builtInPresets: AUDIO_MIX_BUILT_IN_PRESETS,
+  defaultPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
+  canAccessAllPlayerOps,
+  getSelectedAudioMixPreset,
+  setSelectedAudioMixPresetId,
+  getAudioMixPresetById,
+  updateStoredAudioMixPresets,
+  serializeAudioMixPresetForStore,
+  normalizeAudioMixPresetDefinition,
+  normalizeAudioMixPresetTrackIds,
+  normalizeAudioLibraryRootPath,
+  normalizeAudioLibraryKind,
+  normalizeAudioLibraryUsage,
+  normalizeAudioMixPlaybackMode,
+  normalizeAudioMixVolume,
+  normalizeAudioMixPresetSearchTokens,
+  formatAudioMixPresetSearchTokens,
+  inferAudioMixChannelForKind,
+  setAudioMixStatus,
+  syncLiveAudioMixPresetVolume,
+  poEscapeHtml,
+  clearManagedAudioMixQueueForPreset,
+  syncSelectedAudioMixPresetTrackIdsToLiveQueue,
+  getSelectedAudioMixTrackSelectionIds,
+  setSelectedAudioMixTrackSelectionIds,
+  getAudioMixPlaybackState,
+  getAudioLibraryCatalog
+});
+
+function buildDefaultAudioLibraryCatalog() {
+  return audioStore.buildDefaultAudioLibraryCatalog();
+}
+
+function buildDefaultAudioLibraryHiddenTrackStore() {
+  return audioStore.buildDefaultAudioLibraryHiddenTrackStore();
+}
+
+function buildDefaultAudioMixPresetStore() {
+  return audioStore.buildDefaultAudioMixPresetStore();
+}
+
+function normalizeStoredAudioLibraryValue(value, { allowArray = false } = {}) {
+  return audioStore.normalizeStoredAudioLibraryValue(value, { allowArray });
+}
+
+function normalizeAudioMixChannel(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUDIO_MIX_CHANNEL_LABELS, normalized) ? normalized : "music";
+}
+
+function getAudioMixChannelLabel(value) {
+  return AUDIO_MIX_CHANNEL_LABELS[normalizeAudioMixChannel(value)] ?? AUDIO_MIX_CHANNEL_LABELS.music;
+}
+
+function normalizeAudioMixPlaybackMode(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase() === "single"
+    ? "single"
+    : "repeat";
+}
+
+function getAudioMixPlaybackModeLabel(value) {
+  return AUDIO_MIX_PLAYBACK_MODE_LABELS[normalizeAudioMixPlaybackMode(value)] ?? AUDIO_MIX_PLAYBACK_MODE_LABELS.repeat;
+}
+
+function inferAudioMixChannelForKind(kindFocus) {
+  const normalizedKind = normalizeAudioLibraryKind(kindFocus);
+  if (normalizedKind === "ambience") return "environment";
+  if (normalizedKind === "sfx" || normalizedKind === "voice") return "interface";
+  return "music";
+}
+
+function normalizeAudioMixPresetSearchTokens(value) {
+  const source = Array.isArray(value) ? value : String(value ?? "").split(/[\n,;]+/);
+  return source
+    .flatMap((entry) => String(entry ?? "").split(/\s+/g))
+    .map((entry) =>
+      String(entry ?? "")
+        .trim()
+        .toLowerCase()
+    )
+    .filter((entry, index, rows) => entry && rows.indexOf(entry) === index)
+    .slice(0, 16);
+}
+
+function formatAudioMixPresetSearchTokens(value) {
+  return normalizeAudioMixPresetSearchTokens(value).join(", ");
+}
+
+function normalizeAudioMixPresetTrackIds(value) {
+  return audioStore.normalizeAudioMixPresetTrackIds(value);
+}
+
+function normalizeAudioLibraryHiddenTrackStore(store = {}) {
+  return audioStore.normalizeAudioLibraryHiddenTrackStore(store);
+}
+
+function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false, allowTrackIds = false } = {}) {
+  return audioStore.normalizeAudioMixPresetDefinition(input, { isCustom, allowTrackIds });
+}
+
+function serializeAudioMixPresetForStore(preset = {}, { includeIdentity = true } = {}) {
+  return audioStore.serializeAudioMixPresetForStore(preset, { includeIdentity });
+}
+
+function normalizeAudioMixPresetStore(store = {}) {
+  return audioStore.normalizeAudioMixPresetStore(store);
+}
+
+function getBuiltInAudioMixPresets() {
+  return audioStore.getBuiltInAudioMixPresets();
+}
+
+function normalizeAudioLibrarySource(value) {
+  return audioStore.normalizeAudioLibrarySource(value);
+}
+
+function isAbsoluteUrl(value) {
+  return /^[a-z]+:\/\//i.test(String(value ?? "").trim());
+}
+
+function normalizeAudioLibraryRootPath(value) {
+  const raw = String(value ?? "")
+    .trim()
+    .replace(/\\/g, "/");
+  if (!raw) return "";
+  if (isAbsoluteUrl(raw)) {
+    const [scheme, ...rest] = raw.split("://");
+    return `${scheme}://${rest.join("://").replace(/\/+/g, "/").replace(/\/$/, "")}`;
+  }
+  return raw.replace(/\/+/g, "/").replace(/\/$/, "");
+}
+
+function isAbsoluteWindowsFilesystemPath(value) {
+  const normalized = String(value ?? "").trim();
+  return /^[a-z]:[\\/]/i.test(normalized) || normalized.startsWith("//?/") || normalized.startsWith("\\\\?\\");
+}
+
+function safeDecodeAudioText(value) {
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function extractForgeAssetRelativePath(value) {
+  const normalized = normalizeAudioLibraryRootPath(value);
+  if (!isAbsoluteUrl(normalized)) return "";
+  try {
+    const url = new URL(normalized);
+    if (!/assets\.forge-vtt\.com$/i.test(String(url.hostname ?? "").trim())) return "";
+    const segments = safeDecodeAudioText(url.pathname).split("/").filter(Boolean);
+    if (segments.length <= 1) return "";
+    return normalizeAudioLibraryRootPath(segments.slice(1).join("/"));
+  } catch {
+    return "";
+  }
+}
+
+function buildAudioLibraryRelativePath(path, rootPath = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
+  if (!normalizedPath) return "";
+  if (normalizedRoot) {
+    const pathLower = normalizedPath.toLowerCase();
+    const rootLower = normalizedRoot.toLowerCase();
+    if (pathLower === rootLower) return normalizedPath;
+    if (pathLower.startsWith(`${rootLower}/`)) return normalizedPath;
+    const needle = `/${rootLower}`;
+    const index = pathLower.indexOf(needle);
+    if (index >= 0) return normalizedPath.slice(index + 1);
+  }
+  const forgeRelative = extractForgeAssetRelativePath(normalizedPath);
+  if (forgeRelative) return forgeRelative;
+  return normalizedPath;
+}
+
+function buildAudioLibraryPathHelpText(path = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  if (!normalizedPath) return "Paste the host-served folder path where your private audio library lives.";
+  if (isAbsoluteWindowsFilesystemPath(path)) {
+    return "This must be a Foundry or Forge asset path, not a local D:\\ path. Use Upload Local Folder or browse to a server folder like music/Fantasy Complete II MP3.";
+  }
+  if (isAbsoluteUrl(normalizedPath)) {
+    return "Use a source-relative asset path like music/Fantasy Complete II MP3, not the full Forge asset URL.";
+  }
+  return "Scan reads the configured server folder recursively and classifies tracks into curated buckets.";
+}
+
+function validateAudioLibraryPathForSource(source, rootPath) {
+  const normalizedSource = normalizeAudioLibrarySource(source);
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  if (!normalizedRootPath) {
+    return "Set an audio root path before scanning.";
+  }
+  if (isAbsoluteWindowsFilesystemPath(rootPath)) {
+    return `Audio scanning only works on ${normalizedSource} asset paths served by Foundry or Forge. Use a server path like music/Fantasy Complete II MP3, not ${rootPath}.`;
+  }
+  if (isAbsoluteUrl(normalizedRootPath)) {
+    return `Audio scanning expects a source-relative asset path like music/Fantasy Complete II MP3, not a full URL like ${normalizedRootPath}.`;
+  }
+  return "";
+}
+
+function normalizeAudioLibrarySearch(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 120);
+}
+
+function normalizeAudioLibraryKind(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUDIO_LIBRARY_KIND_LABELS, normalized) ? normalized : "all";
+}
+
+function normalizeAudioLibraryUsage(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUDIO_LIBRARY_USAGE_LABELS, normalized) ? normalized : "all";
+}
+
+function normalizeAudioLibraryTag(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 80);
+}
+
+function normalizeAudioLibraryTagList(values = []) {
+  const source = Array.isArray(values) ? values : String(values ?? "").split(/[,\n;]+/g);
+  return Array.from(new Set(source.map((entry) => normalizeAudioLibraryTag(entry)).filter(Boolean)));
+}
+
+function buildAudioLibraryFilterToken(type = "tag", value = "") {
+  const normalizedType = String(type ?? "")
+    .trim()
+    .toLowerCase();
+  const normalizedValue = normalizeAudioLibraryTag(value);
+  if (!normalizedValue) return "";
+  const resolvedType = ["category", "subcategory", "tag"].includes(normalizedType) ? normalizedType : "tag";
+  return `${resolvedType}:${normalizedValue}`;
+}
+
+function normalizeAudioLibrarySelectedTag(value = "") {
+  const normalized = normalizeAudioLibraryTag(value);
+  if (!normalized) return "";
+  const separatorIndex = normalized.indexOf(":");
+  if (separatorIndex > 0) {
+    const type = normalized.slice(0, separatorIndex);
+    const tokenValue = normalized.slice(separatorIndex + 1);
+    if (["category", "subcategory", "tag"].includes(type) && tokenValue) {
+      return buildAudioLibraryFilterToken(type, tokenValue);
+    }
+  }
+  return buildAudioLibraryFilterToken("tag", normalized);
+}
+
+function normalizeAudioLibrarySelectedTagList(values = []) {
+  const source = Array.isArray(values) ? values : String(values ?? "").split(/[,\n;]+/g);
+  return Array.from(new Set(source.map((entry) => normalizeAudioLibrarySelectedTag(entry)).filter(Boolean)));
+}
+
+function normalizeAudioLibraryFilters(filters = {}) {
+  return {
+    search: normalizeAudioLibrarySearch(filters.search),
+    kind: normalizeAudioLibraryKind(filters.kind),
+    usage: normalizeAudioLibraryUsage(filters.usage),
+    selectedTags: normalizeAudioLibrarySelectedTagList(filters.selectedTags ?? [])
+  };
+}
+
+function hasActiveAudioLibraryFilters(filters = {}) {
+  const normalized = normalizeAudioLibraryFilters(filters);
+  return Boolean(
+    normalized.search || normalized.kind !== "all" || normalized.usage !== "all" || normalized.selectedTags.length > 0
+  );
+}
+
+function normalizeAudioLibraryTrackSelectionIds(values = []) {
+  const source = Array.isArray(values) ? values : [values];
+  return Array.from(new Set(source.map((entry) => normalizeAudioLibraryRootPath(entry)).filter(Boolean)));
+}
+
+function getSelectedAudioLibraryTrackSelectionIds() {
+  return normalizeAudioLibraryTrackSelectionIds(audioLibraryUiState.selectedTrackIds ?? []);
+}
+
+function setSelectedAudioLibraryTrackSelectionIds(values = []) {
+  const normalized = normalizeAudioLibraryTrackSelectionIds(values);
+  audioLibraryUiState.selectedTrackIds = normalized;
+  return normalized;
+}
+
+function pruneSelectedAudioLibraryTrackSelectionIds(availableTrackIds = []) {
+  const available = new Set(normalizeAudioLibraryTrackSelectionIds(availableTrackIds));
+  return setSelectedAudioLibraryTrackSelectionIds(
+    getSelectedAudioLibraryTrackSelectionIds().filter((trackId) => available.has(trackId))
+  );
+}
+
+function normalizeAudioLibraryView(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase() === AUDIO_LIBRARY_VIEW_IDS.MIX
+    ? AUDIO_LIBRARY_VIEW_IDS.MIX
+    : AUDIO_LIBRARY_VIEW_IDS.LIBRARY;
+}
+
+function normalizeAudioMixTrackBrowserView(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase() === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+    ? AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+    : AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED;
+}
+
+function normalizeAudioMixTrackBrowserPage(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.floor(numeric));
+}
+
+function getAudioMixTrackBrowserPageForView(view = audioLibraryUiState.mixTrackBrowserView) {
+  const normalizedView = normalizeAudioMixTrackBrowserView(view);
+  const pages = audioLibraryUiState.mixTrackBrowserPages;
+  return normalizeAudioMixTrackBrowserPage(pages?.[normalizedView] ?? 0);
+}
+
+function setAudioMixTrackBrowserPageForView(view, page) {
+  const normalizedView = normalizeAudioMixTrackBrowserView(view);
+  if (!audioLibraryUiState.mixTrackBrowserPages || typeof audioLibraryUiState.mixTrackBrowserPages !== "object") {
+    audioLibraryUiState.mixTrackBrowserPages = {
+      [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED]: 0,
+      [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL]: 0
+    };
+  }
+  const normalizedPage = normalizeAudioMixTrackBrowserPage(page);
+  audioLibraryUiState.mixTrackBrowserPages[normalizedView] = normalizedPage;
+  return normalizedPage;
+}
+
+function resetAudioMixTrackBrowserPages() {
+  setAudioMixTrackBrowserPageForView(AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED, 0);
+  setAudioMixTrackBrowserPageForView(AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL, 0);
+}
+
+function clearAudioLibraryFilters() {
+  return audioLibraryUiFilterActions.clearAudioLibraryFilters();
+}
+
+function buildAudioMixTrackBrowserPagination(totalCount, view = audioLibraryUiState.mixTrackBrowserView) {
+  const normalizedView = normalizeAudioMixTrackBrowserView(view);
+  const pageSize = AUDIO_MIX_TRACK_BROWSER_PAGE_SIZE;
+  const normalizedTotalCount = Math.max(0, Math.floor(Number(totalCount ?? 0) || 0));
+  const totalPages = normalizedTotalCount > 0 ? Math.ceil(normalizedTotalCount / pageSize) : 1;
+  const currentPage = Math.min(getAudioMixTrackBrowserPageForView(normalizedView), totalPages - 1);
+  const startIndex = currentPage * pageSize;
+  const endIndex = Math.min(normalizedTotalCount, startIndex + pageSize);
+  const rangeStart = normalizedTotalCount > 0 ? startIndex + 1 : 0;
+  const rangeEnd = normalizedTotalCount > 0 ? endIndex : 0;
+  return {
+    view: normalizedView,
+    pageSize,
+    totalCount: normalizedTotalCount,
+    totalPages,
+    currentPage,
+    currentPageNumber: normalizedTotalCount > 0 ? currentPage + 1 : 0,
+    startIndex,
+    endIndex,
+    rangeStart,
+    rangeEnd,
+    hasPrevious: currentPage > 0,
+    hasNext: currentPage + 1 < totalPages,
+    hasMultiplePages: normalizedTotalCount > pageSize,
+    label:
+      normalizedTotalCount > 0
+        ? `Tracks ${rangeStart}-${rangeEnd} of ${normalizedTotalCount} · Page ${currentPage + 1} of ${totalPages}`
+        : "No tracks available."
+  };
+}
+
+function getSelectedAudioMixTrackSelectionIds() {
+  return normalizeAudioLibraryTrackSelectionIds(audioLibraryUiState.selectedMixTrackIds ?? []);
+}
+
+function setSelectedAudioMixTrackSelectionIds(values = []) {
+  const normalized = normalizeAudioLibraryTrackSelectionIds(values);
+  audioLibraryUiState.selectedMixTrackIds = normalized;
+  return normalized;
+}
+
+function pruneSelectedAudioMixTrackSelectionIds(availableTrackIds = []) {
+  const available = new Set(normalizeAudioLibraryTrackSelectionIds(availableTrackIds));
+  return setSelectedAudioMixTrackSelectionIds(
+    getSelectedAudioMixTrackSelectionIds().filter((trackId) => available.has(trackId))
+  );
+}
+
+function getStoredAudioMixPresetStore() {
+  return audioStore.getStoredAudioMixPresetStore();
+}
+
+function getAllAudioMixPresets() {
+  return audioStore.getAllAudioMixPresets();
+}
+
+function getAudioMixPresetById(value) {
+  return audioStore.getAudioMixPresetById(value);
+}
+
+function getSelectedAudioMixPreset() {
+  return audioStore.getSelectedAudioMixPreset();
+}
+
+function getAudioLibraryDraftState() {
+  return audioStore.getAudioLibraryDraftState();
+}
+
+function syncAudioLibraryDraftFromSettings() {
+  audioStore.syncAudioLibraryDraftFromSettings();
+}
+
+function saveSharedAudioLibraryCatalog(catalog) {
+  return audioStore.saveSharedAudioLibraryCatalog(catalog);
+}
+
+function getSharedSelectedAudioMixPresetId() {
+  return audioStore.getSharedSelectedAudioMixPresetId();
+}
+
+function setSharedSelectedAudioMixPresetId(value) {
+  return audioStore.setSharedSelectedAudioMixPresetId(value);
+}
+
+function getAudioLibrarySourceSetting() {
+  return audioStore.getAudioLibrarySourceSetting();
+}
+
+function getAudioLibraryRootSetting() {
+  return audioStore.getAudioLibraryRootSetting();
+}
+
+function setSelectedAudioMixPresetId(value, { persist = true } = {}) {
+  const preset = getAudioMixPresetById(value ?? AUDIO_MIX_PRESET_DEFAULT_ID);
+  audioLibraryUiState.selectedMixPresetId = preset?.id ?? AUDIO_MIX_PRESET_DEFAULT_ID;
+  if (persist) setSharedSelectedAudioMixPresetId(audioLibraryUiState.selectedMixPresetId);
+  return audioLibraryUiState.selectedMixPresetId;
+}
+
+function normalizeAudioLibraryItem(entry = {}) {
+  return audioStore.normalizeAudioLibraryItem(entry);
+}
+
+function normalizeAudioLibraryCatalog(catalog = {}) {
+  return audioStore.normalizeAudioLibraryCatalog(catalog);
+}
+
+function getStoredAudioLibraryCatalog() {
+  return audioStore.getStoredAudioLibraryCatalog();
+}
+
+function getStoredAudioLibraryHiddenTrackStore() {
+  return audioStore.getStoredAudioLibraryHiddenTrackStore();
+}
+
+function getHiddenAudioLibraryTrackIds() {
+  return audioStore.getHiddenAudioLibraryTrackIds();
+}
+
+function getHiddenAudioLibraryTrackIdSet() {
+  return audioStore.getHiddenAudioLibraryTrackIdSet();
+}
+
+function applyHiddenTracksToAudioLibraryCatalog(catalog, hiddenTrackIds = []) {
+  return audioStore.applyHiddenTracksToAudioLibraryCatalog(catalog, hiddenTrackIds);
+}
+
+function getAudioLibraryCatalog(options = {}) {
+  return audioStore.getAudioLibraryCatalog(options);
+}
+
+function getAudioLibraryCatalogWarmupKey(catalog = null) {
+  return audioStore.getAudioLibraryCatalogWarmupKey(catalog);
+}
+
+function buildAudioLibraryTrackDisplay(item = {}) {
+  const durationSeconds = normalizeAudioLibraryDurationSeconds(item?.durationSeconds ?? 0);
+  return {
+    ...item,
+    hasSubcategory: Boolean(item?.subcategory),
+    kindLabel: getAudioLibraryKindLabel(item?.kind),
+    usageLabel: getAudioLibraryUsageLabel(item?.usage),
+    durationSeconds,
+    durationLabel: formatAudioLibraryDurationLabel(durationSeconds),
+    hasDuration: durationSeconds > 0,
+    hasTags: Array.isArray(item?.tags) && item.tags.length > 0
+  };
+}
+
+function setAudioLibraryError(message = "") {
+  audioLibraryUiState.error = String(message ?? "").trim();
+}
+
+function clearAudioLibraryError() {
+  setAudioLibraryError("");
+}
+
+function getAudioLibraryKindLabel(value) {
+  const normalized = normalizeAudioLibraryKind(value);
+  return AUDIO_LIBRARY_KIND_LABELS[normalized] ?? "Music";
+}
+
+function getAudioLibraryUsageLabel(value) {
+  const normalized = normalizeAudioLibraryUsage(value);
+  return AUDIO_LIBRARY_USAGE_LABELS[normalized] ?? "General";
+}
+
+function extractAudioLibraryTokens(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function inferAudioLibraryClassification(path, rootPath = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
+  const candidateRelativePath = buildAudioLibraryRelativePath(normalizedPath, normalizedRoot);
+  const relativePath =
+    normalizedRoot && candidateRelativePath.startsWith(`${normalizedRoot}/`)
+      ? candidateRelativePath.slice(normalizedRoot.length + 1)
+      : candidateRelativePath;
+  const segments = relativePath.split("/").filter(Boolean);
+  const filename = segments.at(-1) ?? normalizedPath;
+  const stem = safeDecodeAudioText(filename.replace(/\.[^.]+$/u, ""));
+  const categoryRaw = safeDecodeAudioText(segments[0] ?? "Uncategorized");
+  const subcategoryRaw = safeDecodeAudioText(segments.length > 2 ? segments[1] : "");
+  const category = categoryRaw.replace(/^\d+\s*/u, "").trim() || categoryRaw;
+  const subcategory = subcategoryRaw.replace(/^\d+\s*/u, "").trim();
+  const tokens = [
+    ...extractAudioLibraryTokens(category),
+    ...extractAudioLibraryTokens(subcategory),
+    ...extractAudioLibraryTokens(stem)
+  ];
+
+  let kind = "music";
+  if (tokens.includes("voice") || tokens.includes("voicelines") || tokens.includes("voiceline")) kind = "voice";
+  else if (
+    tokens.includes("ambience") ||
+    tokens.includes("ambient") ||
+    tokens.includes("atmos") ||
+    tokens.includes("environment") ||
+    tokens.includes("foley")
+  )
+    kind = "ambience";
+  else if (
+    tokens.includes("oneshots") ||
+    tokens.includes("shots") ||
+    tokens.includes("sfx") ||
+    tokens.includes("spell") ||
+    tokens.includes("design")
+  )
+    kind = "sfx";
+
+  let usage = "general";
+  if (
+    tokens.includes("action") ||
+    tokens.includes("battle") ||
+    tokens.includes("combat") ||
+    tokens.includes("melee") ||
+    tokens.includes("archers") ||
+    tokens.includes("magic")
+  )
+    usage = "combat";
+  else if (
+    tokens.includes("intrigue") ||
+    tokens.includes("court") ||
+    tokens.includes("curiosity") ||
+    tokens.includes("waltz") ||
+    tokens.includes("noble") ||
+    tokens.includes("mystery") ||
+    tokens.includes("shadow")
+  )
+    usage = "intrigue";
+  else if (
+    tokens.includes("horror") ||
+    tokens.includes("anxiety") ||
+    tokens.includes("dark") ||
+    tokens.includes("fear") ||
+    tokens.includes("undead")
+  )
+    usage = "tension";
+  else if (tokens.includes("ambient") || tokens.includes("atmos") || tokens.includes("atmosphere")) usage = "ambience";
+  else if (
+    tokens.includes("town") ||
+    tokens.includes("tavern") ||
+    tokens.includes("market") ||
+    tokens.includes("city") ||
+    tokens.includes("courtyard") ||
+    tokens.includes("folk") ||
+    tokens.includes("slavic")
+  )
+    usage = "town";
+  else if (
+    tokens.includes("environment") ||
+    tokens.includes("foley") ||
+    tokens.includes("movement") ||
+    tokens.includes("cooking")
+  )
+    usage = "foley";
+  else if (tokens.includes("voice") || tokens.includes("voicelines") || tokens.includes("voiceline")) usage = "voice";
+  else if (
+    tokens.includes("oneshots") ||
+    tokens.includes("cinematic") ||
+    tokens.includes("stinger") ||
+    tokens.includes("shot")
+  )
+    usage = "stinger";
+  else if (
+    tokens.includes("scifi") ||
+    tokens.includes("firearms") ||
+    tokens.includes("handguns") ||
+    tokens.includes("rifles") ||
+    tokens.includes("modern")
+  )
+    usage = "scifi";
+  else if (
+    tokens.includes("rest") ||
+    tokens.includes("camp") ||
+    tokens.includes("sleep") ||
+    tokens.includes("night") ||
+    tokens.includes("blissful")
+  )
+    usage = "rest";
+  else if (
+    tokens.includes("travel") ||
+    tokens.includes("road") ||
+    tokens.includes("journey") ||
+    tokens.includes("march")
+  )
+    usage = "travel";
+
+  if (kind === "voice") usage = "voice";
+  if (kind === "ambience" && usage === "general") usage = "ambience";
+  if (kind === "sfx" && usage === "general") usage = "stinger";
+
+  return {
+    name: stem.trim() || filename,
+    category,
+    subcategory,
+    kind,
+    usage,
+    extension: filename.includes(".") ? filename.split(".").pop().toLowerCase() : "mp3",
+    tags: [category, subcategory, getAudioLibraryKindLabel(kind), getAudioLibraryUsageLabel(usage)].filter(
+      (entry, index, rows) => entry && rows.indexOf(entry) === index
+    )
+  };
+}
+
+function isAudioLibraryFile(path) {
+  const normalized = normalizeAudioLibraryRootPath(path).toLowerCase();
+  return AUDIO_LIBRARY_EXTENSIONS.some((extension) => normalized.endsWith(`.${extension}`));
+}
+
+function normalizeAudioLibraryDirectorySelection(path = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  if (!normalizedPath) return "";
+  if (!isAudioLibraryFile(normalizedPath)) return normalizedPath;
+  const segments = normalizedPath.split("/").filter(Boolean);
+  segments.pop();
+  return segments.join("/");
+}
+
+function getAudioLibraryPickerCurrentPath(path = "") {
+  if (isAbsoluteWindowsFilesystemPath(path)) return "";
+  return normalizeAudioLibraryDirectorySelection(extractForgeAssetRelativePath(path) || path);
+}
+
+function normalizeAudioLibraryPickerSelection(path = "") {
+  const forgeRelativePath = extractForgeAssetRelativePath(path);
+  return normalizeAudioLibraryDirectorySelection(forgeRelativePath || path);
+}
+
+function getAudioLibraryUploadRelativePath(file) {
+  const rawPath = normalizeAudioLibraryRootPath(file?.webkitRelativePath || file?.name || "");
+  if (!rawPath) return "";
+  const segments = rawPath.split("/").filter(Boolean);
+  if (segments.length <= 1) return segments[0] ?? "";
+  return segments.slice(1).join("/");
+}
+
+function isUploadableAudioLibraryFile(file) {
+  const candidatePath = normalizeAudioLibraryRootPath(file?.webkitRelativePath || file?.name || "");
+  if (!candidatePath) return false;
+  const basename = String(candidatePath.split("/").pop() ?? "").trim();
+  if (!basename || basename.startsWith("._") || basename === ".DS_Store") return false;
+  return isAudioLibraryFile(candidatePath);
+}
+
+function isForgeAudioLibrarySource(source) {
+  return (
+    String(source ?? "")
+      .trim()
+      .toLowerCase() === AUDIO_LIBRARY_FORGE_SOURCE
+  );
+}
+
+function getAudioLibrarySourceInteractionError(source) {
+  if (!isForgeAudioLibrarySource(source)) return "";
+  return "The Forge file API source requires a Forge API key or Forge sign-in. Set the audio Source to data and use a source-relative folder path like music/Fantasy Complete II MP3, or sign in to The Forge before browsing Forge assets.";
+}
+
+function canManageAudioLibraryAssets() {
+  return Boolean(game.user?.isGM);
+}
+
+function getAudioLibraryUploadSelectionError(source, files = []) {
+  const uploadCount = Array.isArray(files) ? files.length : 0;
+  if (!isForgeAudioLibrarySource(source)) return "";
+  if (uploadCount <= AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_MAX_FILES) return "";
+  return `This folder contains ${uploadCount} audio files. Party Operations uploads to Forge one file at a time, which will trigger Forge asset rate warnings for large libraries. Upload this folder with Forge's native Assets Library uploader first, then scan that server folder here.`;
+}
+
+async function pauseAudioLibraryUpload(source) {
+  if (!isForgeAudioLibrarySource(source)) return;
+  const delayMs = Math.max(0, Math.floor(Number(AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_DELAY_MS) || 0));
+  if (delayMs <= 0) return;
+  const sleep = foundry.utils?.sleep
+    ? (ms) => foundry.utils.sleep(ms)
+    : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  await sleep(delayMs);
+}
+
+function buildAudioLibraryUploadRootPath(rootPath = "", localFolderName = "") {
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  if (normalizedRootPath && !isAbsoluteWindowsFilesystemPath(rootPath)) {
+    return normalizeAudioLibraryDirectorySelection(normalizedRootPath);
+  }
+  const normalizedFolderName = normalizeAudioLibraryRootPath(localFolderName).split("/").filter(Boolean).pop() ?? "";
+  const fallbackFolderName = normalizedFolderName || "audio-library";
+  return normalizeAudioLibraryRootPath(`music/${fallbackFolderName}`);
+}
+
+function getAudioLibraryUploadDirectoryPath(destinationRoot, relativePath) {
+  const root = normalizeAudioLibraryRootPath(destinationRoot);
+  const relative = normalizeAudioLibraryRootPath(relativePath);
+  if (!relative) return root;
+  const segments = relative.split("/").filter(Boolean);
+  segments.pop();
+  if (segments.length <= 0) return root;
+  return normalizeAudioLibraryRootPath(`${root}/${segments.join("/")}`);
+}
+
+function buildAudioLibraryUploadDirectories(destinationRoot, relativePaths = []) {
+  const root = normalizeAudioLibraryRootPath(destinationRoot);
+  const directories = new Set(root ? [root] : []);
+  for (const relativePath of Array.isArray(relativePaths) ? relativePaths : []) {
+    const normalizedRelativePath = normalizeAudioLibraryRootPath(relativePath);
+    if (!normalizedRelativePath) continue;
+    const parts = normalizedRelativePath.split("/").filter(Boolean);
+    parts.pop();
+    let current = root;
+    for (const part of parts) {
+      current = normalizeAudioLibraryRootPath(`${current}/${part}`);
+      if (current) directories.add(current);
+    }
+  }
+  return Array.from(directories).sort((left, right) => left.split("/").length - right.split("/").length);
+}
+
+function isExistingDirectoryError(error) {
+  const message = String(error?.message ?? error ?? "").toLowerCase();
+  return message.includes("already exists") || message.includes("eexist");
+}
+
+async function ensureAudioLibraryUploadDirectories(source, destinationRoot, relativePaths = []) {
+  const directories = buildAudioLibraryUploadDirectories(destinationRoot, relativePaths);
+  for (const directory of directories) {
+    if (!directory) continue;
+    try {
+      await FilePicker.createDirectory(source, directory);
+    } catch (error) {
+      if (isExistingDirectoryError(error)) continue;
+      throw error;
+    }
+  }
+}
+
+async function browseAudioLibraryTree(source, rootPath) {
+  const queue = [normalizeAudioLibraryRootPath(rootPath)];
+  const visited = new Set();
+  const files = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    let response = null;
+    try {
+      response = await FilePicker.browse(source, current);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown browse error");
+      throw new Error(`Unable to browse "${current}" on source "${source}". ${message}`);
+    }
+    const nextFiles = Array.isArray(response?.files) ? response.files : [];
+    const nextDirs = Array.isArray(response?.dirs) ? response.dirs : [];
+    for (const file of nextFiles) {
+      if (isAudioLibraryFile(file)) files.push(normalizeAudioLibraryRootPath(file));
+    }
+    for (const dir of nextDirs) {
+      const normalizedDir = normalizeAudioLibraryPickerSelection(dir);
+      if (normalizedDir && !visited.has(normalizedDir)) queue.push(normalizedDir);
+    }
+  }
+
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+const audioLibraryScanCache = createAudioLibraryScanCacheStore({
+  normalizeSource: normalizeAudioLibrarySource,
+  normalizeRootPath: normalizeAudioLibraryRootPath,
+  normalizePath: normalizeAudioLibraryRootPath,
+  ttlMs: AUDIO_LIBRARY_SCAN_CACHE_TTL_MS,
+  maxEntries: AUDIO_LIBRARY_SCAN_CACHE_MAX_ENTRIES
+});
+const audioLibraryCatalogSignatureTools = createAudioLibraryCatalogSignatureTools({
+  normalizeSource: normalizeAudioLibrarySource,
+  normalizeRootPath: normalizeAudioLibraryRootPath,
+  normalizeKind: normalizeAudioLibraryKind,
+  normalizeUsage: normalizeAudioLibraryUsage,
+  hashString: hashLootSeedToUint32,
+  normalizeCatalog: normalizeAudioLibraryCatalog,
+  getStoredCatalog: getStoredAudioLibraryCatalog
+});
+const audioLibraryUiSelectionActions = createAudioLibraryUiSelectionActions({
+  audioLibraryUiState,
+  normalizeAudioLibraryView,
+  normalizeAudioMixTrackBrowserView,
+  getAudioMixTrackBrowserPageForView,
+  setAudioMixTrackBrowserPageForView,
+  normalizeAudioLibraryRootPath,
+  getSelectedAudioLibraryTrackSelectionIds,
+  setSelectedAudioLibraryTrackSelectionIds,
+  getAudioLibraryCatalog,
+  buildAudioLibraryResults,
+  getSelectedAudioMixTrackSelectionIds,
+  setSelectedAudioMixTrackSelectionIds,
+  getSelectedAudioMixPreset,
+  buildAudioMixAssignedCandidates,
+  normalizeAudioLibraryFilters,
+  filterAudioMixTrackCandidates,
+  buildAudioMixCandidates,
+  scoreAudioTrackForMixPreset,
+  AUDIO_MIX_TRACK_BROWSER_VIEW_IDS,
+  buildAudioMixTrackBrowserPagination,
+  getAudioMixPresetById,
+  setSelectedAudioMixPresetId,
+  resetAudioMixTrackBrowserPages,
+  refreshLauncherAudioUi: () => {
+    // Lazy reference to avoid TDZ error during module initialization
+    return launcherUiController?.refreshLauncherAudioUi?.();
+  }
+});
+const audioLibraryUiDraftActions = createAudioLibraryUiDraftActions({
+  audioLibraryUiState,
+  normalizeAudioLibrarySource,
+  normalizeAudioLibraryRootPath,
+  normalizeAudioLibraryPickerSelection
+});
+const audioLibraryUiPickerUploadActions = createAudioLibraryUiPickerUploadActions({
+  canAccessAllPlayerOps: canManageAudioLibraryAssets,
+  ui,
+  getAudioLibraryDraftState,
+  filePickerClass: FilePicker,
+  getAudioLibraryPickerCurrentPath,
+  audioLibraryUiDraftActions,
+  clearAudioLibraryError,
+  documentRef: document,
+  audioLibraryExtensions: AUDIO_LIBRARY_EXTENSIONS,
+  isUploadableAudioLibraryFile,
+  getAudioLibraryUploadRelativePath,
+  getAudioLibraryUploadSelectionError,
+  buildAudioLibraryUploadRootPath,
+  ensureAudioLibraryUploadDirectories,
+  getAudioLibraryUploadDirectoryPath,
+  normalizeAudioLibrarySource,
+  getAudioLibrarySourceInteractionError,
+  notifyUiInfoThrottled,
+  scanAudioLibraryCatalog,
+  pauseAudioLibraryUpload
+});
+const audioLibraryUiFilterActions = createAudioLibraryUiFilterActions({
+  audioLibraryUiState,
+  normalizeAudioLibraryFilters,
+  normalizeAudioLibrarySearch,
+  normalizeAudioLibraryKind,
+  normalizeAudioLibraryUsage,
+  normalizeAudioLibraryTag,
+  normalizeAudioLibraryTagList,
+  resetAudioMixTrackBrowserPages
+});
+
+async function scanAudioLibraryCatalog({ source, rootPath, forceRescan = false } = {}) {
+  return perfTracker.time(
+    "audio-library-scan",
+    async () => {
+      if (!canManageAudioLibraryAssets()) {
+        throw new Error("GM permissions are required to scan audio libraries.");
+      }
+      const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
+      const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
+      const sourceValidationMessage = getAudioLibrarySourceInteractionError(nextSource);
+      if (sourceValidationMessage) throw new Error(sourceValidationMessage);
+      const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
+      if (pathValidationMessage) throw new Error(pathValidationMessage);
+
+      const scanCacheKey = audioLibraryScanCache.buildKey(nextSource, nextRootPath);
+      let files = null;
+      if (!forceRescan) {
+        files = audioLibraryScanCache.get(scanCacheKey);
+      }
+      if (files) {
+        perfTracker.increment("audio-library-scan-cache-hit", 1, {
+          source: nextSource,
+          rootPath: nextRootPath
+        });
+      } else {
+        perfTracker.increment("audio-library-scan-cache-miss", 1, {
+          source: nextSource,
+          rootPath: nextRootPath,
+          forceRescan: Boolean(forceRescan)
+        });
+        files = await browseAudioLibraryTree(nextSource, nextRootPath);
+        audioLibraryScanCache.set(scanCacheKey, files);
+      }
+      perfTracker.record("audio-library-scan-files", files.length, {
+        source: nextSource,
+        rootPath: nextRootPath
+      });
+      if (files.length <= 0) {
+        throw new Error(
+          `No audio files were found in "${nextRootPath}". Confirm this is a Foundry or Forge asset folder and not a local filesystem path.`
+        );
+      }
+      const items = files
+        .map((path) => {
+          const inferred = inferAudioLibraryClassification(path, nextRootPath);
+          const stableId = normalizeAudioLibraryRootPath(path);
+          return normalizeAudioLibraryItem({
+            id: stableId,
+            path,
+            ...inferred
+          });
+        })
+        .filter(Boolean);
+
+      perfTracker.record("audio-library-scan-items", items.length, {
+        source: nextSource,
+        rootPath: nextRootPath
+      });
+
+      const catalog = normalizeAudioLibraryCatalog({
+        version: AUDIO_LIBRARY_VERSION,
+        source: nextSource,
+        rootPath: nextRootPath,
+        scannedAt: Date.now(),
+        scannedBy: String(game.user?.name ?? "GM"),
+        items
+      });
+
+      const catalogSignature = audioLibraryCatalogSignatureTools.buildCatalogSignature(catalog);
+      const existingCatalog = normalizeAudioLibraryCatalog(getStoredAudioLibraryCatalog());
+      const existingCatalogSignature = audioLibraryCatalogSignatureTools.buildStoredCatalogSignature(existingCatalog);
+      const catalogChanged = forceRescan || !Object.is(catalogSignature, existingCatalogSignature);
+
+      if (catalogChanged) {
+        await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_SOURCE, catalog.source);
+        await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_ROOT, catalog.rootPath);
+        await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, catalog);
+        saveSharedAudioLibraryCatalog(catalog);
+        perfTracker.increment("audio-library-scan-settings-write", 1, {
+          source: nextSource,
+          rootPath: nextRootPath,
+          forceRescan: Boolean(forceRescan)
+        });
+      } else {
+        perfTracker.increment("audio-library-scan-settings-skip", 1, {
+          source: nextSource,
+          rootPath: nextRootPath
+        });
+      }
+
+      audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
+      setSelectedAudioLibraryTrackSelectionIds([]);
+      setSelectedAudioMixTrackSelectionIds([]);
+      audioLibraryUiDraftActions.setDraftFromCatalog({
+        source: catalog.source,
+        rootPath: catalog.rootPath
+      });
+      clearAudioLibraryError();
+      notifyUiInfoThrottled(`Audio library synced: ${catalog.items.length} track(s) indexed.`, {
+        key: "audio-library-scan-complete",
+        ttlMs: 1800
+      });
+      queueAudioLibraryMetadataWarmup({ catalog, delayMs: 120 });
+      refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+      emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+      return catalog;
+    },
+    {
+      source: String(source ?? ""),
+      rootPath: String(rootPath ?? "")
+    }
+  );
+}
+
+async function clearAudioLibraryCatalog() {
+  if (!canManageAudioLibraryAssets()) {
+    ui.notifications?.warn("Only the GM can clear the audio library catalog.");
+    return false;
+  }
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, buildDefaultAudioLibraryCatalog());
+  saveSharedAudioLibraryCatalog(buildDefaultAudioLibraryCatalog());
+  audioLibraryUiState.selectedTrackId = "";
+  setSelectedAudioLibraryTrackSelectionIds([]);
+  setSelectedAudioMixTrackSelectionIds([]);
+  clearAudioLibraryError();
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+function setAudioLibraryDraftField(actionElement) {
+  return audioLibraryUiDraftActions.setAudioLibraryDraftField(actionElement);
+}
+
+async function openAudioLibraryRootPicker() {
+  return audioLibraryUiPickerUploadActions.openAudioLibraryRootPicker();
+}
+
+async function uploadLocalAudioFolderToLibrary() {
+  return audioLibraryUiPickerUploadActions.uploadLocalAudioFolderToLibrary();
+}
+
+function setAudioLibraryFilterField(actionElement) {
+  return audioLibraryUiFilterActions.setAudioLibraryFilterField(actionElement);
+}
+
+function setAudioLibraryView(actionElement) {
+  return audioLibraryUiSelectionActions.setAudioLibraryView(actionElement);
+}
+
+function setAudioMixTrackBrowserView(actionElement) {
+  return audioLibraryUiSelectionActions.setAudioMixTrackBrowserView(actionElement);
+}
+
+function selectAudioLibraryTrack(actionElement) {
+  return audioLibraryUiSelectionActions.selectAudioLibraryTrack(actionElement);
+}
+
+function toggleAudioLibraryTrackSelection(actionElement) {
+  return audioLibraryUiSelectionActions.toggleAudioLibraryTrackSelection(actionElement);
+}
+
+function selectVisibleAudioLibraryTracks() {
+  return audioLibraryUiSelectionActions.selectVisibleAudioLibraryTracks();
+}
+
+function clearAudioLibraryTrackSelections() {
+  return audioLibraryUiSelectionActions.clearAudioLibraryTrackSelections();
+}
+
+function toggleAudioMixTrackSelection(actionElement) {
+  return audioLibraryUiSelectionActions.toggleAudioMixTrackSelection(actionElement);
+}
+
+function getVisibleAudioMixTrackBrowserCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  return audioLibraryUiSelectionActions.getVisibleAudioMixTrackBrowserCandidates(catalog, preset);
+}
+
+function selectVisibleAudioMixTracks() {
+  return audioLibraryUiSelectionActions.selectVisibleAudioMixTracks();
+}
+
+function clearAudioMixTrackSelections() {
+  return audioLibraryUiSelectionActions.clearAudioMixTrackSelections();
+}
+
+function selectAudioMixPreset(actionElement) {
+  return audioLibraryUiSelectionActions.selectAudioMixPreset(actionElement);
+}
+
+function changeAudioMixTrackBrowserPage(actionElement) {
+  return audioLibraryUiSelectionActions.changeAudioMixTrackBrowserPage(actionElement);
+}
+
+async function saveAudioMixPresetStore(store) {
+  return audioStore.saveAudioMixPresetStore(store);
+}
+
+async function saveAudioLibraryHiddenTrackStore(store) {
+  return audioStore.saveAudioLibraryHiddenTrackStore(store);
+}
+
+async function updateStoredAudioLibraryHiddenTracks(mutator) {
+  return audioStore.updateStoredAudioLibraryHiddenTracks(mutator);
+}
+
+async function updateStoredAudioMixPresets(mutator) {
+  return audioStore.updateStoredAudioMixPresets(mutator);
+}
+
+function buildCustomAudioMixPresetSeed(seedPreset = getSelectedAudioMixPreset()) {
+  return audioMixPresetManager.buildCustomAudioMixPresetSeed(seedPreset);
+}
+
+async function createAudioMixPresetFromSelection() {
+  try {
+    const preset = await audioMixPresetManager.createAudioMixPresetFromSelection();
+    const normalizedPresetId = String(preset?.id ?? "").trim();
+    if (
+      normalizedPresetId &&
+      String(getAudioMixPresetById(normalizedPresetId)?.id ?? "").trim() === normalizedPresetId
+    ) {
+      return preset;
+    }
+  } catch (error) {
+    console.error(`${MODULE_ID} | audio preset manager create failed`, error);
+  }
+
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can create Party Operations mix presets.");
+    return null;
+  }
+
+  const seedPreset = getSelectedAudioMixPreset();
+  const baseLabel = String(seedPreset?.label ?? "Mix").trim() || "Mix";
+  const preset = normalizeAudioMixPresetDefinition(
+    {
+      id: `custom-${foundry.utils.randomID()}`,
+      label: `New ${baseLabel} Mix`,
+      description: String(seedPreset?.description ?? "Custom ambient playlist.").trim() || "Custom ambient playlist.",
+      kindFocus: seedPreset?.kindFocus ?? seedPreset?.preferredKinds?.[0] ?? "music",
+      usageFocus: seedPreset?.usageFocus ?? seedPreset?.preferredUsage?.[0] ?? "general",
+      searchTokens: seedPreset?.searchTokens ?? [],
+      channel:
+        seedPreset?.channel ?? inferAudioMixChannelForKind(seedPreset?.kindFocus ?? seedPreset?.preferredKinds?.[0]),
+      volume: seedPreset?.volume ?? 0.5,
+      fade: seedPreset?.fade ?? 1200,
+      playbackMode: seedPreset?.playbackMode ?? (seedPreset?.repeat ? "repeat" : "single"),
+      trackIds: normalizeAudioMixPresetTrackIds(seedPreset?.trackIds ?? [])
+    },
+    { isCustom: true }
+  );
+  await updateStoredAudioMixPresets((store) => {
+    store.presets.push(preset);
+    return store;
+  });
+  audioLibraryUiState.selectedMixPresetId = preset.id;
+  setAudioMixStatus(`Created and saved custom preset: ${preset.label}`);
+  return preset;
+}
+
+function getSelectedCustomAudioMixPreset() {
+  return audioMixPresetManager.getSelectedCustomAudioMixPreset();
+}
+
+function getSelectedEditableAudioMixPreset() {
+  return audioMixPresetManager.getSelectedEditableAudioMixPreset();
+}
+
+function isBuiltInAudioMixPreset(preset) {
+  return audioMixPresetManager.isBuiltInAudioMixPreset(preset);
+}
+
+async function updateSelectedAudioMixPreset(mutator) {
+  return audioMixPresetManager.updateSelectedAudioMixPreset(mutator);
+}
+
+async function promptAndUpdateSelectedAudioMixPresetField(field) {
+  return audioMixPresetManager.promptAndUpdateSelectedAudioMixPresetField(field);
+}
+
+async function setSelectedAudioMixPresetTextField(actionElement) {
+  return audioMixPresetManager.setSelectedAudioMixPresetTextField(actionElement);
+}
+
+async function setSelectedAudioMixPresetOption(actionElement) {
+  return audioMixPresetManager.setSelectedAudioMixPresetOption(actionElement);
+}
+
+async function deleteSelectedAudioMixPreset() {
+  return audioMixPresetManager.deleteSelectedAudioMixPreset();
+}
+
+async function addTrackToSelectedAudioMixPreset(trackId) {
+  return audioMixPresetManager.addTrackToSelectedAudioMixPreset(trackId);
+}
+
+async function addTracksToSelectedAudioMixPreset(trackIds = []) {
+  return audioMixPresetManager.addTracksToSelectedAudioMixPreset(trackIds);
+}
+
+async function clearSelectedAudioMixPresetTrackList() {
+  return audioMixPresetManager.clearSelectedAudioMixPresetTrackList();
+}
+
+async function addSelectedLibraryTrackToAudioMixPreset() {
+  return audioMixPresetManager.addSelectedLibraryTrackToAudioMixPreset();
+}
+
+async function addSelectedAudioMixTracksToPreset() {
+  return audioMixPresetManager.addSelectedAudioMixTracksToPreset();
+}
+
+function getAudioMixCurrentInsertionIndex(preset = getSelectedCustomAudioMixPreset()) {
+  return audioMixPresetManager.getAudioMixCurrentInsertionIndex(preset);
+}
+
+function buildReorderedAudioMixTrackIds(trackIds = [], trackId, targetIndex) {
+  return audioMixPresetManager.buildReorderedAudioMixTrackIds(trackIds, trackId, targetIndex);
+}
+
+async function syncSelectedAudioMixPresetTrackIdsToLiveQueue(trackIds, preset = getSelectedEditableAudioMixPreset()) {
+  const normalizedTrackIds = normalizeAudioMixPresetTrackIds(trackIds);
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!playlist || !preset || String(mixState.presetId ?? "").trim() !== String(preset.id ?? "").trim()) {
+    return false;
+  }
+  const activeTrackId = String(mixState.activeTrackId ?? "").trim();
+  const activeIndex = normalizedTrackIds.indexOf(activeTrackId);
+  const fallbackIndex = Math.min(Math.max(0, mixState.currentIndex), Math.max(0, normalizedTrackIds.length - 1));
+  await setAudioMixStateFlag(playlist, {
+    ...mixState,
+    queueTrackIds: normalizedTrackIds,
+    currentIndex: activeIndex >= 0 ? activeIndex : fallbackIndex,
+    updatedAt: Date.now()
+  });
+  return true;
+}
+
+async function clearManagedAudioMixQueueForPreset(preset = getSelectedEditableAudioMixPreset(), options = {}) {
+  const normalizedPresetId = String(preset?.id ?? "").trim();
+  if (!normalizedPresetId) return false;
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!playlist || String(mixState.presetId ?? "").trim() !== normalizedPresetId) {
+    return false;
+  }
+  if (options?.stopPlayback !== false) {
+    await stopManagedAudioMixPlaylist(playlist);
+  }
+  const nextPresetId = String(options?.nextPresetId ?? normalizedPresetId).trim() || normalizedPresetId;
+  await setAudioMixStateFlag(playlist, {
+    ...mixState,
+    presetId: nextPresetId,
+    activeTrackId: "",
+    activeTrackName: "",
+    queueTrackIds: [],
+    currentIndex: 0,
+    updatedAt: Date.now()
+  });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+async function queueTrackNextInSelectedAudioMixPreset(trackId) {
+  return audioMixPresetManager.queueTrackNextInSelectedAudioMixPreset(trackId);
+}
+
+async function moveTrackToIndexInSelectedAudioMixPreset(trackId, targetIndex = 0) {
+  return audioMixPresetManager.moveTrackToIndexInSelectedAudioMixPreset(trackId, targetIndex);
+}
+
+async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") {
+  return audioMixPresetManager.moveTrackWithinSelectedAudioMixPreset(trackId, direction);
+}
+
+async function moveTrackToTopInSelectedAudioMixPreset(trackId) {
+  return audioMixPresetManager.moveTrackToTopInSelectedAudioMixPreset(trackId);
+}
+
+async function removeTrackFromSelectedAudioMixPreset(trackId) {
+  return audioMixPresetManager.removeTrackFromSelectedAudioMixPreset(trackId);
+}
+
+async function removeTrackFromAllAudioMixPresets(trackId) {
+  return removeTracksFromAllAudioMixPresets([trackId]);
+}
+
+async function removeTracksFromAllAudioMixPresets(trackIds = []) {
+  const normalizedTrackIds = normalizeAudioLibraryTrackSelectionIds(trackIds);
+  if (normalizedTrackIds.length < 1) return false;
+  const hiddenTrackIdSet = new Set(normalizedTrackIds);
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = (store.presets ?? []).map((entry) => ({
+      ...entry,
+      trackIds: normalizeAudioMixPresetTrackIds(
+        (entry?.trackIds ?? []).filter((entryTrackId) => !hiddenTrackIdSet.has(entryTrackId))
+      )
+    }));
+
+    const nextOverrides = {};
+    for (const [presetId, entry] of Object.entries(store.overrides ?? {})) {
+      nextOverrides[presetId] = {
+        ...entry,
+        trackIds: normalizeAudioMixPresetTrackIds(
+          (entry?.trackIds ?? []).filter((entryTrackId) => !hiddenTrackIdSet.has(entryTrackId))
+        )
+      };
+    }
+    store.overrides = nextOverrides;
+    return store;
+  });
+  return true;
+}
+
+async function hideAudioLibraryTrack(trackId) {
+  return hideAudioLibraryTracks([trackId]);
+}
+
+async function hideSelectedAudioLibraryTracks() {
+  const selectedTrackIds = getSelectedAudioLibraryTrackSelectionIds();
+  if (selectedTrackIds.length < 1) {
+    ui.notifications?.warn("Check one or more curated results first.");
+    return false;
+  }
+  return hideAudioLibraryTracks(selectedTrackIds);
+}
+
+async function hideAudioLibraryTracks(trackIds = []) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can hide Party Operations audio tracks.");
+    return false;
+  }
+  const normalizedTrackIds = normalizeAudioLibraryTrackSelectionIds(trackIds);
+  if (normalizedTrackIds.length < 1) return false;
+  const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
+  const hiddenTrackIdSet = new Set(getHiddenAudioLibraryTrackIds());
+  const targetTrackIdSet = new Set(normalizedTrackIds);
+  const tracks = rawCatalog.items.filter((item) => targetTrackIdSet.has(item.id) && !hiddenTrackIdSet.has(item.id));
+  if (tracks.length < 1) return false;
+  const idsToHide = tracks.map((item) => item.id);
+  const idsToHideSet = new Set(idsToHide);
+  const activePresetId = getAudioMixStateFlag(getManagedAudioMixPlaylist()).presetId;
+
+  await updateStoredAudioLibraryHiddenTracks((store) => ({
+    ...store,
+    trackIds: normalizeAudioMixPresetTrackIds([...(store?.trackIds ?? []), ...idsToHide])
+  }));
+  await removeTracksFromAllAudioMixPresets(idsToHide);
+  const activePreset = getAudioMixPresetById(activePresetId || getSelectedAudioMixPreset().id);
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(activePreset.trackIds ?? [], activePreset);
+
+  const visibleCatalog = getAudioLibraryCatalog();
+  if (idsToHideSet.has(String(audioLibraryUiState.selectedTrackId ?? "").trim())) {
+    audioLibraryUiState.selectedTrackId = visibleCatalog.items[0]?.id ?? "";
+  }
+  setSelectedAudioLibraryTrackSelectionIds(
+    getSelectedAudioLibraryTrackSelectionIds().filter((trackId) => !idsToHideSet.has(trackId))
+  );
+  setAudioMixStatus(
+    tracks.length === 1 ? `Hidden audio track: ${tracks[0].name}` : `Hidden ${tracks.length} audio tracks.`
+  );
+  return true;
+}
+
+async function restoreHiddenAudioLibraryTrack(trackId) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can restore Party Operations audio tracks.");
+    return false;
+  }
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return false;
+  await updateStoredAudioLibraryHiddenTracks((store) => ({
+    ...store,
+    trackIds: normalizeAudioMixPresetTrackIds((store?.trackIds ?? []).filter((entry) => entry !== normalizedTrackId))
+  }));
+  audioLibraryUiState.selectedTrackId = normalizedTrackId;
+  setAudioMixStatus("Restored audio track to the library.");
+  return true;
+}
+
+async function restoreAllHiddenAudioLibraryTracks() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can restore Party Operations audio tracks.");
+    return false;
+  }
+  await saveAudioLibraryHiddenTrackStore(buildDefaultAudioLibraryHiddenTrackStore());
+  setAudioMixStatus("Restored all hidden audio tracks.");
+  return true;
+}
+
+function clearAudioMixStatus() {
+  audioLibraryUiState.mixStatus = "";
+}
+
+function setAudioMixStatus(message = "") {
+  audioLibraryUiState.mixStatus = String(message ?? "").trim();
+}
+
+function getAudioMixPresetText(item) {
+  return `${item.name} ${item.category} ${item.subcategory} ${item.tags.join(" ")}`.toLowerCase();
+}
+
+function scoreAudioTrackForMixPreset(item, preset) {
+  if (!item || !preset) return 0;
+  const preferredKinds = Array.isArray(preset.preferredKinds) ? preset.preferredKinds : [];
+  const preferredUsage = Array.isArray(preset.preferredUsage) ? preset.preferredUsage : [];
+  const searchTokens = Array.isArray(preset.searchTokens) ? preset.searchTokens : [];
+  const text = getAudioMixPresetText(item);
+  let score = 0;
+
+  if (preferredKinds.includes(item.kind)) score += 10;
+  else if (item.kind === "music" && preferredKinds.includes("ambience")) score += 3;
+
+  if (preferredUsage.includes(item.usage)) score += 12;
+  else if (item.usage === "general") score += 3;
+
+  for (const token of searchTokens) {
+    const normalizedToken = String(token ?? "")
+      .trim()
+      .toLowerCase();
+    if (!normalizedToken) continue;
+    if (text.includes(normalizedToken)) score += 4;
+  }
+
+  if (item.usage === "scifi" && preset.id !== "stingers") score -= 8;
+  if (item.kind === "voice" && preset.id !== "stingers") score -= 2;
+  return score;
+}
+
+function buildAudioMixAssignedCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  const trackIds = Array.isArray(preset?.trackIds) ? preset.trackIds : [];
+  return trackIds
+    .map((trackId, index) => {
+      const item = catalog.items.find((entry) => entry.id === trackId);
+      if (!item) return null;
+      return {
+        item,
+        score: Math.max(1, 1000 - index)
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset(), { excludeTrackIds = [] } = {}) {
+  const excluded = new Set(normalizeAudioMixPresetTrackIds(excludeTrackIds));
+  const scored = catalog.items
+    .map((item) => ({
+      item,
+      score: scoreAudioTrackForMixPreset(item, preset)
+    }))
+    .filter((entry) => entry.score > 0 && !excluded.has(entry.item.id))
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return left.item.name.localeCompare(right.item.name);
+    });
+  if (scored.length > 0) return scored;
+
+  return catalog.items
+    .filter(
+      (item) =>
+        ((preset.preferredKinds ?? []).includes(item.kind) || (preset.preferredUsage ?? []).includes(item.usage)) &&
+        !excluded.has(item.id)
+    )
+    .map((item) => ({ item, score: 1 }))
+    .sort((left, right) => left.item.name.localeCompare(right.item.name));
+}
+
+function getPlayableAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  if (Array.isArray(preset?.trackIds) && preset.trackIds.length > 0)
+    return buildAudioMixAssignedCandidates(catalog, preset);
+  return buildAudioMixCandidates(catalog, preset);
+}
+
+function getManagedAudioMixPlaylist() {
+  const playlists = Array.from(game?.playlists?.contents ?? []);
+  return (
+    playlists.find((playlist) => playlist.getFlag?.(MODULE_ID, "managedAudioMixboard")) ??
+    playlists.find((playlist) => String(playlist?.name ?? "").trim() === AUDIO_MIX_PLAYLIST_NAME) ??
+    null
+  );
+}
+
+function isManagedAudioMixPlaylist(playlist) {
+  if (!playlist) return false;
+  if (playlist.getFlag?.(MODULE_ID, "managedAudioMixboard")) return true;
+  return String(playlist?.name ?? "").trim() === AUDIO_MIX_PLAYLIST_NAME;
+}
+
+function getManagedAudioMixTrackIdFromPlaylistSound(sound) {
+  return normalizeAudioLibraryRootPath(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "");
+}
+
+function getManagedAudioMixPlayingSound(playlist = getManagedAudioMixPlaylist(), preferredSoundId = "") {
+  const sounds = Array.from(playlist?.sounds?.contents ?? []);
+  const normalizedPreferredId = String(preferredSoundId ?? "").trim();
+  return (
+    sounds.find((sound) => Boolean(sound?.playing) && String(sound?.id ?? "").trim() === normalizedPreferredId) ??
+    sounds.find((sound) => Boolean(sound?.playing)) ??
+    null
+  );
+}
+
+function getManagedAudioMixSoundFromState(
+  playlist = getManagedAudioMixPlaylist(),
+  mixState = getAudioMixStateFlag(playlist)
+) {
+  const sounds = Array.from(playlist?.sounds?.contents ?? []);
+  const preferredSoundId = String(mixState?.playlistSoundId ?? "").trim();
+  const activeTrackId = String(mixState?.activeTrackId ?? "").trim();
+  const activeTrackPath = normalizeAudioLibraryRootPath(mixState?.activeTrackPath ?? "");
+  return (
+    sounds.find((sound) => String(sound?.id ?? "").trim() === preferredSoundId) ??
+    sounds.find((sound) => getManagedAudioMixTrackIdFromPlaylistSound(sound) === activeTrackId) ??
+    sounds.find((sound) => normalizeAudioLibraryRootPath(sound?.path ?? "") === activeTrackPath) ??
+    getManagedAudioMixPlayingSound(playlist, preferredSoundId) ??
+    null
+  );
+}
+
+async function syncManagedAudioMixStateFromPlaylist(playlist = getManagedAudioMixPlaylist(), options = {}) {
+  if (!game.user?.isGM || !playlist) return null;
+  const priorState = options?.priorState ?? getAudioMixStateFlag(playlist);
+  const preferredSoundId = String(options?.playlistSoundId ?? priorState.playlistSoundId ?? "").trim();
+  const activeSound = getManagedAudioMixPlayingSound(playlist, preferredSoundId);
+  const shouldRefresh = options?.refresh === true;
+  const fallbackPreset = getAudioMixPresetById(
+    priorState.presetId || options?.presetId || getSelectedAudioMixPreset().id
+  );
+
+  if (!activeSound) {
+    const nextState = await setAudioMixStateFlag(playlist, {
+      ...priorState,
+      presetId: String(priorState.presetId ?? fallbackPreset?.id ?? "").trim(),
+      activeTrackId: "",
+      activeTrackName: "",
+      activeTrackPath: "",
+      playlistSoundId: "",
+      playbackId: options?.preservePlaybackId ? String(priorState.playbackId ?? "").trim() : "",
+      isPlaying: false,
+      startedAt: 0,
+      updatedAt: Date.now()
+    });
+    if (shouldRefresh) {
+      refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+      emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    }
+    return nextState;
+  }
+
+  const activeSoundId = String(activeSound?.id ?? "").trim();
+  const activeTrackId =
+    getManagedAudioMixTrackIdFromPlaylistSound(activeSound) ||
+    normalizeAudioLibraryRootPath(activeSound?.path ?? "") ||
+    String(priorState.activeTrackId ?? "").trim();
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(priorState.queueTrackIds ?? []);
+  const currentIndex = queueTrackIds.indexOf(activeTrackId);
+  const isSameActiveSound =
+    Boolean(priorState.isPlaying) && String(priorState.playlistSoundId ?? "").trim() === activeSoundId;
+  const nextState = await setAudioMixStateFlag(playlist, {
+    ...priorState,
+    presetId: String(
+      activeSound?.getFlag?.(MODULE_ID, "mixPresetId") ??
+        options?.presetId ??
+        priorState.presetId ??
+        fallbackPreset?.id ??
+        ""
+    ).trim(),
+    activeTrackId,
+    activeTrackName: String(activeSound?.name ?? priorState.activeTrackName ?? "").trim(),
+    activeTrackPath: normalizeAudioLibraryRootPath(activeSound?.path ?? priorState.activeTrackPath ?? ""),
+    playlistSoundId: activeSoundId,
+    playbackId: isSameActiveSound
+      ? String(priorState.playbackId ?? "").trim() || foundry.utils.randomID()
+      : String(options?.playbackId ?? "").trim() || foundry.utils.randomID(),
+    currentIndex:
+      currentIndex >= 0
+        ? currentIndex
+        : Math.max(0, Math.floor(Number(options?.currentIndex ?? priorState.currentIndex ?? 0) || 0)),
+    volume: normalizeAudioMixVolume(activeSound?.volume ?? priorState.volume ?? fallbackPreset?.volume ?? 0.5),
+    channel: normalizeAudioMixChannel(activeSound?.channel ?? priorState.channel ?? fallbackPreset?.channel),
+    fade: Math.max(0, Math.floor(Number(activeSound?.fade ?? priorState.fade ?? fallbackPreset?.fade ?? 0) || 0)),
+    isPlaying: true,
+    startedAt: isSameActiveSound
+      ? Math.max(0, Number(priorState.startedAt ?? 0) || 0)
+      : Math.max(0, Number(options?.startedAt ?? Date.now()) || Date.now()),
+    updatedAt: Date.now()
+  });
+  if (shouldRefresh) {
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  }
+  return nextState;
+}
+
+function hideManagedAudioMixPlaylistUi(root = document) {
+  // Keep the managed playlist visible in Foundry's audio deck so deck controls
+  // remain the source of truth for playback.
+  return root;
+}
+
+function shouldSequenceAudioMixPresetPlayback(preset, candidateCount = 0) {
+  return Number(candidateCount ?? 0) > 1;
+}
+
+function getAudioMixPlaylistMode(preset, candidateCount = 0) {
+  const disabled = CONST?.PLAYLIST_MODES?.DISABLED ?? 0;
+  const sequential = CONST?.PLAYLIST_MODES?.SEQUENTIAL ?? disabled;
+  const shuffle = CONST?.PLAYLIST_MODES?.SHUFFLE ?? sequential;
+  if (!shouldSequenceAudioMixPresetPlayback(preset, candidateCount)) return disabled;
+  return preset?.repeat ? shuffle : sequential;
+}
+
+async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
+  const baseData = {
+    name: AUDIO_MIX_PLAYLIST_NAME,
+    description: `Managed by Party Operations for the ${preset.label} mix preset.`,
+    mode: getAudioMixPlaylistMode(preset, candidateCount),
+    sorting: CONST?.PLAYLIST_SORT_MODES?.MANUAL ?? 0,
+    channel: normalizeAudioMixChannel(preset.channel),
+    fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0))
+  };
+  let playlist = getManagedAudioMixPlaylist();
+  if (!playlist) {
+    playlist = await Playlist.create({
+      ...baseData,
+      flags: {
+        [MODULE_ID]: {
+          managedAudioMixboard: true
+        }
+      }
+    });
+    hideManagedAudioMixPlaylistUi(document);
+    return playlist;
+  }
+
+  await playlist.update(baseData);
+  if (!playlist.getFlag?.(MODULE_ID, "managedAudioMixboard")) {
+    await playlist.setFlag(MODULE_ID, "managedAudioMixboard", true);
+  }
+  hideManagedAudioMixPlaylistUi(document);
+  return playlist;
+}
+
+async function syncAudioMixPlaylistSounds(playlist, preset, candidates) {
+  const rows = candidates.slice(0, 24);
+  const existingIds = Array.from(playlist?.sounds?.contents ?? [])
+    .map((sound) => sound.id)
+    .filter(Boolean);
+  if (existingIds.length > 0) {
+    await playlist.deleteEmbeddedDocuments("PlaylistSound", existingIds);
+  }
+  if (rows.length <= 0) return [];
+
+  const shouldSequence = shouldSequenceAudioMixPresetPlayback(preset, rows.length);
+  const sounds = rows.map(({ item, score }, index) => ({
+    name: item.name,
+    path: item.path,
+    channel: normalizeAudioMixChannel(preset.channel),
+    repeat: shouldSequence ? false : Boolean(preset.repeat),
+    fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0)),
+    volume: Math.max(0, Math.min(1, Number(preset.volume ?? 0.5) || 0.5)),
+    sort: index * 10,
+    flags: {
+      [MODULE_ID]: {
+        audioLibraryTrackId: item.id,
+        mixPresetId: preset.id,
+        mixScore: score
+      }
+    }
+  }));
+  return playlist.createEmbeddedDocuments("PlaylistSound", sounds);
+}
+
+function pickAudioMixCandidate(candidates, excludedTrackId = "") {
+  const normalizedExcludedId = String(excludedTrackId ?? "").trim();
+  const pool = candidates.filter(({ item }) => item.id !== normalizedExcludedId);
+  const effectivePool = pool.length > 0 ? pool : candidates;
+  if (effectivePool.length <= 0) return null;
+  const topSlice = effectivePool.slice(0, Math.min(6, effectivePool.length));
+  return topSlice[Math.floor(Math.random() * topSlice.length)] ?? effectivePool[0];
+}
+
+function normalizeAudioMixQueueTrackIds(trackIds = [], candidates = []) {
+  const available = new Set(
+    (Array.isArray(candidates) ? candidates : []).map(({ item }) => String(item?.id ?? "").trim()).filter(Boolean)
+  );
+  return normalizeAudioMixPresetTrackIds(trackIds).filter((entry) => available.has(entry));
+}
+
+function buildOrderedAudioMixCandidates(candidates, options = {}) {
+  const rows = Array.isArray(candidates) ? candidates.slice() : [];
+  const candidateMap = new Map(rows.map((entry) => [String(entry?.item?.id ?? "").trim(), entry]));
+  const queuedIds = normalizeAudioMixQueueTrackIds(options.queueTrackIds, rows);
+  let ordered = queuedIds.map((trackId) => candidateMap.get(trackId) ?? null).filter(Boolean);
+  if (ordered.length <= 0) ordered = rows;
+  const preferredTrackId = String(options.preferredTrackId ?? "").trim();
+  // Preserve the live/manual queue order when one already exists. Preferred
+  // track selection should choose the active row, not rewrite the queue.
+  if (preferredTrackId && queuedIds.length <= 0) {
+    const preferred = candidateMap.get(preferredTrackId) ?? null;
+    if (preferred) {
+      ordered = [preferred, ...ordered.filter((entry) => String(entry?.item?.id ?? "").trim() !== preferredTrackId)];
+    }
+  }
+  return ordered;
+}
+
+async function stopManagedAudioMixPlaylist(playlist) {
+  if (!playlist) return false;
+  if (typeof playlist.stopAll === "function") {
+    await playlist.stopAll();
+    return true;
+  }
+  if (typeof playlist.stopAllSounds === "function") {
+    await playlist.stopAllSounds();
+    return true;
+  }
+  return false;
+}
+
+function getManagedAudioMixPlaybackStateInput(input = {}) {
+  return {
+    presetId: String(input?.presetId ?? "").trim(),
+    activeTrackId: normalizeAudioLibraryRootPath(input?.activeTrackId ?? ""),
+    activeTrackName: String(input?.activeTrackName ?? "").trim(),
+    activeTrackPath: normalizeAudioLibraryRootPath(input?.activeTrackPath ?? ""),
+    playlistSoundId: String(input?.playlistSoundId ?? "").trim(),
+    playbackId: String(input?.playbackId ?? "").trim(),
+    queueTrackIds: normalizeAudioMixPresetTrackIds(input?.queueTrackIds ?? []),
+    currentIndex: Math.max(0, Math.floor(Number(input?.currentIndex ?? 0) || 0)),
+    volume: normalizeAudioMixVolume(input?.volume ?? 0.5),
+    channel: normalizeAudioMixChannel(input?.channel),
+    fade: Math.max(0, Math.floor(Number(input?.fade ?? 0) || 0)),
+    isPlaying: Boolean(input?.isPlaying),
+    startedAt: Math.max(0, Number(input?.startedAt ?? 0) || 0),
+    updatedAt: Math.max(0, Number(input?.updatedAt ?? 0) || 0)
+  };
+}
+
+function getAudioMixStateFlag(playlist = getManagedAudioMixPlaylist()) {
+  return getManagedAudioMixPlaybackStateInput(playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {});
+}
+
+async function setAudioMixStateFlag(playlist, input = {}) {
+  if (!playlist?.setFlag) return null;
+  const next = getManagedAudioMixPlaybackStateInput({
+    ...input,
+    updatedAt: Number(input?.updatedAt ?? Date.now()) || Date.now()
+  });
+  await playlist.setFlag(MODULE_ID, "audioMixState", next);
+  return next;
+}
+
+function logManagedAudioMixDebug(message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  try {
+    if (details === null || details === undefined) {
+      console.debug(`[${MODULE_ID}][audio-mix] ${message}`);
+      return;
+    }
+    console.debug(`[${MODULE_ID}][audio-mix] ${message}`, details);
+  } catch {
+    // Never fail user actions because of logging.
+  }
+}
+
+async function handleManagedAudioMixTrackEnd(playbackId) {
+  if (!game.user?.isGM) return false;
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!mixState.isPlaying || String(mixState.playbackId ?? "").trim() !== String(playbackId ?? "").trim()) return false;
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  if (queueTrackIds.length <= 1) {
+    if (preset.repeat && queueTrackIds.length === 1) {
+      return playManagedAudioMixQueueAtIndex(0, { excludeTrackId: "" });
+    }
+    await stopAudioMixPlayback({ preserveQueue: true, statusMessage: `${preset.label} finished playing.` });
+    return true;
+  }
+  return playNextAudioMixTrack();
+}
+
+async function autoStartManagedAudioMixFromSavedState() {
+  if (!game.user?.isGM) return false;
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(
+    mixState.presetId || getSharedSelectedAudioMixPresetId() || getSelectedAudioMixPreset().id
+  );
+  const queuedTrackIds = normalizeAudioMixPresetTrackIds(
+    mixState.queueTrackIds?.length > 0 ? mixState.queueTrackIds : (preset?.trackIds ?? [])
+  );
+  if (queuedTrackIds.length <= 0) return false;
+  try {
+    await playAudioMixPresetById(preset.id, {
+      queueTrackIds: queuedTrackIds,
+      preferredTrackId: queuedTrackIds[0],
+      currentIndex: 0,
+      excludeTrackId: ""
+    });
+    return true;
+  } catch (error) {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: failed to auto-start saved audio mix`, error);
+    }
+    return false;
+  }
+}
+
+async function syncManagedAudioMixPlaybackForCurrentUser(options = {}) {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const allowAutostart = Boolean(options?.allowAutostart);
+  const activeSound = playlist ? getManagedAudioMixPlayingSound(playlist, mixState.playlistSoundId) : null;
+  logManagedAudioMixDebug("syncing managed audio mix playback", {
+    allowAutostart,
+    refresh: options?.refresh === true,
+    hasPlaylist: Boolean(playlist),
+    playlistId: String(playlist?.id ?? "").trim(),
+    mixPlaybackId: String(mixState?.playbackId ?? "").trim(),
+    mixPlaylistSoundId: String(mixState?.playlistSoundId ?? "").trim(),
+    activeSoundId: String(activeSound?.id ?? "").trim()
+  });
+
+  if (!playlist) {
+    if (allowAutostart && game.user?.isGM) {
+      return autoStartManagedAudioMixFromSavedState();
+    }
+    return false;
+  }
+
+  if (!activeSound) {
+    if (game.user?.isGM) {
+      await syncManagedAudioMixStateFromPlaylist(playlist, {
+        refresh: options?.refresh === true
+      });
+    }
+    if (allowAutostart && game.user?.isGM && !mixState.isPlaying) {
+      return autoStartManagedAudioMixFromSavedState();
+    }
+    return false;
+  }
+
+  const activeSoundId = String(activeSound?.id ?? "").trim();
+  let effectiveMixState = mixState;
+  const needsStateRefresh =
+    Boolean(game.user?.isGM) &&
+    (!mixState.isPlaying ||
+      !String(mixState.playbackId ?? "").trim() ||
+      String(mixState.playlistSoundId ?? "").trim() !== activeSoundId);
+  if (needsStateRefresh) {
+    effectiveMixState =
+      (await syncManagedAudioMixStateFromPlaylist(playlist, {
+        priorState: mixState,
+        playlistSoundId: activeSoundId,
+        refresh: options?.refresh === true
+      })) ?? mixState;
+  }
+
+  return Boolean(String(activeSound?.path ?? effectiveMixState.activeTrackPath ?? "").trim());
+}
+
+function queueManagedAudioMixPlaybackResync(delayMs = 60, options = {}) {
+  if (managedAudioMixResyncTimerId) {
+    window.clearTimeout(managedAudioMixResyncTimerId);
+    managedAudioMixResyncTimerId = null;
+  }
+  managedAudioMixResyncTimerId = window.setTimeout(
+    async () => {
+      managedAudioMixResyncTimerId = null;
+      if (game.user?.isGM && options?.syncState !== false) {
+        await syncManagedAudioMixStateFromPlaylist(options?.playlist ?? getManagedAudioMixPlaylist(), {
+          refresh: options?.refresh === true
+        });
+      }
+      await syncManagedAudioMixPlaybackForCurrentUser({
+        refresh: options?.refresh === true
+      });
+    },
+    Math.max(0, Math.floor(Number(delayMs ?? 60) || 60))
+  );
+}
+
+async function playAudioMixPresetById(presetId, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
+    return null;
+  }
+  const preset = getAudioMixPresetById(presetId);
+  const catalog = getAudioLibraryCatalog();
+  const queuedTrackIds = normalizeAudioMixPresetTrackIds(options.queueTrackIds ?? preset?.trackIds ?? []);
+  const candidates = buildAudioMixAssignedCandidates(catalog, {
+    ...preset,
+    trackIds: queuedTrackIds
+  });
+  if (candidates.length <= 0) {
+    throw new Error(`Add tracks from the Track Browser to the ${preset.label} queue before playing it.`);
+  }
+
+  const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
+  if (!playlist) throw new Error("The managed mix playlist could not be created.");
+  const priorState = getAudioMixStateFlag(playlist);
+  logManagedAudioMixDebug("preparing managed mix preset playback", {
+    presetId: String(preset?.id ?? "").trim(),
+    priorPlaybackId: String(priorState?.playbackId ?? "").trim(),
+    candidateCount: candidates.length,
+    queuedTrackCount: queuedTrackIds.length,
+    preferredTrackId: String(options?.preferredTrackId ?? "").trim()
+  });
+  await stopManagedAudioMixPlaylist(playlist);
+  const orderedCandidates = buildOrderedAudioMixCandidates(candidates, options);
+  const preferredTrackId = String(options.preferredTrackId ?? "").trim();
+  const chosenCandidate = preferredTrackId
+    ? (orderedCandidates.find(({ item }) => item.id === preferredTrackId) ??
+      pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId))
+    : pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId);
+  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, orderedCandidates);
+  const chosenSound =
+    Array.from(createdSounds ?? []).find(
+      (sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id
+    ) ??
+    createdSounds?.[0] ??
+    null;
+  if (!chosenSound) {
+    throw new Error(`Failed to prepare playback for the ${preset.label} mix.`);
+  }
+
+  const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
+  const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
+  const playbackId = foundry.utils.randomID();
+  const nextState = await setAudioMixStateFlag(playlist, {
+    presetId: preset.id,
+    activeTrackId: String(chosenCandidate?.item?.id ?? ""),
+    activeTrackName: String(chosenCandidate?.item?.name ?? chosenSound.name ?? ""),
+    activeTrackPath: String(chosenCandidate?.item?.path ?? chosenSound.path ?? ""),
+    playlistSoundId: String(chosenSound?.id ?? ""),
+    playbackId,
+    queueTrackIds,
+    currentIndex,
+    volume: normalizeAudioMixVolume(preset.volume),
+    channel: normalizeAudioMixChannel(preset.channel),
+    fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0)),
+    isPlaying: true,
+    startedAt: Date.now(),
+    updatedAt: Date.now()
+  });
+  if (typeof playlist.playSound === "function") {
+    await playlist.playSound(chosenSound);
+  } else if (chosenSound?.id) {
+    await playlist.updateEmbeddedDocuments("PlaylistSound", [
+      {
+        _id: String(chosenSound.id),
+        playing: true
+      }
+    ]);
+  }
+  await syncManagedAudioMixStateFromPlaylist(playlist, {
+    priorState: nextState,
+    playlistSoundId: String(chosenSound?.id ?? ""),
+    presetId: preset.id,
+    playbackId,
+    currentIndex,
+    startedAt: nextState?.startedAt ?? Date.now()
+  });
+  setSelectedAudioMixPresetId(preset.id);
+  audioLibraryUiState.selectedTrackId = String(chosenCandidate?.item?.id ?? audioLibraryUiState.selectedTrackId);
+  setAudioMixStatus(`Playing ${preset.label}: ${String(chosenCandidate?.item?.name ?? chosenSound.name ?? "Track")}`);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return {
+    playlist,
+    preset,
+    sound: chosenSound,
+    track: chosenCandidate?.item ?? null
+  };
+}
+
+async function stopAudioMixPlayback(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can stop Party Operations mix playback.");
+    return false;
+  }
+  const playlist = getManagedAudioMixPlaylist();
+  const priorState = getAudioMixStateFlag(playlist);
+  logManagedAudioMixDebug("stopping managed mix playback", {
+    playlistId: String(playlist?.id ?? "").trim(),
+    preserveActiveTrack: options?.preserveActiveTrack === true,
+    preservePlaybackId: options?.preservePlaybackId === true,
+    preserveQueue: options?.preserveQueue === true,
+    priorPlaybackId: String(priorState?.playbackId ?? "").trim(),
+    priorPlaylistSoundId: String(priorState?.playlistSoundId ?? "").trim()
+  });
+  if (playlist) await stopManagedAudioMixPlaylist(playlist);
+  if (playlist) {
+    const preserveActiveTrack = options?.preserveActiveTrack === true;
+    const preservePlaybackId = options?.preservePlaybackId === true;
+    await setAudioMixStateFlag(playlist, {
+      ...priorState,
+      presetId: priorState.presetId || getSelectedAudioMixPreset().id,
+      activeTrackId: preserveActiveTrack ? String(priorState.activeTrackId ?? "").trim() : "",
+      activeTrackName: preserveActiveTrack ? String(priorState.activeTrackName ?? "").trim() : "",
+      activeTrackPath: preserveActiveTrack ? normalizeAudioLibraryRootPath(priorState.activeTrackPath ?? "") : "",
+      playlistSoundId: "",
+      playbackId: preservePlaybackId ? String(priorState.playbackId ?? "").trim() : "",
+      queueTrackIds: options?.preserveQueue
+        ? priorState.queueTrackIds
+        : normalizeAudioMixPresetTrackIds(priorState.queueTrackIds),
+      currentIndex: Math.max(0, Math.floor(Number(priorState.currentIndex ?? 0) || 0)),
+      isPlaying: false,
+      startedAt: 0,
+      updatedAt: Date.now()
+    });
+  }
+  setAudioMixStatus(String(options?.statusMessage ?? "Mix playback stopped."));
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+async function toggleAudioMixPlayback() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
+    return false;
+  }
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (mixState.isPlaying) {
+    const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+    return stopAudioMixPlayback({
+      preserveQueue: true,
+      preserveActiveTrack: true,
+      preservePlaybackId: true,
+      statusMessage: `${preset.label} paused.`
+    });
+  }
+
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  if (queueTrackIds.length > 0) {
+    const resumeIndex = Math.max(
+      0,
+      Math.min(queueTrackIds.length - 1, Math.floor(Number(mixState.currentIndex ?? 0) || 0))
+    );
+    return Boolean(await playManagedAudioMixQueueAtIndex(resumeIndex));
+  }
+
+  return Boolean(await playAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id));
+}
+
+async function syncLiveAudioMixPresetVolume(preset = getSelectedAudioMixPreset()) {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!playlist || !mixState.isPlaying) return false;
+  if (String(mixState.presetId ?? "").trim() !== String(preset?.id ?? "").trim()) return false;
+  const nextState = await setAudioMixStateFlag(playlist, {
+    ...mixState,
+    volume: normalizeAudioMixVolume(preset?.volume ?? mixState.volume),
+    channel: normalizeAudioMixChannel(preset?.channel ?? mixState.channel),
+    fade: Math.max(0, Math.floor(Number(preset?.fade ?? mixState.fade ?? 0) || 0)),
+    updatedAt: Date.now()
+  });
+  await playlist.update({
+    channel: nextState.channel,
+    fade: nextState.fade
+  });
+  const soundUpdates = Array.from(playlist?.sounds?.contents ?? [])
+    .map((sound) => ({
+      _id: String(sound?.id ?? "").trim(),
+      volume: nextState.volume,
+      channel: nextState.channel,
+      fade: nextState.fade
+    }))
+    .filter((update) => update._id);
+  if (soundUpdates.length > 0) {
+    await playlist.updateEmbeddedDocuments("PlaylistSound", soundUpdates);
+  }
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+async function playAudioMixCandidateByTrackId(trackId) {
+  const preset = getSelectedAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return false;
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(preset?.trackIds ?? []);
+  const previewQueueTrackIds = queueTrackIds.includes(normalizedTrackId) ? queueTrackIds : [normalizedTrackId];
+  return playAudioMixPresetById(preset.id, {
+    excludeTrackId: "",
+    preferredTrackId: normalizedTrackId,
+    queueTrackIds: previewQueueTrackIds
+  });
+}
+
+async function playManagedAudioMixQueueAtIndex(targetIndex, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
+    return null;
+  }
+  const catalog = getAudioLibraryCatalog();
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const candidates = getPlayableAudioMixCandidates(catalog, preset);
+  const queueTrackIds = normalizeAudioMixQueueTrackIds(mixState.queueTrackIds, candidates);
+  if (queueTrackIds.length <= 0) {
+    return playAudioMixPresetById(preset.id, {});
+  }
+  const normalizedIndex = Math.max(0, Math.min(queueTrackIds.length - 1, Math.floor(Number(targetIndex ?? 0) || 0)));
+  const preferredTrackId = queueTrackIds[normalizedIndex];
+  return playAudioMixPresetById(preset.id, {
+    queueTrackIds,
+    preferredTrackId,
+    currentIndex: normalizedIndex,
+    excludeTrackId: options.excludeTrackId ?? ""
+  });
+}
+
+async function playNextAudioMixTrack() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  if (queueTrackIds.length <= 0) {
+    return playAudioMixPresetById(preset.id);
+  }
+  const nextIndex = mixState.currentIndex + 1;
+  if (nextIndex >= queueTrackIds.length) {
+    if (!preset.repeat) {
+      await stopAudioMixPlayback();
+      setAudioMixStatus(`${preset.label} reached the end of the queue.`);
+      return null;
+    }
+    return playManagedAudioMixQueueAtIndex(0);
+  }
+  return playManagedAudioMixQueueAtIndex(nextIndex);
+}
+
+async function restartCurrentAudioMixTrack() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!mixState.activeTrackId) {
+    return playAudioMixPresetById(getSelectedAudioMixPreset().id);
+  }
+  return playManagedAudioMixQueueAtIndex(mixState.currentIndex);
+}
+
+async function queueSelectedTrackNext(actionElement) {
+  const preset = getSelectedAudioMixPreset();
+  const trackId =
+    String(actionElement?.dataset?.trackId ?? "").trim() || String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  if (!trackId) return false;
+  if (Array.isArray(preset?.trackIds)) return queueTrackNextInSelectedAudioMixPreset(trackId);
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  const currentIndex = Math.max(0, Math.floor(Number(mixState.currentIndex ?? 0) || 0));
+  const filtered = queueTrackIds.filter((entry) => entry !== trackId);
+  const targetIndex = Math.min(filtered.length, currentIndex + 1);
+  filtered.splice(targetIndex, 0, trackId);
+  if (playlist) {
+    await setAudioMixStateFlag(playlist, {
+      ...mixState,
+      queueTrackIds: filtered,
+      updatedAt: Date.now()
+    });
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    return true;
+  }
+  return false;
+}
+
+function getFilteredAudioLibraryItems(catalog) {
+  const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
+  return catalog.items.filter((item) => matchesAudioLibraryItemFilters(item, filters));
+}
+
+function normalizeAudioLibrarySearchMatchText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isAudioLibrarySubsequenceMatch(needle = "", haystack = "") {
+  if (!needle || !haystack || needle.length < 3) return false;
+  let index = 0;
+  for (const char of haystack) {
+    if (char === needle[index]) index += 1;
+    if (index >= needle.length) return true;
+  }
+  return false;
+}
+
+function isAudioLibraryFuzzyTokenMatch(token, candidateValues = []) {
+  const normalizedToken = normalizeAudioLibrarySearchMatchText(token).replace(/\s+/g, "");
+  if (!normalizedToken) return true;
+  return candidateValues.some((value) => {
+    const normalizedValue = normalizeAudioLibrarySearchMatchText(value);
+    if (!normalizedValue) return false;
+    const compactValue = normalizedValue.replace(/\s+/g, "");
+    return (
+      normalizedValue.includes(normalizedToken) ||
+      compactValue.includes(normalizedToken) ||
+      isAudioLibrarySubsequenceMatch(normalizedToken, compactValue)
+    );
+  });
+}
+
+function getAudioLibraryItemSearchValues(item = {}) {
+  return [
+    String(item?.name ?? ""),
+    ...(Array.isArray(item?.tags) ? item.tags : []),
+    String(item?.category ?? ""),
+    String(item?.subcategory ?? "")
+  ].filter(Boolean);
+}
+
+function buildAudioLibraryItemFilterTokenSet(item = {}) {
+  const tokens = new Set();
+  const categoryToken = buildAudioLibraryFilterToken("category", item?.category);
+  if (categoryToken) tokens.add(categoryToken);
+  const subcategoryToken = buildAudioLibraryFilterToken("subcategory", item?.subcategory);
+  if (subcategoryToken) tokens.add(subcategoryToken);
+  for (const tag of normalizeAudioLibraryTagList(item?.tags ?? [])) {
+    const token = buildAudioLibraryFilterToken("tag", tag);
+    if (token) tokens.add(token);
+  }
+  return tokens;
+}
+
+function matchesAudioLibraryItemFilters(
+  item = {},
+  filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters)
+) {
+  const normalizedFilters = normalizeAudioLibraryFilters(filters);
+  if (normalizedFilters.kind !== "all" && item.kind !== normalizedFilters.kind) return false;
+  if (normalizedFilters.usage !== "all" && item.usage !== normalizedFilters.usage) return false;
+  if (normalizedFilters.selectedTags.length > 0) {
+    const itemFilterTokens = buildAudioLibraryItemFilterTokenSet(item);
+    if (!normalizedFilters.selectedTags.some((tag) => itemFilterTokens.has(tag))) return false;
+  }
+  const searchTokens = normalizedFilters.search.split(/\s+/g).filter(Boolean);
+  if (searchTokens.length <= 0) return true;
+  const searchValues = getAudioLibraryItemSearchValues(item);
+  return searchTokens.every((token) => isAudioLibraryFuzzyTokenMatch(token, searchValues));
+}
+
+function filterAudioMixTrackCandidates(
+  candidates = [],
+  filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters)
+) {
+  const normalizedFilters = normalizeAudioLibraryFilters(filters);
+  return (Array.isArray(candidates) ? candidates : []).filter(({ item }) =>
+    matchesAudioLibraryItemFilters(item, normalizedFilters)
+  );
+}
+
+function buildAudioLibraryFilterOptions(catalog = getAudioLibraryCatalog()) {
+  const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
+  const selectedTagSet = new Set(filters.selectedTags);
+  const kindOptions = Object.entries(AUDIO_LIBRARY_KIND_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: filters.kind === value
+  }));
+  const usageOptions = Object.entries(AUDIO_LIBRARY_USAGE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: filters.usage === value
+  }));
+  const categoryGroupsByValue = new Map();
+  for (const item of Array.isArray(catalog?.items) ? catalog.items : []) {
+    const categoryLabel = String(item?.category ?? "").trim() || "Uncategorized";
+    const categoryValue = normalizeAudioLibraryTag(categoryLabel);
+    if (!categoryValue) continue;
+    let categoryGroup = categoryGroupsByValue.get(categoryValue);
+    if (!categoryGroup) {
+      categoryGroup = {
+        value: categoryValue,
+        label: categoryLabel,
+        count: 0,
+        subcategories: new Map()
+      };
+      categoryGroupsByValue.set(categoryValue, categoryGroup);
+    }
+    categoryGroup.count += 1;
+
+    const subcategoryLabel = String(item?.subcategory ?? "").trim();
+    const subcategoryValue = normalizeAudioLibraryTag(subcategoryLabel);
+    if (!subcategoryValue) continue;
+    const existingSubcategory = categoryGroup.subcategories.get(subcategoryValue) ?? {
+      value: subcategoryValue,
+      label: subcategoryLabel,
+      count: 0
+    };
+    existingSubcategory.count += 1;
+    categoryGroup.subcategories.set(subcategoryValue, existingSubcategory);
+  }
+  const compareAudioLibraryFilterRows = (left, right) => {
+    const selectedCompare = Number(Boolean(right?.selected)) - Number(Boolean(left?.selected));
+    if (selectedCompare !== 0) return selectedCompare;
+    const countCompare = Number(right?.count ?? 0) - Number(left?.count ?? 0);
+    if (countCompare !== 0) return countCompare;
+    return String(left?.label ?? "").localeCompare(String(right?.label ?? ""));
+  };
+  const categoryGroups = Array.from(categoryGroupsByValue.values())
+    .map((group) => {
+      const categoryToken = buildAudioLibraryFilterToken("category", group.value);
+      const selected = selectedTagSet.has(categoryToken);
+      const subcategoryOptions = Array.from(group.subcategories.values())
+        .map((entry) => {
+          const token = buildAudioLibraryFilterToken("subcategory", entry.value);
+          return {
+            value: token,
+            label: entry.label,
+            count: entry.count,
+            selected: selectedTagSet.has(token)
+          };
+        })
+        .sort(compareAudioLibraryFilterRows);
+      const selectedChildCount = subcategoryOptions.filter((entry) => entry.selected).length;
+      return {
+        value: categoryToken,
+        label: group.label,
+        count: group.count,
+        selected,
+        selectedCount: selectedChildCount + (selected ? 1 : 0),
+        hasSelected: selected || selectedChildCount > 0,
+        hasSubcategories: subcategoryOptions.length > 0,
+        isOpen: selected || selectedChildCount > 0,
+        subcategoryOptions
+      };
+    })
+    .sort(compareAudioLibraryFilterRows);
+  const simpleFolderOptions = categoryGroups.filter((group) => !group.hasSubcategories);
+  const nestedFolderGroups = categoryGroups.filter((group) => group.hasSubcategories);
+  return {
+    kindOptions,
+    usageOptions,
+    categoryGroups: nestedFolderGroups,
+    simpleFolderOptions,
+    hasCategoryGroups: nestedFolderGroups.length > 0,
+    hasSimpleFolderOptions: simpleFolderOptions.length > 0,
+    hasTagOptions: nestedFolderGroups.length > 0 || simpleFolderOptions.length > 0,
+    selectedTagCount: filters.selectedTags.length,
+    hasActiveFilters: hasActiveAudioLibraryFilters(filters)
+  };
+}
+
+function buildAudioLibrarySummary(catalog, options = {}) {
+  const categoryCount = new Set(catalog.items.map((item) => item.category).filter(Boolean)).size;
+  const kindCount = new Set(catalog.items.map((item) => item.kind).filter(Boolean)).size;
+  const usageCount = new Set(catalog.items.map((item) => item.usage).filter(Boolean)).size;
+  const hiddenCount = Math.max(0, Math.floor(Number(options?.hiddenCount ?? 0) || 0));
+  const resolvedDurationCount = catalog.items.filter((item) => isAudioLibraryDurationResolved(item)).length;
+  const usageSummaryOrder = ["music", "ambience", "sfx", "voice", "combat", "tension", "rest", "travel"];
+  const cards = usageSummaryOrder
+    .map((key) => {
+      const count = catalog.items.filter((item) => item.kind === key || item.usage === key).length;
+      if (count <= 0) return null;
+      return {
+        key,
+        label: AUDIO_LIBRARY_KIND_LABELS[key] ?? AUDIO_LIBRARY_USAGE_LABELS[key] ?? key,
+        count
+      };
+    })
+    .filter(Boolean);
+  return {
+    trackCount: catalog.items.length,
+    categoryCount,
+    kindCount,
+    usageCount,
+    hiddenCount,
+    resolvedDurationCount,
+    scannedAtLabel: catalog.scannedAt ? new Date(catalog.scannedAt).toLocaleString() : "-",
+    scannedBy: catalog.scannedBy || "-",
+    cards
+  };
+}
+
+function buildAudioLibraryResults(catalog) {
+  const filtered = getFilteredAudioLibraryItems(catalog);
+  const selectedId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  const selectedTrackIdSet = new Set(getSelectedAudioLibraryTrackSelectionIds());
+  const visibleTracks = filtered.slice(0, 160).map((item) => ({
+    ...buildAudioLibraryTrackDisplay(item),
+    selected: item.id === selectedId,
+    checked: selectedTrackIdSet.has(item.id)
+  }));
+  const visibleSelectedCount = visibleTracks.filter((item) => item.checked).length;
+  const selectedCount = selectedTrackIdSet.size;
+  return {
+    tracks: visibleTracks,
+    hasTracks: visibleTracks.length > 0,
+    totalMatches: filtered.length,
+    visibleCount: visibleTracks.length,
+    selection: {
+      selectedCount,
+      visibleSelectedCount,
+      hasSelection: selectedCount > 0,
+      hasVisibleSelection: visibleSelectedCount > 0,
+      allVisibleSelected: visibleTracks.length > 0 && visibleSelectedCount === visibleTracks.length,
+      label: selectedCount === 1 ? "1 track checked for bulk hide." : `${selectedCount} tracks checked for bulk hide.`
+    }
+  };
+}
+
+function getAudioMixPlaybackState(catalog) {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixFlag = getAudioMixStateFlag(playlist);
+  const activeTrackId = String(mixFlag?.activeTrackId ?? "").trim();
+  const activeTrackPath = normalizeAudioLibraryRootPath(mixFlag?.activeTrackPath ?? "");
+  const activeTrack =
+    catalog.items.find((item) => item.id === activeTrackId) ??
+    catalog.items.find((item) => normalizeAudioLibraryRootPath(item?.path ?? "") === activeTrackPath) ??
+    null;
+  const activePreset = getAudioMixPresetById(mixFlag?.presetId ?? getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixFlag.queueTrackIds ?? []);
+  const queueTracks = queueTrackIds
+    .map((trackId, index) => {
+      const item = catalog.items.find((entry) => entry.id === trackId);
+      if (!item) return null;
+      return {
+        ...item,
+        order: index + 1,
+        isActive: item.id === activeTrackId,
+        isCurrentIndex: index === mixFlag.currentIndex
+      };
+    })
+    .filter(Boolean);
+  const currentIndex = queueTracks.findIndex((entry) => entry.id === activeTrackId);
+  const normalizedCurrentIndex =
+    currentIndex >= 0 ? currentIndex : Math.min(Math.max(0, mixFlag.currentIndex), Math.max(0, queueTracks.length - 1));
+  const activeTrackTags = Array.isArray(activeTrack?.tags) ? activeTrack.tags.filter(Boolean) : [];
+  const hasToggleTarget = Boolean(activeTrackId || activeTrackPath || queueTracks.length > 0);
+  const isPlaying = Boolean(mixFlag?.isPlaying);
+  return {
+    hasPlaylist: Boolean(playlist),
+    playlistName: String(playlist?.name ?? AUDIO_MIX_PLAYLIST_NAME),
+    transportLabel: AUDIO_MIX_TRANSPORT_LABEL,
+    isPlaying,
+    isPaused: !isPlaying && hasToggleTarget,
+    presetId: activePreset.id,
+    presetLabel: activePreset.label,
+    activeTrack,
+    activeTrackId,
+    activeTrackName: String(activeTrack?.name ?? mixFlag?.activeTrackName ?? "").trim(),
+    activeTrackPath,
+    playlistSoundId: String(mixFlag?.playlistSoundId ?? "").trim(),
+    playbackId: String(mixFlag?.playbackId ?? "").trim(),
+    volume: normalizeAudioMixVolume(mixFlag?.volume ?? activePreset.volume),
+    volumePercent: getAudioMixVolumePercent(mixFlag?.volume ?? activePreset.volume),
+    channel: normalizeAudioMixChannel(mixFlag?.channel ?? activePreset.channel),
+    channelLabel: getAudioMixChannelLabel(mixFlag?.channel ?? activePreset.channel),
+    fade: Math.max(0, Math.floor(Number(mixFlag?.fade ?? activePreset.fade ?? 0) || 0)),
+    startedAt: Math.max(0, Number(mixFlag?.startedAt ?? 0) || 0),
+    startedAtLabel: mixFlag?.startedAt ? new Date(Number(mixFlag.startedAt)).toLocaleTimeString() : "-",
+    updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-",
+    queueTrackIds,
+    queueTracks,
+    activeTrackHasSubcategory: Boolean(activeTrack?.subcategory),
+    activeTrackTags,
+    hasActiveTrackTags: activeTrackTags.length > 0,
+    hasQueue: queueTracks.length > 0,
+    queueLength: queueTracks.length,
+    currentIndex: normalizedCurrentIndex,
+    canTogglePlayback: hasToggleTarget,
+    transportActionLabel: isPlaying ? "Pause shared mix" : "Resume shared mix",
+    transportActionIcon: isPlaying ? "fa-pause" : "fa-play",
+    canSkipNext: queueTracks.length > 1 || Boolean(activePreset.repeat),
+    canRestart: Boolean(activeTrackId)
+  };
+}
+
+function normalizeAudioLibraryDurationSeconds(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Number(numeric.toFixed(2));
+}
+
+function normalizeAudioLibraryDurationResolvedAt(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.max(0, Math.floor(numeric));
+}
+
+function isAudioLibraryDurationResolved(item) {
+  return normalizeAudioLibraryDurationResolvedAt(item?.durationResolvedAt ?? 0) > 0;
+}
+
+function formatAudioLibraryDurationLabel(value) {
+  const totalSeconds = Math.max(0, Math.floor(normalizeAudioLibraryDurationSeconds(value)));
+  if (totalSeconds <= 0) return "--:--";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function getManagedAudioMixPlaybackMonitorSnapshot() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixFlag = getAudioMixStateFlag(playlist);
+  const catalog = getAudioLibraryCatalog();
+  const activeSound = playlist ? getManagedAudioMixPlayingSound(playlist, mixFlag.playlistSoundId) : null;
+  const activeTrackId = String(mixFlag?.activeTrackId ?? "").trim();
+  const activeTrackPath = normalizeAudioLibraryRootPath(mixFlag?.activeTrackPath ?? activeSound?.path ?? "");
+  const activeTrack =
+    catalog.items.find((item) => item.id === activeTrackId) ??
+    catalog.items.find((item) => normalizeAudioLibraryRootPath(item?.path ?? "") === activeTrackPath) ??
+    null;
+  const playbackId = String(mixFlag?.playbackId ?? "").trim();
+  const startedAt = Math.max(0, Number(mixFlag?.startedAt ?? 0) || 0);
+  const durationSeconds = Math.max(0, Number(activeTrack?.durationSeconds ?? 0) || 0);
+  let currentSeconds = 0;
+  if (startedAt > 0) {
+    const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
+    const shouldLoop = Boolean(activeSound?.repeat);
+    currentSeconds =
+      durationSeconds > 0
+        ? shouldLoop
+          ? elapsedSeconds % durationSeconds
+          : Math.min(durationSeconds, elapsedSeconds)
+        : elapsedSeconds;
+  }
+  const normalizedCurrentSeconds =
+    durationSeconds > 0 ? Math.max(0, Math.min(durationSeconds, currentSeconds)) : Math.max(0, currentSeconds);
+  return {
+    playbackId,
+    startedAt,
+    durationSeconds: Number(durationSeconds.toFixed(2)),
+    currentSeconds: Number(normalizedCurrentSeconds.toFixed(2)),
+    progressPermille:
+      durationSeconds > 0
+        ? Math.max(0, Math.min(1000, Math.round((normalizedCurrentSeconds / durationSeconds) * 1000)))
+        : 0,
+    volumePercent: getAudioMixVolumePercent(mixFlag?.volume ?? 0.5)
+  };
+}
+
+function buildAudioMixKindFocusOptions(selectedValue = "music") {
+  return Object.entries(AUDIO_LIBRARY_KIND_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryKind(selectedValue) === value
+  }));
+}
+
+function buildAudioMixUsageFocusOptions(selectedValue = "general") {
+  return Object.entries(AUDIO_LIBRARY_USAGE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryUsage(selectedValue) === value
+  }));
+}
+
+function buildAudioMixPlaybackModeOptions(selectedValue = "repeat") {
+  return Object.entries(AUDIO_MIX_PLAYBACK_MODE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioMixPlaybackMode(selectedValue) === value
+  }));
+}
+
+function buildAudioMixContext(catalog) {
+  const selectedPreset = getSelectedAudioMixPreset();
+  const savedTrackIds = normalizeAudioMixPresetTrackIds(selectedPreset?.trackIds ?? []);
+  const assignedCandidates = buildAudioMixAssignedCandidates(catalog, selectedPreset);
+  const {
+    view: trackBrowserView,
+    suggestedCandidates,
+    allCandidates,
+    visibleCandidates
+  } = getVisibleAudioMixTrackBrowserCandidates(catalog, selectedPreset);
+  const hasSavedTrackList = savedTrackIds.length > 0;
+  const playback = getAudioMixPlaybackState(catalog);
+  const selectedLibraryTrack =
+    catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
+  const selectedMixTrackIdSet = new Set(getSelectedAudioMixTrackSelectionIds());
+  const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
+  const pagination = buildAudioMixTrackBrowserPagination(visibleCandidates.length, trackBrowserView);
+  const queueRows = assignedCandidates.map(({ item }, index) => ({
+    ...item,
+    order: index + 1,
+    isActive: item.id === playback?.activeTrack?.id,
+    isCurrentIndex: index === playback.currentIndex
+  }));
+  const visibleTrackRows = visibleCandidates
+    .slice(pagination.startIndex, pagination.endIndex)
+    .map(({ item, score }) => ({
+      ...buildAudioLibraryTrackDisplay(item),
+      score,
+      checked: selectedMixTrackIdSet.has(item.id),
+      selected: item.id === playback?.activeTrack?.id,
+      isAssigned: savedTrackIds.includes(item.id)
+    }));
+  const visibleSelectedCount = visibleTrackRows.filter((track) => track.checked).length;
+  const selectedCount = selectedMixTrackIdSet.size;
+  const queueSourceLabel = hasSavedTrackList
+    ? "Manual queue saved to this preset"
+    : "Add tracks from the Track Browser to build this queue";
+  const missingTrackCount = Math.max(0, savedTrackIds.length - assignedCandidates.length);
+  const queueEmptyLabel = hasSavedTrackList
+    ? missingTrackCount > 0
+      ? `${missingTrackCount} saved track${missingTrackCount === 1 ? "" : "s"} could not be matched in the current library. Rescan or re-add them.`
+      : "This preset has a saved queue, but none of those tracks are available in the current library scan."
+    : "Add tracks below to build the current queue for this preset.";
+  return {
+    status: audioLibraryUiState.mixStatus,
+    hasStatus: Boolean(audioLibraryUiState.mixStatus),
+    selectedPresetId: selectedPreset.id,
+    presets: getAllAudioMixPresets().map((preset) => ({
+      id: preset.id,
+      label: preset.label,
+      description: preset.description,
+      isCustom: Boolean(preset.isCustom),
+      selected: preset.id === selectedPreset.id,
+      candidateCount:
+        Array.isArray(preset.trackIds) && preset.trackIds.length > 0
+          ? buildAudioMixAssignedCandidates(catalog, preset).length
+          : buildAudioMixCandidates(catalog, preset).length,
+      playbackModeLabel: getAudioMixPlaybackModeLabel(preset.playbackMode),
+      hasSavedTrackList: Array.isArray(preset.trackIds) && preset.trackIds.length > 0
+    })),
+    selectedPreset: {
+      ...selectedPreset,
+      candidateCount: suggestedCandidates.length,
+      assignedCount: assignedCandidates.length,
+      suggestedCount: suggestedCandidates.length,
+      savedTrackCount: savedTrackIds.length,
+      missingTrackCount,
+      hasSavedTrackList,
+      channelLabel: getAudioMixChannelLabel(selectedPreset.channel),
+      volumePercent: getAudioMixVolumePercent(selectedPreset.volume),
+      playbackModeLabel: getAudioMixPlaybackModeLabel(selectedPreset.playbackMode),
+      kindFocusLabel: getAudioLibraryKindLabel(selectedPreset.kindFocus),
+      usageFocusLabel: getAudioLibraryUsageLabel(selectedPreset.usageFocus),
+      searchTokensLabel: formatAudioMixPresetSearchTokens(selectedPreset.searchTokens),
+      canDelete: Boolean(selectedPreset.isCustom),
+      canRename: Boolean(selectedPreset.isCustom)
+    },
+    candidates: suggestedCandidates.slice(0, 14).map(({ item, score }) => ({
+      ...buildAudioLibraryTrackDisplay(item),
+      score,
+      selected: item.id === playback?.activeTrack?.id
+    })),
+    assignedTracks: assignedCandidates.slice(0, 20).map(({ item, score }) => ({
+      ...buildAudioLibraryTrackDisplay(item),
+      score,
+      selected: item.id === playback?.activeTrack?.id,
+      isActive: item.id === playback?.activeTrack?.id
+    })),
+    hasAssignedTracks: assignedCandidates.length > 0,
+    suggestedTracks: suggestedCandidates.slice(0, 20).map(({ item, score }) => ({
+      ...buildAudioLibraryTrackDisplay(item),
+      score,
+      selected: item.id === playback?.activeTrack?.id
+    })),
+    hasSuggestedTracks: suggestedCandidates.length > 0,
+    hasCandidates: assignedCandidates.length > 0,
+    trackBrowser: {
+      viewSuggested: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED,
+      viewAll: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL,
+      suggestedCount: suggestedCandidates.length,
+      allCount: allCandidates.length,
+      tracks: visibleTrackRows,
+      hasTracks: visibleTrackRows.length > 0,
+      totalCount: visibleCandidates.length,
+      visibleCount: visibleTrackRows.length,
+      hasActiveFilters: hasActiveAudioLibraryFilters(audioLibraryUiState.filters),
+      pagination: {
+        ...pagination
+      },
+      summaryLabel:
+        trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+          ? pagination.totalCount > 0
+            ? `Browsing ${pagination.label}.`
+            : "No library tracks are available in the current scan."
+          : pagination.totalCount > 0
+            ? `Showing ${pagination.label} from ${suggestedCandidates.length} tag-matched suggestions.`
+            : "No suggestions matched this preset yet.",
+      emptyLabel:
+        trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+          ? "No tracks are available in the current library scan."
+          : "No suggestions matched this preset yet. Broaden the focus or adjust the search tokens.",
+      selection: {
+        selectedCount,
+        visibleSelectedCount,
+        hasSelection: selectedCount > 0,
+        hasVisibleSelection: visibleSelectedCount > 0,
+        allVisibleSelected: visibleTrackRows.length > 0 && visibleSelectedCount === visibleTrackRows.length,
+        label:
+          selectedCount < 1
+            ? "No tracks selected for bulk add."
+            : selectedCount === 1
+              ? "1 track selected for bulk add."
+              : `${selectedCount} tracks selected for bulk add.`
+      }
+    },
+    editor: {
+      canEdit: true,
+      canRename: Boolean(selectedPreset.isCustom),
+      hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
+      selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
+      kindOptions: buildAudioMixKindFocusOptions(selectedPreset.kindFocus),
+      usageOptions: buildAudioMixUsageFocusOptions(selectedPreset.usageFocus),
+      playbackOptions: buildAudioMixPlaybackModeOptions(selectedPreset.playbackMode),
+      volumePercent: getAudioMixVolumePercent(selectedPreset.volume),
+      hasAssignedTracks: assignedCandidates.length > 0
+    },
+    queue: {
+      hasTracks: queueRows.length > 0,
+      sourceLabel: queueSourceLabel,
+      emptyLabel: queueEmptyLabel,
+      tracks: queueRows.map((track) => buildAudioLibraryTrackDisplay(track)),
+      hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
+      selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
+      canControl: playbackMatchesSelection || selectedPreset.isCustom,
+      canEdit: Boolean(hasSavedTrackList && selectedPreset.isCustom),
+      hasSavedTrackList,
+      missingTrackCount,
+      hasLiveQueue: playbackMatchesSelection && playback.hasQueue
+    },
+    playback: {
+      ...playback,
+      hasActiveTrack: Boolean(playback.activeTrack || playback.activeTrackName || playback.activeTrackPath),
+      activeTrackName: playback.activeTrackName || "No track playing",
+      activeTrackPath: String(playback.activeTrack?.path ?? playback.activeTrackPath ?? ""),
+      volumePercent: getAudioMixVolumePercent(playback.volume ?? selectedPreset.volume),
+      activeTrackKindLabel: playback.activeTrack ? getAudioLibraryKindLabel(playback.activeTrack.kind) : "",
+      activeTrackUsageLabel: playback.activeTrack ? getAudioLibraryUsageLabel(playback.activeTrack.usage) : "",
+      activeTrackQueuePosition: playback.currentIndex >= 0 ? playback.currentIndex + 1 : 0,
+      activeTrackQueueLabel:
+        playback.currentIndex >= 0 && playback.queueLength > 0
+          ? `Track ${playback.currentIndex + 1} of ${playback.queueLength}`
+          : ""
+    }
+  };
+}
+
+function getSelectedAudioLibraryTrack(catalog, results) {
+  const selectedId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  const fromCatalog = catalog.items.find((item) => item.id === selectedId);
+  const fallback = fromCatalog ?? filteredFallback(results.tracks);
+  if (!fallback) return null;
+  return buildAudioLibraryTrackDisplay(fallback);
+}
+
+function filteredFallback(tracks = []) {
+  return Array.isArray(tracks) && tracks.length > 0 ? tracks[0] : null;
+}
+

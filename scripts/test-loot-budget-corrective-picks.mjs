@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 import { getLootSelectionIntelligenceWeight } from "./features/loot-selection-intelligence.js";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);

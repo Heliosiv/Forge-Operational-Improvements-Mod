@@ -678,6 +678,149 @@ class FakeElement {
 }
 
 {
+  const state = {
+    locked: false,
+    ranks: {
+      vanguard: [],
+      front: [],
+      middle: ["actor-a"],
+      rear: ["actor-b"],
+      reserve: []
+    },
+    rankPlacements: {
+      vanguard: {},
+      front: {},
+      middle: { "actor-a": 1 },
+      rear: { "actor-b": 0 },
+      reserve: {}
+    }
+  };
+  const refreshes = [];
+  const boardCard = new FakeElement({
+    dataset: { actorId: "actor-a" },
+    classes: ["po-march-board-card"]
+  });
+  const spacingTokenA = new FakeElement({
+    dataset: { actorId: "actor-a" },
+    classes: ["po-march-spacing-token"]
+  });
+  const spacingTokenB = new FakeElement({
+    dataset: { actorId: "actor-b" },
+    classes: ["po-march-spacing-token"]
+  });
+  const spacingCell = new FakeElement({
+    dataset: { rankId: "front", cellIndex: "2", insertIndex: "0" },
+    classes: ["po-march-spacing-cell"]
+  });
+  const occupiedSpacingCell = new FakeElement({
+    dataset: { rankId: "rear", cellIndex: "0", insertIndex: "0" },
+    classes: ["po-march-spacing-cell"]
+  });
+  const boardCell = new FakeElement({
+    dataset: { rankId: "middle", cellIndex: "1", insertIndex: "0" },
+    classes: ["po-march-board-cell"]
+  });
+  spacingTokenA.closestResolver = (selector) =>
+    selector === ".po-march-spacing-cell[data-rank-id]" ? spacingCell : null;
+  spacingTokenB.closestResolver = (selector) =>
+    selector === ".po-march-spacing-cell[data-rank-id]" ? occupiedSpacingCell : null;
+  spacingCell.queryAllResolver = (selector) => (selector === ".po-march-spacing-token" ? [spacingTokenA] : []);
+  occupiedSpacingCell.queryAllResolver = (selector) => (selector === ".po-march-spacing-token" ? [spacingTokenB] : []);
+  boardCell.queryAllResolver = (selector) => (selector === ".po-march-board-card" ? [boardCard] : []);
+
+  setupMarchingDragAndDrop(
+    {
+      querySelectorAll(selector) {
+        if (selector === ".po-entry") return [];
+        if (selector === ".po-march-board-card[data-actor-id]") return [boardCard];
+        if (selector === ".po-march-board-staging-chip[data-actor-id]") return [];
+        if (selector === ".po-march-spacing-token[data-actor-id]") return [spacingTokenA, spacingTokenB];
+        if (selector === ".po-rank-col") return [];
+        if (selector === ".po-march-board-cell[data-rank-id]") return [boardCell];
+        if (selector === ".po-march-spacing-cell[data-rank-id]") return [spacingCell, occupiedSpacingCell];
+        return [];
+      }
+    },
+    {
+      getMarchingOrderState: () => state,
+      canDragEntry: () => true,
+      isLockedForUser: () => false,
+      notifyUiWarnThrottled: () => {},
+      updateMarchingOrderState: async (request) => {
+        if (request?.op !== "joinRank") return;
+        const { actorId, rankId, insertIndex: rawInsert, cellIndex: rawCell } = request;
+        for (const key of Object.keys(state.ranks)) {
+          state.ranks[key] = (state.ranks[key] ?? []).filter((id) => id !== actorId);
+        }
+        for (const key of Object.keys(state.rankPlacements)) {
+          if (state.rankPlacements[key]) delete state.rankPlacements[key][actorId];
+        }
+        if (!state.ranks[rankId]) state.ranks[rankId] = [];
+        const target = state.ranks[rankId];
+        const safeIndex =
+          Number.isInteger(rawInsert) && rawInsert >= 0
+            ? Math.max(0, Math.min(rawInsert, target.length))
+            : target.length;
+        target.splice(safeIndex, 0, actorId);
+        if (Number.isInteger(rawCell) && rawCell >= 0) {
+          if (!state.rankPlacements[rankId]) state.rankPlacements[rankId] = {};
+          state.rankPlacements[rankId][actorId] = rawCell;
+        }
+      },
+      refreshSingleAppPreservingView: (value) => refreshes.push(value),
+      getAppInstance: () => "march-app",
+      appInstanceKeys: { MARCHING_ORDER: "march" }
+    }
+  );
+
+  await boardCard.dispatch("click", {
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    target: { closest: () => null }
+  });
+  assert.equal(boardCard.classList.contains("is-click-selected"), true);
+  assert.equal(spacingCell.classList.contains("is-click-target"), true);
+
+  await spacingCell.dispatch("click", {
+    preventDefault: () => {},
+    target: { closest: () => null }
+  });
+  assert.deepEqual(state.ranks.front, ["actor-a"]);
+  assert.deepEqual(state.rankPlacements.front, { "actor-a": 2 });
+  assert.equal(boardCard.classList.contains("is-click-selected"), false);
+
+  await spacingTokenA.dispatch("click", {
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    target: { closest: () => null }
+  });
+  assert.equal(spacingTokenA.classList.contains("is-click-selected"), true);
+
+  await boardCell.dispatch("click", {
+    preventDefault: () => {},
+    target: { closest: () => null }
+  });
+  assert.deepEqual(state.ranks.middle, ["actor-a"]);
+  assert.deepEqual(state.rankPlacements.middle, { "actor-a": 1 });
+
+  await boardCard.dispatch("click", {
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    target: { closest: () => null }
+  });
+  await spacingTokenB.dispatch("click", {
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    target: {
+      closest: (selector) => (selector === ".po-march-spacing-token" ? spacingTokenB : null)
+    }
+  });
+  assert.deepEqual(state.ranks.rear, ["actor-a", "actor-b"]);
+  assert.deepEqual(state.rankPlacements.rear, { "actor-a": 0, "actor-b": 0 });
+  assert.deepEqual(refreshes, ["march-app", "march-app", "march-app"]);
+}
+
+{
   const state = { locked: true, ranks: { front: ["actor-a"] } };
   const entry = new FakeElement({ dataset: { actorId: "actor-a" }, classes: ["po-entry"] });
   const column = new FakeElement({ dataset: { rankId: "front" }, classes: ["po-rank-col"] });

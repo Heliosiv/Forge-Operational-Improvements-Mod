@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 
-const source = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const source = readLegacyRuntimeSource([
+  "gather-resources",
+  "merchants",
+  "downtime-operations-actions",
+  "loot-runtime-actions",
+  "rest-march-runtime"
+]);
 
 function extractFunction(sourceText, functionName) {
   const marker = `function ${functionName}`;

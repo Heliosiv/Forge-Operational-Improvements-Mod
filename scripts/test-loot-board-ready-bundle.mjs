@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -12,7 +12,11 @@ function extractFunctionBlock(source, functionName, nextFunctionName) {
   return source.slice(start, end).trim();
 }
 
-const functionBlock = extractFunctionBlock(moduleSource, "validateBoardReadyLootBundle", "generateBoardReadyLootBundle");
+const functionBlock = extractFunctionBlock(
+  moduleSource,
+  "validateBoardReadyLootBundle",
+  "generateBoardReadyLootBundle"
+);
 
 const context = vm.createContext({
   normalizeLootClaimRunId: (value) => String(value ?? "").trim(),
@@ -102,8 +106,17 @@ const invalidBundle = {
 
 const invalidResult = validateBoardReadyLootBundle(invalidBundle);
 assert.equal(invalidResult.ok, false);
-assert.equal(invalidResult.errors.some((entry) => entry.includes("runId")), true);
-assert.equal(invalidResult.errors.some((entry) => entry.includes("claimsLog must be an array")), true);
-assert.equal(invalidResult.errors.some((entry) => entry.includes("claimMetadata is required")), true);
+assert.equal(
+  invalidResult.errors.some((entry) => entry.includes("runId")),
+  true
+);
+assert.equal(
+  invalidResult.errors.some((entry) => entry.includes("claimsLog must be an array")),
+  true
+);
+assert.equal(
+  invalidResult.errors.some((entry) => entry.includes("claimMetadata is required")),
+  true
+);
 
 process.stdout.write("board-ready loot bundle validation passed\n");

@@ -1,0 +1,1040 @@
+# Weather, Upkeep, And Session Autopilot
+
+Source: legacy/party-operations-monolith.js:44577-45607
+Feature IDs: operations, gm-pages
+Target Modules: scripts/features/weather-*, scripts/features/upkeep-*
+
+Weather quick panel actions, automatic upkeep chat flow, calendar notes, operational brief, and session autopilot.
+
+----- legacy source begins -----
+async function postLootItemClaimToChat(outcome = {}) {
+  const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
+  const actorId = String(outcome?.actorId ?? "").trim();
+  const actorUuid = String(outcome?.actorUuid ?? "").trim();
+  const itemName = String(outcome?.itemName ?? "Item").trim() || "Item";
+  const quantity = Math.max(1, Math.floor(Number(outcome?.quantity ?? 1) || 1));
+  const itemLabel = quantity > 1 ? `${itemName} x${quantity}` : itemName;
+  const itemUuid = String(outcome?.itemUuid ?? "").trim();
+  const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
+  const actor = actorId ? game.actors.get(actorId) : null;
+  const actorImg = normalizeFoundryAssetImagePath(actor?.img, { fallback: "icons/svg/item-bag.svg" });
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim">
+        <p><strong>Loot Claimed</strong></p>
+        <p><img src="${poEscapeHtml(actorImg)}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemLabel)}</strong>.</p>
+        <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
+      </div>
+    `
+  });
+  await createOperationsJournalEntry({
+    category: "loot-claims",
+    title: `Loot Claimed - ${actorName}`,
+    summary: `${actorName} received ${itemLabel}`,
+    body: `
+      <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
+      <p><strong>Item:</strong> ${buildUuidJournalLink(itemUuid, itemLabel)}</p>
+      <p><strong>Claimed By:</strong> ${poEscapeHtml(claimedBy)}</p>
+    `
+  });
+}
+
+async function postLootCurrencyClaimToChat(outcome = {}) {
+  const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
+  const actorId = String(outcome?.actorId ?? "").trim();
+  const actorUuid = String(outcome?.actorUuid ?? "").trim();
+  const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
+  const shareLabel = formatLootCurrencyBundleLabel(outcome?.share ?? {});
+  const actor = actorId ? game.actors.get(actorId) : null;
+  const actorImg = normalizeFoundryAssetImagePath(actor?.img, { fallback: "icons/svg/coins.svg" });
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim">
+        <p><strong>Currency Deposited</strong></p>
+        <p><img src="${poEscapeHtml(actorImg)}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(shareLabel)}</strong>.</p>
+        <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
+      </div>
+    `
+  });
+  await createOperationsJournalEntry({
+    category: "loot-claims",
+    title: `Currency Deposited - ${actorName}`,
+    summary: `${actorName} received ${shareLabel}`,
+    body: `
+      <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
+      <p><strong>Currency:</strong> ${poEscapeHtml(shareLabel)}</p>
+      <p><strong>Claimed By:</strong> ${poEscapeHtml(claimedBy)}</p>
+    `
+  });
+}
+
+async function gmQuickAddFaction() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  setActiveGmQuickPanel("none");
+  openGmFactionsPage({ force: true });
+}
+
+async function gmQuickSubmitFaction(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  await addReputationFaction(element);
+  openGmFactionsPage({ force: true });
+}
+
+function getDaeModifierCategoryOptions() {
+  return [
+    { value: "all", label: "All Modifiers", test: () => true },
+    { value: "movement", label: "Movement", test: (key) => key.includes("movement") },
+    { value: "defense", label: "Defense (AC/HP)", test: (key) => key.includes("ac") || key.includes("hp") },
+    { value: "initiative", label: "Initiative", test: (key) => key.includes("init") },
+    { value: "checks", label: "Ability Checks", test: (key) => key.includes("abilities.check") },
+    { value: "saves", label: "Saving Throws", test: (key) => key.includes("abilities.save") || key.includes(".save") },
+    { value: "attacks", label: "Attacks", test: (key) => key.includes(".attack") },
+    { value: "skills", label: "Skills", test: (key) => key.includes("skills.") },
+    {
+      value: "other",
+      label: "Other",
+      test: (key) =>
+        !(
+          key.includes("movement") ||
+          key.includes("ac") ||
+          key.includes("hp") ||
+          key.includes("init") ||
+          key.includes("abilities.check") ||
+          key.includes("abilities.save") ||
+          key.includes(".save") ||
+          key.includes(".attack") ||
+          key.includes("skills.")
+        )
+    }
+  ];
+}
+
+function buildWeatherDraftFromPreset(preset, sceneSnapshot, previousDraft = {}) {
+  return {
+    selectedKey: String(preset?.key ?? ""),
+    darkness: Number.isFinite(Number(previousDraft?.darkness))
+      ? Math.max(0, Math.min(1, Number(previousDraft.darkness)))
+      : Math.max(0, Math.min(1, Number(preset?.darkness ?? sceneSnapshot?.darkness ?? 0))),
+    visibilityModifier: Number.isFinite(Number(previousDraft?.visibilityModifier))
+      ? Math.max(-5, Math.min(5, Math.floor(Number(previousDraft.visibilityModifier))))
+      : Math.max(-5, Math.min(5, Math.floor(Number(preset?.visibilityModifier ?? 0) || 0))),
+    note: String(previousDraft?.note ?? preset?.note ?? sceneSnapshot?.note ?? ""),
+    presetName: String(previousDraft?.presetName ?? preset?.label ?? "")
+  };
+}
+
+function getWeatherPresetByKey(weatherState, sceneSnapshot, key) {
+  const options = buildWeatherSelectionCatalog(weatherState, sceneSnapshot);
+  const selectedKey = String(key ?? "").trim();
+  return options.find((entry) => entry.key === selectedKey) ?? options[0] ?? null;
+}
+
+async function gmQuickLogCurrentWeather() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can log weather.");
+    return;
+  }
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const defaultPreset =
+    getWeatherPresetByKey(weatherState, sceneSnapshot, "clear") ??
+    buildWeatherSelectionCatalog(weatherState, sceneSnapshot)[0] ??
+    null;
+  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(defaultPreset, sceneSnapshot));
+  const current = getActiveGmQuickPanel();
+  setActiveGmQuickPanel(current === "weather" ? "none" : "weather");
+}
+
+async function gmQuickSelectWeatherPreset(element) {
+  const selectedKey = String(element?.value ?? "").trim();
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, selectedKey);
+  if (!selectedPreset) return;
+  const draft = buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot, { selectedKey });
+  setGmQuickWeatherDraft(draft);
+
+  const rawDarkness = Number(draft?.darkness ?? selectedPreset?.darkness ?? sceneSnapshot?.darkness ?? 0);
+  const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
+  const rawVisibility = Number(draft?.visibilityModifier ?? selectedPreset?.visibilityModifier ?? 0);
+  const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
+  const label = String(selectedPreset?.label ?? "Weather").trim() || "Weather";
+  const snapshot = {
+    id: foundry.utils.randomID(),
+    label,
+    weatherId: String(selectedPreset?.weatherId ?? selectedPreset?.key ?? "").trim(),
+    darkness,
+    visibilityModifier,
+    note: String(draft?.note ?? selectedPreset?.note ?? "").trim() || `Weather preset selected: ${label}`,
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM")
+  };
+  await updateOperationsLedger((innerLedger) => {
+    const weather = ensureWeatherState(innerLedger);
+    weather.current = snapshot;
+  });
+  await applyWeatherSceneFxForPreset(selectedPreset);
+}
+
+function gmQuickUpdateWeatherDraftField(element) {
+  const field = String(element?.dataset?.field ?? "").trim();
+  if (!field) return;
+  const draft = getGmQuickWeatherDraft() ?? {};
+  if (field === "darkness") {
+    const value = Number(element?.value ?? 0);
+    draft.darkness = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+  } else if (field === "visibilityModifier") {
+    const value = Number(element?.value ?? 0);
+    draft.visibilityModifier = Number.isFinite(value) ? Math.max(-5, Math.min(5, Math.floor(value))) : 0;
+  } else if (field === "note") {
+    draft.note = String(element?.value ?? "");
+  } else if (field === "presetName") {
+    draft.presetName = String(element?.value ?? "");
+  }
+  setGmQuickWeatherDraft(draft);
+}
+
+async function gmQuickSaveWeatherPreset(element) {
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const draft = getGmQuickWeatherDraft() ?? {};
+  const presetName = String(
+    root?.querySelector("input[name='quickWeatherPresetName']")?.value ?? draft.presetName ?? ""
+  ).trim();
+  if (!presetName) {
+    ui.notifications?.warn("Custom preset name is required.");
+    return;
+  }
+  const presetId = `custom-${foundry.utils.randomID()}`;
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.customPresets.push(
+      normalizeWeatherPreset({
+        id: presetId,
+        label: presetName,
+        visibilityModifier: Number(draft.visibilityModifier ?? 0),
+        darkness: Number(draft.darkness ?? 0),
+        note: String(draft.note ?? ""),
+        isBuiltIn: false
+      })
+    );
+  });
+  setGmQuickWeatherDraft({
+    ...draft,
+    selectedKey: presetId,
+    presetName
+  });
+  ui.notifications?.info(`Saved custom weather preset: ${presetName}.`);
+}
+
+async function gmQuickDeleteWeatherPreset(element) {
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const selectedKey = String(
+    root?.querySelector("select[name='quickWeatherProfile']")?.value ?? getGmQuickWeatherDraft()?.selectedKey ?? ""
+  ).trim();
+  if (!selectedKey.startsWith("custom-")) {
+    ui.notifications?.warn("Only custom presets can be removed.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.customPresets = weather.customPresets.filter((entry) => String(entry?.id ?? "") !== selectedKey);
+  });
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const fallbackPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, "clear");
+  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(fallbackPreset, sceneSnapshot));
+  ui.notifications?.info("Removed custom weather preset.");
+}
+
+async function commitWeatherSnapshot(snapshot, options = {}) {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const silent = Boolean(options?.silent);
+  const suppressChat = Boolean(options?.suppressChat);
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const environment = ensureEnvironmentState(ledger);
+    weather.current = snapshot;
+    weather.logs.unshift(snapshot);
+    if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
+    environment.logs.unshift({
+      id: snapshot.id,
+      logType: "weather",
+      label: snapshot.label,
+      weatherId: snapshot.weatherId,
+      darkness: snapshot.darkness,
+      visibilityModifier: snapshot.visibilityModifier,
+      note: snapshot.note,
+      createdAt: snapshot.loggedAt,
+      createdBy: snapshot.loggedBy
+    });
+    if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
+  });
+
+  if (options?.preset) await applyWeatherSceneFxForPreset(options.preset);
+
+  const signedModifier =
+    Number(snapshot.visibilityModifier ?? 0) > 0
+      ? `+${Number(snapshot.visibilityModifier ?? 0)}`
+      : String(Number(snapshot.visibilityModifier ?? 0));
+  if (!silent) {
+    ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
+  }
+  if (!suppressChat) {
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      content: `<p><strong>Weather Logged:</strong> ${poEscapeHtml(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${poEscapeHtml(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
+    });
+  }
+  return {
+    logged: true,
+    label: String(snapshot.label ?? "Weather"),
+    visibilityModifier: Number(snapshot.visibilityModifier ?? 0),
+    darkness: Number(snapshot.darkness ?? 0)
+  };
+}
+
+async function gmQuickSubmitWeather(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can log weather.");
+    return;
+  }
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const selectedKey = String(root?.querySelector("select[name='quickWeatherProfile']")?.value ?? "").trim();
+  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, selectedKey) ?? {
+    key: "clear",
+    label: "Clear",
+    weatherId: "clear",
+    darkness: sceneSnapshot.darkness,
+    visibilityModifier: sceneSnapshot.visibilityModifier
+  };
+  const draft = getGmQuickWeatherDraft() ?? buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot);
+  const rawDarkness = Number(
+    root?.querySelector("input[name='quickWeatherDarkness']")?.value ??
+      draft.darkness ??
+      selectedPreset.darkness ??
+      sceneSnapshot.darkness ??
+      0
+  );
+  const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
+  const rawVisibility = Number(
+    root?.querySelector("input[name='quickWeatherVisibility']")?.value ??
+      draft.visibilityModifier ??
+      selectedPreset.visibilityModifier ??
+      0
+  );
+  const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
+  const note = String(root?.querySelector("textarea[name='quickWeatherNote']")?.value ?? draft.note ?? "").trim();
+
+  const snapshot = {
+    id: foundry.utils.randomID(),
+    label: String(selectedPreset.label ?? "Weather").trim() || "Weather",
+    weatherId: String(selectedPreset.weatherId ?? selectedPreset.key ?? "").trim(),
+    darkness,
+    visibilityModifier,
+    note: note || `Weather profile logged - darkness ${darkness.toFixed(2)}`,
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM")
+  };
+
+  await commitWeatherSnapshot(snapshot, { preset: selectedPreset });
+
+  setGmQuickWeatherDraft({
+    selectedKey,
+    darkness,
+    visibilityModifier,
+    note,
+    presetName: String(selectedPreset.label ?? "")
+  });
+  setActiveGmQuickPanel("none");
+}
+
+async function loadWeatherLogToQuickPanel(logId) {
+  const id = String(logId ?? "").trim();
+  if (!id) return false;
+  const ledger = getOperationsLedger();
+  const weather = ensureWeatherState(ledger);
+  const entry = weather.logs.find((row) => String(row?.id ?? "") === id);
+  if (!entry) return false;
+
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const selectedPreset = getWeatherPresetByKey(weather, sceneSnapshot, entry.weatherId);
+  setGmQuickWeatherDraft({
+    ...buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot),
+    selectedKey: String(selectedPreset?.key ?? entry.weatherId ?? ""),
+    darkness: Number(entry.darkness ?? 0),
+    visibilityModifier: Number(entry.visibilityModifier ?? 0),
+    note: String(entry.note ?? "")
+  });
+  setActiveGmQuickPanel("weather");
+  return true;
+}
+
+async function removeWeatherLogById(logId) {
+  const id = String(logId ?? "").trim();
+  if (!id) return false;
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const environment = ensureEnvironmentState(ledger);
+    const before = weather.logs.length;
+    weather.logs = weather.logs.filter((entry) => String(entry?.id ?? "") !== id);
+    environment.logs = environment.logs.filter(
+      (entry) => !(String(entry?.id ?? "") === id && String(entry?.logType ?? "") === "weather")
+    );
+    if (weather.current && String(weather.current.id ?? "") === id) {
+      weather.current = weather.logs[0] ?? null;
+    }
+    removed = weather.logs.length < before;
+  });
+  return removed;
+}
+
+function buildAutomaticUpkeepPromptChatCard(promptState, resourcesState = null) {
+  const resources = foundry.utils.deepClone(resourcesState ?? getOperationsLedger().resources ?? {});
+  ensureOperationalResourceConfig(resources);
+  const pendingFood = getGatherPendingPoolAmount(resources, "food");
+  const pendingWater = getGatherPendingPoolAmount(resources, "water");
+  const pendingRequests = Array.isArray(resources.gather?.requests) ? resources.gather.requests.length : 0;
+  const status =
+    promptState === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER
+      ? "Waiting for gather resolution before upkeep can finish."
+      : "Before upkeep applies, decide whether the party had a gather opportunity today.";
+
+  return `
+    <div class="po-chat-card po-chat-card-gather">
+      <p><strong>Automatic Upkeep Paused</strong></p>
+      <p>${poEscapeHtml(status)}</p>
+      <p><strong>Pending Gather Pool:</strong> Food ${pendingFood} | Water ${pendingWater}</p>
+      <p><strong>Pending Gather Requests:</strong> ${pendingRequests}</p>
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm" data-po-chat-action="${AUTO_UPKEEP_CHAT_ACTIONS.START_GATHER}">Gather Opportunity</button>
+        <button type="button" class="po-btn po-btn-sm" data-po-chat-action="${AUTO_UPKEEP_CHAT_ACTIONS.APPLY_NOW}">Apply Upkeep Now</button>
+        <button type="button" class="po-btn po-btn-sm" data-po-chat-action="${AUTO_UPKEEP_CHAT_ACTIONS.OPEN_RESOURCES}">Open Resources</button>
+      </div>
+    </div>
+  `;
+}
+
+async function upsertAutomaticUpkeepPromptMessage(promptState, resourcesState = null) {
+  const resources = foundry.utils.deepClone(resourcesState ?? getOperationsLedger().resources ?? {});
+  ensureOperationalResourceConfig(resources);
+  const prompt = getAutoUpkeepPromptData(resources);
+  const dayKey = getGatherDayKey(getCurrentWorldTimestamp());
+  const whisper = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
+  const content = buildAutomaticUpkeepPromptChatCard(promptState, resources);
+  const flags = {
+    [MODULE_ID]: {
+      autoUpkeepPrompt: {
+        state: promptState,
+        dayKey
+      }
+    }
+  };
+  const existing = prompt.messageId ? (game.messages?.get?.(prompt.messageId) ?? null) : null;
+
+  if (existing) {
+    await existing.update({ content, flags });
+    await setAutomaticUpkeepPromptState(promptState, {
+      messageId: existing.id,
+      createdAt: prompt.createdAt || Date.now(),
+      dayKey
+    });
+    return existing;
+  }
+
+  const message = await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    whisper,
+    content,
+    flags
+  });
+  await setAutomaticUpkeepPromptState(promptState, {
+    messageId: String(message?.id ?? "").trim(),
+    createdAt: Date.now(),
+    dayKey
+  });
+  return message;
+}
+
+async function createOperationalUpkeepCalendarNote(result = {}, timestamp = getCurrentWorldTimestamp()) {
+  const api = getSimpleCalendarMutationApi();
+  if (!isSimpleCalendarActive() || !api) return { created: false, reason: "simple-calendar-unavailable" };
+  try {
+    const label = formatRecoveryDueLabel(timestamp);
+    const parts = [
+      `<p><strong>Daily Upkeep Applied</strong></p>`,
+      `<p>${poEscapeHtml(String(result.summary ?? "Daily upkeep applied."))}</p>`
+    ];
+    if (String(result.pendingAllocationSummary ?? "").trim()) {
+      parts.push(
+        `<p><strong>Post-Upkeep Gather Allocation:</strong> ${poEscapeHtml(String(result.pendingAllocationSummary))}</p>`
+      );
+    }
+    if (String(result.itemSummary ?? "").trim()) {
+      parts.push(`<p><strong>Actor Item Depletion:</strong> ${poEscapeHtml(String(result.itemSummary))}</p>`);
+    }
+    const created = await createSimpleCalendarEntry(api, {
+      title: `Daily Upkeep Applied (${label})`,
+      content: parts.join(""),
+      timestamp,
+      endTimestamp: Number(timestamp) + 60,
+      allDay: false,
+      playerVisible: true,
+      visibleToPlayers: true
+    });
+    return {
+      created: Boolean(created?.success),
+      id: String(created?.id ?? "").trim()
+    };
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to create upkeep calendar note`, error);
+    return { created: false, reason: "calendar-note-failed" };
+  }
+}
+
+async function handleAutomaticOperationalUpkeepTick() {
+  if (!game.user?.isGM) return null;
+  if (automaticUpkeepTickInFlight) return null;
+  automaticUpkeepTickInFlight = true;
+
+  try {
+    const ledger = getOperationsLedger();
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+
+    const currentTimestamp = getCurrentWorldTimestamp();
+    if (!Number.isFinite(Number(ledger.resources.upkeepLastAppliedTs))) {
+      return applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true, suppressChat: true });
+    }
+
+    const upkeepDays = getUpkeepDaysFromCalendar(ledger.resources.upkeepLastAppliedTs, currentTimestamp);
+    if (upkeepDays <= 0) return null;
+
+    const dayKey = getGatherDayKey(currentTimestamp);
+    const prompt = getAutoUpkeepPromptData(ledger.resources);
+    if (prompt.state !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
+      await upsertAutomaticUpkeepPromptMessage(prompt.state, ledger.resources);
+      return { prompted: true, state: prompt.state };
+    }
+
+    if (hasPendingGatherRequests(ledger.resources)) {
+      await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER, ledger.resources);
+      return { prompted: true, state: AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER };
+    }
+
+    const pendingFood = getGatherPendingPoolAmount(ledger.resources, "food");
+    const pendingWater = getGatherPendingPoolAmount(ledger.resources, "water");
+    if (hasGatherAttemptsForDay(ledger.resources, dayKey) || pendingFood > 0 || pendingWater > 0) {
+      return applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
+    }
+
+    await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.DECISION, ledger.resources);
+    return { prompted: true, state: AUTO_UPKEEP_PROMPT_STATES.DECISION };
+  } finally {
+    automaticUpkeepTickInFlight = false;
+  }
+}
+
+async function handleAutomaticUpkeepChatAction(action, message) {
+  if (!canAccessAllPlayerOps()) return;
+  const normalizedAction = String(action ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedAction) return;
+
+  if (normalizedAction === AUTO_UPKEEP_CHAT_ACTIONS.OPEN_RESOURCES) {
+    openMainTab("operations", { force: true });
+    return;
+  }
+
+  if (normalizedAction === AUTO_UPKEEP_CHAT_ACTIONS.START_GATHER) {
+    await setAutomaticUpkeepPromptState(AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER, {
+      messageId: String(message?.id ?? "").trim(),
+      createdAt: Date.now(),
+      dayKey: getGatherDayKey(getCurrentWorldTimestamp())
+    });
+    await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER);
+    await promptGatherResourceDialog({ showDialog: true, applyToLedger: true });
+    return;
+  }
+
+  if (normalizedAction === AUTO_UPKEEP_CHAT_ACTIONS.APPLY_NOW) {
+    await clearAutomaticUpkeepPromptState("GM chose to skip gather opportunity and apply upkeep now.");
+    await applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
+  }
+}
+
+async function applyOperationalUpkeep(options = {}) {
+  const before = getOperationsLedger();
+  if (!before.resources) before.resources = {};
+  ensureOperationalResourceConfig(before.resources);
+  const currentTimestamp = getCurrentWorldTimestamp();
+  const upkeep = before.resources?.upkeep ?? {};
+  const isAutomatic = Boolean(options?.automatic);
+  const silent = Boolean(options?.silent);
+  const suppressChat = Boolean(options?.suppressChat);
+  const beforeFoodPoolMode = normalizeStewardPoolMode(before.resources?.stewardPools?.food?.mode);
+  const beforeWaterPoolMode = normalizeStewardPoolMode(before.resources?.stewardPools?.water?.mode);
+  const beforeTorchPoolMode = normalizeStewardPoolMode(before.resources?.stewardPools?.torches?.mode);
+
+  if (isAutomatic && !Number.isFinite(Number(before.resources?.upkeepLastAppliedTs))) {
+    await updateOperationsLedger(
+      (ledger) => {
+        if (!ledger.resources) ledger.resources = {};
+        ensureOperationalResourceConfig(ledger.resources);
+        ledger.resources.upkeepLastAppliedTs = currentTimestamp;
+      },
+      { skipLocalRefresh: true }
+    );
+    return { applied: false, initializedClock: true, upkeepDays: 0, summary: "Initialized upkeep clock." };
+  }
+
+  const partySize = Math.max(0, Number(upkeep.partySize ?? 0));
+  const foodPerMember = Math.max(0, Number(upkeep.foodPerMember ?? 0));
+  const waterPerMember = Math.max(0, Number(upkeep.waterPerMember ?? 0));
+  const foodMultiplier = Math.max(0, Number(upkeep.foodMultiplier ?? 1));
+  const waterMultiplier = Math.max(0, Number(upkeep.waterMultiplier ?? 1));
+  const torchPerRest = Math.max(0, Number(upkeep.torchPerRest ?? 0));
+
+  const upkeepDays = getUpkeepDaysFromCalendar(before.resources?.upkeepLastAppliedTs, currentTimestamp);
+  if (upkeepDays <= 0) {
+    if (!isAutomatic && !silent)
+      ui.notifications?.info("No upkeep is due yet (next deduction occurs at 20:00 world time).");
+    return { applied: false, upkeepDays: 0, summary: "No upkeep due yet." };
+  }
+
+  const foodDrainPerDay = Math.ceil(partySize * foodPerMember * foodMultiplier);
+  const waterDrainPerDay = Math.ceil(partySize * waterPerMember * waterMultiplier);
+  const torchDrainPerDay = Math.ceil(torchPerRest);
+  const foodDrain = foodDrainPerDay * upkeepDays;
+  const waterDrain = waterDrainPerDay * upkeepDays;
+  const torchDrain = torchDrainPerDay * upkeepDays;
+
+  const pendingFoodGatherPool = getGatherPendingPoolAmount(before.resources, "food");
+  const pendingWaterGatherPool = getGatherPendingPoolAmount(before.resources, "water");
+  const gatherFoodUsed = Math.min(foodDrain, pendingFoodGatherPool);
+  const gatherWaterUsed = Math.min(waterDrain, pendingWaterGatherPool);
+  const remainingPendingFoodGatherPool = Math.max(0, pendingFoodGatherPool - gatherFoodUsed);
+  const remainingPendingWaterGatherPool = Math.max(0, pendingWaterGatherPool - gatherWaterUsed);
+  const effectiveFoodDrain = Math.max(0, foodDrain - gatherFoodUsed);
+  const effectiveWaterDrain = Math.max(0, waterDrain - gatherWaterUsed);
+  const itemSelections = foundry.utils.deepClone(before.resources?.itemSelections ?? {});
+
+  let afterPartyFoodRations = 0;
+  let afterWater = 0;
+  let afterPartyWaterRations = 0;
+  let afterTorches = 0;
+  let foodRationUsed = 0;
+  let foodTargetedUsed = 0;
+  let waterRationUsed = 0;
+  let waterStoreUsed = 0;
+  let waterTargetedUsed = 0;
+  let torchPoolUsed = 0;
+  let torchTargetedUsed = 0;
+  let unmetFoodDrain = 0;
+  let unmetWaterDrain = 0;
+  let unmetTorchDrain = 0;
+  let pendingAllocations = [];
+
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    const foodPool = getStewardPoolEntry(ledger.resources, "food");
+    const waterPool = getStewardPoolEntry(ledger.resources, "water");
+    const torchPool = getStewardPoolEntry(ledger.resources, "torches");
+    const foodPoolMode = normalizeStewardPoolMode(foodPool.mode);
+    const waterPoolMode = normalizeStewardPoolMode(waterPool.mode);
+    const torchPoolMode = normalizeStewardPoolMode(torchPool.mode);
+    const currentPartyFoodRations = Math.max(0, Number(foodPool.amount ?? 0));
+    const currentWater = Math.max(0, Number(ledger.resources.water ?? 0));
+    const currentPartyWaterRations = Math.max(0, Number(waterPool.amount ?? 0));
+    const currentTorches = Math.max(0, Number(torchPool.amount ?? 0));
+
+    let remainingFoodDrain = effectiveFoodDrain;
+    if (foodPoolMode === STEWARD_POOL_MODES.INFINITE) {
+      foodRationUsed = remainingFoodDrain;
+      remainingFoodDrain = 0;
+    } else {
+      foodRationUsed = Math.min(currentPartyFoodRations, remainingFoodDrain);
+      remainingFoodDrain -= foodRationUsed;
+    }
+    unmetFoodDrain = Math.max(0, remainingFoodDrain);
+
+    let remainingWaterDrain = effectiveWaterDrain;
+    if (waterPoolMode === STEWARD_POOL_MODES.INFINITE) {
+      waterRationUsed = remainingWaterDrain;
+      remainingWaterDrain = 0;
+    } else {
+      waterRationUsed = Math.min(currentPartyWaterRations, remainingWaterDrain);
+      remainingWaterDrain -= waterRationUsed;
+    }
+    waterStoreUsed = Math.min(currentWater, remainingWaterDrain);
+    remainingWaterDrain -= waterStoreUsed;
+    unmetWaterDrain = Math.max(0, remainingWaterDrain);
+
+    if (torchPoolMode === STEWARD_POOL_MODES.INFINITE) {
+      torchPoolUsed = torchDrain;
+      unmetTorchDrain = 0;
+    } else {
+      torchPoolUsed = Math.min(currentTorches, torchDrain);
+      unmetTorchDrain = Math.max(0, torchDrain - torchPoolUsed);
+    }
+
+    afterPartyFoodRations = Math.max(0, currentPartyFoodRations - foodRationUsed);
+    afterPartyWaterRations = Math.max(0, currentPartyWaterRations - waterRationUsed);
+    afterWater = Math.max(0, currentWater - waterStoreUsed);
+    afterTorches = Math.max(0, currentTorches - torchPoolUsed);
+
+    if (foodPoolMode === STEWARD_POOL_MODES.FINITE) foodPool.amount = afterPartyFoodRations;
+    if (waterPoolMode === STEWARD_POOL_MODES.FINITE) waterPool.amount = afterPartyWaterRations;
+    if (torchPoolMode === STEWARD_POOL_MODES.FINITE) torchPool.amount = afterTorches;
+    ledger.resources.stewardPools.food = foodPool;
+    ledger.resources.stewardPools.water = waterPool;
+    ledger.resources.stewardPools.torches = torchPool;
+    ensureStewardPoolsState(ledger.resources);
+    ledger.resources.water = afterWater;
+    ledger.resources.gather.pendingPools.food = remainingPendingFoodGatherPool;
+    ledger.resources.gather.pendingPools.water = remainingPendingWaterGatherPool;
+    ledger.resources.gather.foodCoveredNextUpkeep = remainingPendingFoodGatherPool > 0;
+    ledger.resources.gather.waterCoveredNextUpkeep = remainingPendingWaterGatherPool > 0;
+    ledger.resources.gather.foodCoverageDueKey = null;
+    ledger.resources.gather.waterCoverageDueKey = null;
+    ledger.resources.upkeepLastAppliedTs = currentTimestamp;
+  });
+
+  let itemResults = [];
+  try {
+    itemResults = await depleteLinkedResourceItems(
+      {
+        foodDrain: unmetFoodDrain,
+        waterDrain: unmetWaterDrain,
+        torchDrain: unmetTorchDrain
+      },
+      itemSelections
+    );
+  } catch (error) {
+    logUiFailure("resources", "linked resource depletion failed during upkeep", error, {
+      foodDrain: unmetFoodDrain,
+      waterDrain: unmetWaterDrain,
+      torchDrain: unmetTorchDrain
+    });
+    throw error;
+  }
+  const foodItemResult = itemResults.find((entry) => entry.key === "food");
+  const waterItemResult = itemResults.find((entry) => entry.key === "water");
+  const torchItemResult = itemResults.find((entry) => entry.key === "torches");
+  foodTargetedUsed = Math.max(0, Number(foodItemResult?.consumed ?? 0));
+  waterTargetedUsed = Math.max(0, Number(waterItemResult?.consumed ?? 0));
+  torchTargetedUsed = Math.max(0, Number(torchItemResult?.consumed ?? 0));
+  unmetFoodDrain = Math.max(0, unmetFoodDrain - foodTargetedUsed);
+  unmetWaterDrain = Math.max(0, unmetWaterDrain - waterTargetedUsed);
+  unmetTorchDrain = Math.max(0, unmetTorchDrain - torchTargetedUsed);
+
+  if (remainingPendingFoodGatherPool > 0 || remainingPendingWaterGatherPool > 0) {
+    pendingAllocations = await allocateGatherPendingPoolsToTargets({
+      food: remainingPendingFoodGatherPool,
+      water: remainingPendingWaterGatherPool
+    });
+  }
+
+  const shortages = [];
+  if (unmetFoodDrain > 0) shortages.push(`food short by ${unmetFoodDrain}`);
+  if (unmetWaterDrain > 0) shortages.push(`water short by ${unmetWaterDrain}`);
+  if (unmetTorchDrain > 0) shortages.push(`torches short by ${unmetTorchDrain}`);
+  if (beforeTorchPoolMode !== STEWARD_POOL_MODES.INFINITE && afterTorches === 0 && torchPoolUsed > 0)
+    shortages.push("torches depleted");
+
+  const foodPoolLabel =
+    beforeFoodPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Food Surplus" : "Steward Food Stock";
+  const waterPoolLabel =
+    beforeWaterPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Water Surplus" : "Steward Water Stock";
+  const torchPoolLabel =
+    beforeTorchPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Torch Surplus" : "Steward Torch Stock";
+  const foodSummary =
+    gatherFoodUsed > 0
+      ? `Food -${foodDrain} (Gathered Pool -${gatherFoodUsed}, ${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`
+      : `Food -${foodDrain} (${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`;
+  const waterSummary =
+    gatherWaterUsed > 0
+      ? `Water -${waterDrain} (Gathered Pool -${gatherWaterUsed}, ${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`
+      : `Water -${waterDrain} (${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`;
+  const torchSummary = `Torches -${torchDrain} (${torchPoolLabel} -${torchPoolUsed}, Targeted Torch Item -${torchTargetedUsed})`;
+  const summary = `Daily upkeep applied for ${upkeepDays} day(s): ${foodSummary}, ${waterSummary}, ${torchSummary}.`;
+  const itemSummary = itemResults
+    .filter((entry) => entry.needed > 0)
+    .map(
+      (entry) =>
+        `${entry.name}: ${entry.consumed}/${entry.needed}${entry.missing > 0 ? ` (missing ${entry.missing})` : ""}`
+    )
+    .join(" | ");
+  const pendingAllocationSummary = pendingAllocations
+    .map((entry) => {
+      const targetText =
+        entry.added > 0
+          ? `${entry.resourceType} target +${entry.added}${entry.source ? ` (${entry.source})` : ""}`
+          : "";
+      const stewardText = entry.stewardAdded > 0 ? `${entry.resourceType} steward +${entry.stewardAdded}` : "";
+      return [targetText, stewardText].filter(Boolean).join(", ");
+    })
+    .filter(Boolean)
+    .join(" | ");
+
+  if (!silent && shortages.length > 0) {
+    ui.notifications?.warn(`${summary} Shortages: ${shortages.join(", ")}.`);
+  } else if (!isAutomatic && !silent) {
+    ui.notifications?.info(summary);
+  }
+
+  const context = buildOperationsContext();
+  const effects = context.summary.effects;
+  const riskLine =
+    effects.riskTier === "high"
+      ? "Operational risk is HIGH: apply one complication roll this cycle."
+      : effects.riskTier === "moderate"
+        ? "Operational risk is MODERATE: keep one risk trigger in reserve."
+        : "Operational risk is LOW.";
+
+  if (!suppressChat) {
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      content: `<p><strong>Daily Upkeep</strong></p><p>${summary}</p>${pendingAllocationSummary ? `<p><strong>Post-Upkeep Gather Allocation:</strong> ${pendingAllocationSummary}</p>` : ""}${itemSummary ? `<p><strong>Actor Item Depletion:</strong> ${itemSummary}</p>` : ""}<p>${riskLine}</p>`
+    });
+  }
+  if (getAutoUpkeepPromptState(before.resources) !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
+    await clearAutomaticUpkeepPromptState("Upkeep applied.");
+  }
+  await createOperationalUpkeepCalendarNote(
+    {
+      summary,
+      pendingAllocationSummary,
+      itemSummary
+    },
+    currentTimestamp
+  );
+
+  return {
+    applied: true,
+    upkeepDays,
+    summary,
+    shortages,
+    itemSummary,
+    pendingAllocationSummary,
+    gatherFoodUsed,
+    gatherWaterUsed,
+    riskLine
+  };
+}
+
+function getSessionAutopilotSnapshot() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT);
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+function buildSessionAutopilotSnapshot() {
+  return {
+    id: foundry.utils.randomID(),
+    createdAt: Date.now(),
+    createdBy: String(game.user?.name ?? "GM"),
+    restState: foundry.utils.deepClone(getRestWatchState()),
+    marchState: foundry.utils.deepClone(getMarchingOrderState()),
+    restActivities: foundry.utils.deepClone(getRestActivities()),
+    operationsLedger: foundry.utils.deepClone(getOperationsLedger()),
+    injuryRecovery: foundry.utils.deepClone(getInjuryRecoveryState())
+  };
+}
+
+async function logCurrentSceneWeatherSnapshot(options = {}) {
+  if (!canAccessAllPlayerOps()) return { logged: false, reason: "gm-only" };
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const weatherState = ensureWeatherState(getOperationsLedger());
+  const previous = weatherState.current ?? null;
+  const snapshot = {
+    id: foundry.utils.randomID(),
+    label: String(sceneSnapshot.label ?? previous?.label ?? "Weather").trim() || "Weather",
+    weatherId: String(sceneSnapshot.weatherId ?? previous?.weatherId ?? "").trim(),
+    darkness: Number.isFinite(Number(sceneSnapshot.darkness))
+      ? Math.max(0, Math.min(1, Number(sceneSnapshot.darkness)))
+      : 0,
+    visibilityModifier: Number.isFinite(Number(sceneSnapshot.visibilityModifier))
+      ? Math.max(-5, Math.min(5, Math.floor(Number(sceneSnapshot.visibilityModifier))))
+      : 0,
+    note:
+      String(sceneSnapshot.note ?? previous?.note ?? "").trim() ||
+      `Scene weather snapshot logged at darkness ${Number(sceneSnapshot.darkness ?? 0).toFixed(2)}`,
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM")
+  };
+  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, snapshot.weatherId);
+  return commitWeatherSnapshot(snapshot, {
+    preset: selectedPreset,
+    silent: Boolean(options?.silent),
+    suppressChat: Boolean(options?.suppressChat)
+  });
+}
+
+async function runSessionAutopilot(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can run session autopilot.");
+    return null;
+  }
+  const requireConfirm = options.confirm !== false;
+  if (requireConfirm) {
+    const confirmed = await Dialog.confirm({
+      title: "Run Session Autopilot?",
+      content: `
+        <p>This will run the automated session cycle:</p>
+        <ul>
+          <li>Apply daily upkeep (if due)</li>
+          <li>Run injury recovery cycle</li>
+          <li>Log current scene weather snapshot</li>
+          <li>Refresh tracked actor state</li>
+          <li>Sync injuries to Simple Calendar</li>
+        </ul>
+        <p>A full snapshot is saved first so you can use <strong>Undo Autopilot</strong>.</p>
+      `
+    });
+    if (!confirmed) return null;
+  }
+
+  const snapshot = buildSessionAutopilotSnapshot();
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, snapshot);
+
+  const notes = [];
+  const upkeepResult = await applyOperationalUpkeep({ silent: true, suppressChat: true });
+  if (upkeepResult?.applied) notes.push(`Upkeep applied (${upkeepResult.upkeepDays} day(s)).`);
+  else if (upkeepResult?.upkeepDays === 0) notes.push("Upkeep skipped (not due).");
+  else if (upkeepResult?.initializedClock) notes.push("Upkeep clock initialized.");
+
+  const recoveryResult = await applyRecoveryCycle({ silent: true, suppressChat: true });
+  if (recoveryResult?.applied) {
+    notes.push(
+      `Recovery cycle processed (${recoveryResult.total} tracked injuries, ${recoveryResult.syncedActors} synced).`
+    );
+  } else {
+    notes.push("Recovery cycle skipped (no tracked injuries).");
+  }
+
+  const weatherResult = await logCurrentSceneWeatherSnapshot({ silent: true, suppressChat: true });
+  if (weatherResult?.logged) {
+    notes.push(
+      `Weather logged (${weatherResult.label}, visibility ${formatSignedModifier(weatherResult.visibilityModifier)}).`
+    );
+  }
+
+  await flushIntegrationSyncQueue("session-autopilot");
+  notes.push("Actor state refresh completed.");
+
+  const calendarResult = await syncAllInjuriesToSimpleCalendar();
+  notes.push(`Injury calendar sync ${calendarResult.synced}/${calendarResult.total}.`);
+
+  const stamp = new Date().toLocaleString();
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Session Autopilot</strong></p><p>${notes.map((line) => poEscapeHtml(line)).join("<br>")}</p><p><em>${poEscapeHtml(stamp)}</em></p>`
+  });
+  ui.notifications?.info("Session Autopilot complete. Snapshot saved for undo.");
+  return {
+    ok: true,
+    notes,
+    snapshotId: snapshot.id
+  };
+}
+
+async function undoLastSessionAutopilot(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can undo session autopilot.");
+    return false;
+  }
+  const snapshot = getSessionAutopilotSnapshot();
+  if (!snapshot || !snapshot.createdAt) {
+    ui.notifications?.warn("No saved session autopilot snapshot found.");
+    return false;
+  }
+  const requireConfirm = options.confirm !== false;
+  if (requireConfirm) {
+    const createdAt = new Date(Number(snapshot.createdAt)).toLocaleString();
+    const confirmed = await Dialog.confirm({
+      title: "Undo Session Autopilot?",
+      content: `
+        <p>This restores the snapshot saved before the last autopilot run.</p>
+        <p><strong>Snapshot:</strong> ${poEscapeHtml(createdAt)} by ${poEscapeHtml(String(snapshot.createdBy ?? "GM"))}</p>
+        <p>It will restore Rest Watch, Marching Order, Activities, Operations, and Injury Recovery states.</p>
+      `
+    });
+    if (!confirmed) return false;
+  }
+
+  const writes = [
+    [SETTINGS.REST_STATE, foundry.utils.deepClone(snapshot.restState ?? buildDefaultRestWatchState())],
+    [SETTINGS.MARCH_STATE, foundry.utils.deepClone(snapshot.marchState ?? buildDefaultMarchingOrderState())],
+    [SETTINGS.REST_ACTIVITIES, foundry.utils.deepClone(snapshot.restActivities ?? buildDefaultActivityState())],
+    [SETTINGS.OPS_LEDGER, foundry.utils.deepClone(snapshot.operationsLedger ?? buildDefaultOperationsLedger())],
+    [SETTINGS.INJURY_RECOVERY, foundry.utils.deepClone(snapshot.injuryRecovery ?? buildDefaultInjuryRecoveryState())]
+  ];
+
+  for (const [settingKey, value] of writes) {
+    await setModuleSettingWithLocalRefreshSuppressed(settingKey, value);
+  }
+
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, {
+    ...snapshot,
+    undoneAt: Date.now(),
+    undoneBy: String(game.user?.name ?? "GM")
+  });
+
+  scheduleIntegrationSync("session-autopilot-undo");
+  refreshOpenApps();
+  emitSocketRefresh();
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Session Autopilot Undo</strong></p><p>Restored snapshot from ${poEscapeHtml(new Date(Number(snapshot.createdAt)).toLocaleString())}.</p>`
+  });
+  ui.notifications?.info("Session Autopilot snapshot restored.");
+  return true;
+}
+
+async function showOperationalBrief() {
+  const context = buildOperationsContext();
+  const bonusItems = context.summary.effects.bonuses.map((item) => `<li>${item}</li>`).join("");
+  const globalMinorBonusItems = context.summary.effects.globalMinorBonuses.map((item) => `<li>${item}</li>`).join("");
+  const riskItems = context.summary.effects.risks.map((item) => `<li>${item}</li>`).join("");
+  const missingRoles = context.diagnostics.missingRoles.length ? context.diagnostics.missingRoles.join(", ") : "None";
+  const inactiveSops = context.diagnostics.inactiveSops.length ? context.diagnostics.inactiveSops.join(", ") : "None";
+
+  const content = `
+    <div class="po-help">
+      <p><strong>Preparation Edge:</strong> ${context.summary.effects.prepEdge ? "Active" : "Inactive"}</p>
+      <p><strong>Risk Tier:</strong> ${context.summary.effects.riskTier.toUpperCase()}</p>
+      <p><strong>Missing Roles:</strong> ${missingRoles}</p>
+      <p><strong>Inactive SOPs:</strong> ${inactiveSops}</p>
+      <p><strong>Bonuses</strong></p>
+      <ul>${bonusItems || "<li>None active.</li>"}</ul>
+      <p><strong>Active Positive Effects</strong></p>
+      <ul>${globalMinorBonusItems || "<li>No active global minor bonuses.</li>"}</ul>
+      <p><strong>Risks</strong></p>
+      <ul>${riskItems || "<li>No immediate penalties.</li>"}</ul>
+    </div>
+  `;
+
+  await Dialog.prompt({
+    title: "Operational Brief",
+    content,
+    rejectClose: false,
+    callback: () => {}
+  });
+}
+

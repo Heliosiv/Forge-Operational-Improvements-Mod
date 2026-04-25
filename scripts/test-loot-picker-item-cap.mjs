@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -34,14 +34,17 @@ const context = vm.createContext({
   logLootBuilderDebug: () => {}
 });
 
-vm.runInContext(`
+vm.runInContext(
+  `
 ${quantityCountBlock}
 ${itemCapBlock}
 ${commitBlock}
 result.getLootSelectedQuantityCount = getLootSelectedQuantityCount;
 result.getLootBudgetItemCap = getLootBudgetItemCap;
 result.commitLootBudgetPick = commitLootBudgetPick;
-`, context);
+`,
+  context
+);
 
 const { getLootSelectedQuantityCount, getLootBudgetItemCap, commitLootBudgetPick } = context.result;
 

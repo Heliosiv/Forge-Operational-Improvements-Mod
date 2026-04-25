@@ -2,14 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(repoRoot, "scripts", "party-operations.js");
 const audioStorePath = path.join(repoRoot, "scripts", "features", "audio-store.js");
-const [source, audioStoreSource] = await Promise.all([
-  readFile(sourcePath, "utf8"),
-  readFile(audioStorePath, "utf8")
-]);
+const source = readLegacyRuntimeSource(["bootstrap-shared", "state-defaults-audio"]);
+const audioStoreSource = await readFile(audioStorePath, "utf8");
 
 function expect(content, pattern, message) {
   assert.match(content, pattern, message);

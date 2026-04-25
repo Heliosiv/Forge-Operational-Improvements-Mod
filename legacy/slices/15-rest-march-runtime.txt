@@ -1,0 +1,4151 @@
+# Rest Watch And March Runtime
+
+Source: legacy/party-operations-monolith.js:46898-51039
+Feature IDs: rest-watch, march
+Target Modules: scripts/features/rest-feature.js, scripts/features/march-feature.js, scripts/apps
+
+Rest activities, marching state, rest/march update writes, assignment actions, formation board, passives, clock, and inventory hooks.
+
+----- legacy source begins -----
+function getRestActivities() {
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_ACTIVITIES);
+  return foundry.utils.mergeObject(buildDefaultActivityState(), stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+}
+
+function buildActivityView(actor, activityState) {
+  if (!activityState) activityState = {};
+  const exhaustion = activityState.exhaustion ?? 0;
+  const activity = activityState.activity ?? "rested";
+  const spellSlots = activityState.spellSlots ?? {};
+  const hitDice = activityState.hitDice ?? {};
+  const activityOptions = [
+    { value: "rested", label: "Rested" },
+    { value: "light", label: "Light Activity" },
+    { value: "heavy", label: "Heavy Activity" },
+    { value: "strenuous", label: "Strenuous" }
+  ].map((option) => ({
+    ...option,
+    selected: option.value === activity
+  }));
+
+  return {
+    exhaustion,
+    exhaustionLabel: getExhaustionLabel(exhaustion),
+    activity,
+    activityLabel: activityOptions.find((option) => option.selected)?.label ?? "Rested",
+    activityOptions,
+    spellSlots,
+    hitDice,
+    maxExhaustion: 6
+  };
+}
+
+function getExhaustionLabel(level) {
+  const labels = ["Fine", "Disadvantage", "Half Speed", "No Action", "1 Action", "Unconscious"];
+  return labels[Math.min(level, 6)] || "Fine";
+}
+
+function calculateLightSources(slots, campfire) {
+  // Only campfire affects rest-watch visibility.
+  if (!campfire) {
+    return {
+      hasTorch: false,
+      hasLantern: false,
+      hasCampfire: false,
+      brightDistance: 0,
+      dimDistance: 0
+    };
+  }
+
+  return {
+    hasTorch: false,
+    hasLantern: false,
+    hasCampfire: true,
+    brightDistance: 20,
+    dimDistance: 40
+  };
+}
+
+function buildDefaultMarchingOrderState() {
+  return {
+    locked: false,
+    lockedBy: "",
+    lastUpdatedAt: "-",
+    lastUpdatedBy: "-",
+    ranks: Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []])),
+    rankPlacements: buildDefaultMarchRankPlacements(),
+    notes: {},
+    gmNotes: "",
+    light: {},
+    lightRanges: {}
+  };
+}
+
+function normalizeLightDistance(value, fallback) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(0, Math.min(999, Math.floor(raw)));
+}
+
+function getMarchLightRange(state, actorId) {
+  const fallbackBright = DEFAULT_MARCH_LIGHT_BRIGHT;
+  const fallbackDim = DEFAULT_MARCH_LIGHT_DIM;
+  const source = state?.lightRanges?.[actorId] ?? {};
+  const bright = normalizeLightDistance(source.bright, fallbackBright);
+  const dimRaw = normalizeLightDistance(source.dim, fallbackDim);
+  const dim = Math.max(bright, dimRaw);
+  return { bright, dim };
+}
+
+function ensureDoctrineTracker(state) {
+  const tracker = state?.doctrineTracker;
+  return tracker && typeof tracker === "object"
+    ? tracker
+    : {
+        state: "stable",
+        lastCheckAt: "-",
+        lastCheckTrigger: "-",
+        lastCheckSummary: "-",
+        pendingTrigger: "",
+        cohesionCheckRequired: false
+      };
+}
+
+function normalizeMarchingFormation(type) {
+  return "simple";
+}
+
+function getMarchingGridUnitPixels() {
+  const gridSize = Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 100);
+  return Number.isFinite(gridSize) && gridSize > 0 ? gridSize : 100;
+}
+
+function getMarchingTokenPositions(state = getMarchingOrderState()) {
+  const positions = {};
+  if (!canvas?.ready) return positions;
+  for (const actorId of getOrderedMarchingActors(state)) {
+    const actor = game.actors.get(actorId);
+    const token = actor?.getActiveTokens?.(true, true)?.[0] ?? actor?.getActiveTokens?.()?.[0] ?? null;
+    const center = token?.center ?? token?.object?.center ?? null;
+    const x = Number(center?.x);
+    const y = Number(center?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    positions[actorId] = { x, y };
+  }
+  return positions;
+}
+
+function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
+  const ranks = state?.ranks ?? {};
+  const rankIds = getMarchBoardRankIds();
+  const assignedActorIds = rankIds.flatMap((rankId) => (Array.isArray(ranks?.[rankId]) ? ranks[rankId] : []));
+  const rankByActorId = {};
+  for (const rankId of rankIds) {
+    for (const actorId of ranks?.[rankId] ?? []) {
+      if (!actorId || rankByActorId[actorId]) continue;
+      rankByActorId[actorId] = rankId;
+    }
+  }
+  const defaultBandTargets = Object.fromEntries(
+    rankIds.map((rankId) => [rankId, { recommended: 0, min: 0, max: null }])
+  );
+  const counts = Object.fromEntries(
+    rankIds.map((rankId) => [rankId, Array.isArray(ranks?.[rankId]) ? ranks[rankId].length : 0])
+  );
+  return {
+    formation: {
+      id: "simple",
+      label: "Simple March Board",
+      category: "simple",
+      categoryLabel: "Simple",
+      summary: "Rank placement board without doctrine or formation effects.",
+      bandTargets: defaultBandTargets
+    },
+    counts,
+    assignedActorIds,
+    rankByActorId,
+    validity: {
+      isValid: true,
+      state: "stable",
+      stateLabel: "Stable",
+      reasons: []
+    },
+    doctrine: {
+      active: false,
+      state: "stable",
+      stateLabel: "Disabled",
+      checksActive: false,
+      cohesionChecksActive: false,
+      cohesionCheckRequired: false,
+      lastCheckAt: "-",
+      lastCheckTrigger: "-",
+      lastCheckTriggerLabel: "-",
+      lastCheckSummary: "-",
+      pendingTrigger: "",
+      pendingTriggerLabel: "",
+      checkMethod: "none",
+      checkMethodLabel: "Disabled"
+    },
+    formationState: {
+      state: "stable",
+      stateLabel: "Stable"
+    },
+    effectEntries: [],
+    effectSummaries: [],
+    effectChangesByActorId: {},
+    bandTargets: defaultBandTargets
+  };
+}
+
+function getActorCharismaModifier(actor) {
+  const direct = Number(actor?.system?.abilities?.cha?.mod);
+  if (Number.isFinite(direct)) return direct;
+  const derived = Number(actor?.system?.abilities?.cha?.save);
+  if (Number.isFinite(derived)) return derived;
+  return 0;
+}
+
+function getMarchDoctrineActorRows(state = getMarchingOrderState()) {
+  const snapshot = getMarchingFormationSnapshot(state);
+  return snapshot.assignedActorIds
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      return {
+        actorId,
+        name: String(actor?.name ?? "Unknown"),
+        charismaModifier: getActorCharismaModifier(actor),
+        rankId: snapshot.rankByActorId[actorId] ?? "middle"
+      };
+    })
+    .filter(Boolean);
+}
+
+function getActiveActorForUser(user = game.user) {
+  if (!user) return null;
+  const selectableActors = getSelectablePlayerActorsForUser(user);
+  let storedActorId = "";
+  try {
+    storedActorId = String(sessionStorage.getItem(`po-active-char-${user.id}`) ?? "").trim();
+  } catch {
+    storedActorId = "";
+  }
+  if (storedActorId) {
+    const storedActor = selectableActors.find((actor) => String(actor?.id ?? "").trim() === storedActorId);
+    if (storedActor) return storedActor;
+  }
+  if (user.character?.type === "character" && canUserManageDowntimeActor(user, user.character)) {
+    return user.character;
+  }
+  return selectableActors[0] ?? null;
+}
+
+function buildPlayerActorSelectorContext(user = game.user) {
+  const actors = getSelectablePlayerActorsForUser(user);
+  const activeActor = getActiveActorForUser(user);
+  const activeActorId = String(activeActor?.id ?? "").trim();
+  return {
+    hasChoices: actors.length > 1,
+    activeActorId,
+    activeActorName: String(activeActor?.name ?? "").trim(),
+    options: actors.map((actor) => {
+      const id = String(actor?.id ?? "").trim();
+      return {
+        id,
+        name: String(actor?.name ?? "Unknown").trim() || "Unknown",
+        img: normalizeFoundryAssetImagePath(actor?.img, { fallback: "" }),
+        selected: id === activeActorId
+      };
+    })
+  };
+}
+
+async function promptPlayerActorSelection(actors = [], options = {}) {
+  const candidates = Array.isArray(actors) ? actors.filter(Boolean) : [];
+  if (candidates.length <= 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const preferredActorId = String(options?.preferredActorId ?? "").trim();
+  const preferred = preferredActorId
+    ? (candidates.find((actor) => String(actor?.id ?? "").trim() === preferredActorId) ?? null)
+    : null;
+  if (preferred) return preferred;
+
+  const title = String(options?.title ?? "Select Character").trim() || "Select Character";
+  const label = String(options?.label ?? "Character").trim() || "Character";
+  const optionRows = candidates
+    .map(
+      (actor) =>
+        `<option value="${poEscapeHtml(String(actor.id ?? ""))}">${poEscapeHtml(String(actor.name ?? "Unknown"))}</option>`
+    )
+    .join("");
+  const content = `<div class="form-group"><label>${poEscapeHtml(label)}</label><select name="actorId">${optionRows}</select></div>`;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finish = (value) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(value ?? null);
+    };
+
+    const dialog = new Dialog({
+      title,
+      content,
+      buttons: {
+        choose: {
+          label: "Choose",
+          callback: (html) => {
+            const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
+            finish(candidates.find((actor) => String(actor?.id ?? "").trim() === actorId) ?? null);
+          }
+        },
+        cancel: {
+          label: "Cancel",
+          callback: () => finish(null)
+        }
+      },
+      default: "choose",
+      close: () => finish(null)
+    });
+    dialog.render(true);
+  });
+}
+
+function getOrderedMarchingActors(state) {
+  const ordered = getMarchBoardRankIds().flatMap((rankId) => state.ranks?.[rankId] ?? []);
+  return Array.from(new Set(ordered));
+}
+
+async function applyMarchingFormation({ front, middle, type }) {
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  const ordered = getOrderedMarchingActors(state);
+  const nextFormation = normalizeMarchingFormation(type ?? state.formation ?? "loose");
+  const definition = getMarchFormationDefinition(nextFormation);
+  const frontCount = Math.max(0, front ?? definition?.bandTargets?.front?.recommended ?? 0);
+  const middleCount = Math.max(0, middle ?? definition?.bandTargets?.middle?.recommended ?? 0);
+  const frontActors = ordered.slice(0, frontCount);
+  const middleActors = ordered.slice(frontCount, frontCount + middleCount);
+  const rearActors = ordered.slice(frontCount + middleCount);
+
+  await updateMarchingOrderState((state) => {
+    state.formation = nextFormation;
+    state.rankPlacements = buildDefaultMarchRankPlacements();
+    if (nextFormation !== "free") {
+      state.ranks = {
+        ...Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []])),
+        front: frontActors,
+        middle: middleActors,
+        rear: rearActors
+      };
+    }
+    if (nextFormation === "free") clearDoctrineTriggerPending(state);
+    else markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+  });
+  await flushIntegrationSyncQueue("marching-formation-set");
+}
+
+async function syncMarchingOrderFromRestWatch() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can sync marching order from rest watch.");
+    return;
+  }
+  const restState = getRestWatchState();
+  const restActorIds = getRestWatchAssignedActorIds(restState);
+  if (!restActorIds.length) {
+    ui.notifications?.warn("No actors are currently assigned in Rest Watch.");
+    return;
+  }
+
+  const state = getMarchingOrderState();
+  const currentOrdered = getOrderedMarchingActors(state).filter((actorId) => restActorIds.includes(actorId));
+  const ordered = [...currentOrdered, ...restActorIds.filter((actorId) => !currentOrdered.includes(actorId))];
+  const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+  const definition = getMarchFormationDefinition(formationId);
+
+  let nextRanks;
+  if (formationId === "free") {
+    nextRanks = Object.fromEntries(
+      getMarchBoardRankIds().map((rankId) => [rankId, rankId === "middle" ? ordered : []])
+    );
+  } else {
+    const frontRecommended = Math.max(0, Number(definition?.bandTargets?.front?.recommended ?? 0) || 0);
+    const middleRecommended = Math.max(0, Number(definition?.bandTargets?.middle?.recommended ?? 0) || 0);
+    const frontCount = Math.min(frontRecommended, ordered.length);
+    const middleCount = Math.min(middleRecommended, Math.max(0, ordered.length - frontCount));
+    nextRanks = {
+      ...Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []])),
+      front: ordered.slice(0, frontCount),
+      middle: ordered.slice(frontCount, frontCount + middleCount),
+      rear: ordered.slice(frontCount + middleCount)
+    };
+  }
+
+  await updateMarchingOrderState((draft) => {
+    draft.ranks = nextRanks;
+    draft.rankPlacements = buildDefaultMarchRankPlacements();
+    if (formationId === "free") clearDoctrineTriggerPending(draft);
+    else markDoctrineTriggerPending(draft, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+  });
+  ui.notifications?.info(
+    `Marching order synced from Rest Watch (${ordered.length} actor${ordered.length === 1 ? "" : "s"}).`
+  );
+}
+
+async function updateRestWatchState(mutatorOrRequest, options = {}) {
+  if (!game.user?.isGM) {
+    if (typeof mutatorOrRequest === "function") {
+      if (!canAccessAllPlayerOps()) {
+        ui.notifications?.warn("Only the GM can update rest watch.");
+        return false;
+      }
+      const state = foundry.utils.deepClone(getRestWatchState());
+      mutatorOrRequest(state);
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "rest:mutate",
+        userId: game.user.id,
+        request: { op: "replaceState", state }
+      });
+      if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+      return true;
+    }
+    const normalizedRequest = normalizeSocketRestRequest(mutatorOrRequest, {
+      restOps: SOCKET_REST_OPS,
+      sanitizeSocketIdentifier,
+      clampSocketText,
+      clampRestWatchRichNoteText,
+      noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+      normalizeRestNoteSaveSource
+    });
+    if (!normalizedRequest) return;
+    if (!hasActiveGmClient()) {
+      await applyRestRequest(normalizedRequest, game.user.id, {
+        getRestWatchState,
+        game,
+        resolveRequester,
+        canAccessAllPlayerOps,
+        canUserControlActor,
+        canUserOperatePartyActor,
+        stampUpdate,
+        setModuleSettingWithLocalRefreshSuppressed,
+        settings: SETTINGS,
+        scheduleIntegrationSync,
+        refreshOpenApps,
+        refreshScopeKeys: REFRESH_SCOPE_KEYS,
+        emitSocketRefresh,
+        logUiDebug
+      });
+      return true;
+    }
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "rest:mutate",
+      userId: game.user.id,
+      request: normalizedRequest
+    });
+    // Refresh immediately for player to avoid stale lag
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+    return true;
+  }
+  const state = getRestWatchState();
+  if (typeof mutatorOrRequest === "function") {
+    mutatorOrRequest(state);
+  } else {
+    await applyRestRequest(mutatorOrRequest, game.user.id, {
+      getRestWatchState,
+      game,
+      resolveRequester,
+      canAccessAllPlayerOps,
+      canUserControlActor,
+      canUserOperatePartyActor,
+      stampUpdate,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      scheduleIntegrationSync,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh,
+      logUiDebug
+    });
+    return true;
+  }
+  stampUpdate(state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+  if (!saved) return false;
+  if (game.user?.isGM) scheduleIntegrationSync("rest-watch");
+  if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+  if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+  return true;
+}
+
+async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
+  if (!game.user?.isGM) {
+    if (isMarchingOrderPlayerLocked(game.user)) {
+      ui.notifications?.warn("Marching order is locked for players.");
+      return false;
+    }
+
+    if (typeof mutatorOrRequest === "function") {
+      if (!canAccessAllPlayerOps()) {
+        ui.notifications?.warn("Only the GM can update marching order.");
+        return false;
+      }
+      const state = foundry.utils.deepClone(getMarchingOrderState());
+      mutatorOrRequest(state);
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "march:mutate",
+        userId: game.user.id,
+        request: { op: "replaceState", state }
+      });
+      if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+      return true;
+    }
+
+    if (mutatorOrRequest && typeof mutatorOrRequest === "object") {
+      const requestedOp = String(mutatorOrRequest.op ?? "").trim();
+      if (["joinRank", "leaveRank", "setLight", "setLightRange"].includes(requestedOp)) {
+        const actorId = String(mutatorOrRequest.actorId ?? "").trim();
+        const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+        if (!actor) {
+          ui.notifications?.warn("Actor not found for marching order move.");
+          return false;
+        }
+        if (!canAccessAllPlayerOps(game.user) && !canUserOperatePartyActor(actor, game.user)) {
+          ui.notifications?.warn("You don't have permission to update this actor in marching order.");
+          return false;
+        }
+      }
+    }
+
+    const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest, {
+      marchOps: SOCKET_MARCH_OPS,
+      marchRanks: SOCKET_MARCH_RANKS,
+      sanitizeSocketIdentifier,
+      clampSocketText,
+      noteMaxLength: SOCKET_NOTE_MAX_LENGTH
+    });
+    if (!normalizedRequest) return;
+    if (!hasActiveGmClient()) {
+      await applyMarchRequest(normalizedRequest, game.user.id, {
+        getMarchingOrderState,
+        game,
+        resolveRequester,
+        canAccessAllPlayerOps,
+        canUserControlActor,
+        canUserOperatePartyActor,
+        isMarchingOrderPlayerLocked,
+        stampUpdate,
+        setModuleSettingWithLocalRefreshSuppressed,
+        settings: SETTINGS,
+        scheduleIntegrationSync,
+        refreshOpenApps,
+        refreshScopeKeys: REFRESH_SCOPE_KEYS,
+        emitSocketRefresh,
+        logUiDebug
+      });
+      return true;
+    }
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "march:mutate",
+      userId: game.user.id,
+      request: normalizedRequest
+    });
+    if (!options.skipLocalRefresh) {
+      // Refresh immediately for player to avoid stale lag
+      refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+    }
+    return true;
+  }
+
+  const state = getMarchingOrderState();
+  if (typeof mutatorOrRequest === "function") {
+    mutatorOrRequest(state);
+  } else {
+    await applyMarchRequest(mutatorOrRequest, game.user.id, {
+      getMarchingOrderState,
+      game,
+      resolveRequester,
+      canAccessAllPlayerOps,
+      canUserControlActor,
+      canUserOperatePartyActor,
+      isMarchingOrderPlayerLocked,
+      stampUpdate,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      scheduleIntegrationSync,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh,
+      logUiDebug
+    });
+    return true;
+  }
+  stampUpdate(state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+  if (!saved) return false;
+  if (game.user?.isGM) scheduleIntegrationSync("marching-order");
+  if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+  if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
+  return true;
+}
+
+function stampUpdate(state, user = game.user) {
+  state.lastUpdatedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  state.lastUpdatedBy = user?.name ?? "-";
+}
+
+function ensureRestSlotEntriesList(slot) {
+  if (!slot || typeof slot !== "object") return [];
+  if (!slot.entries && slot.actorId) {
+    slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+    slot.actorId = null;
+    slot.notes = "";
+  }
+  slot.entries = sanitizeRestWatchEntries(slot);
+  return slot.entries;
+}
+
+function restSlotHasActor(slot, actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!slot || !actorId) return false;
+  const entries = ensureRestSlotEntriesList(slot);
+  return entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId);
+}
+
+function addActorToRestSlot(slot, actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!slot || !actorId) return false;
+  const entries = ensureRestSlotEntriesList(slot);
+  if (entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId)) return false;
+  if (entries.length >= REST_WATCH_MAX_ENTRIES) return false;
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+  const nextOpenIndex = fixedRows.findIndex((row) => !row);
+  if (nextOpenIndex === -1) return false;
+  fixedRows[nextOpenIndex] = { actorId, notes: "" };
+  slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+  slot.actorId = null;
+  slot.notes = "";
+  return true;
+}
+
+function setRestSlotEntryAtIndex(slot, entryIndexInput, actorIdInput) {
+  if (!slot) return false;
+  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
+  if (!Number.isInteger(entryIndex) || entryIndex < 0 || entryIndex >= REST_WATCH_MAX_ENTRIES) return false;
+
+  const actorId = String(actorIdInput ?? "").trim();
+  const entries = ensureRestSlotEntriesList(slot);
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+
+  if (!actorId) {
+    if (!fixedRows[entryIndex]) return false;
+    fixedRows[entryIndex] = null;
+    slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+    return true;
+  }
+
+  const existingIndex = fixedRows.findIndex((entry) => String(entry?.actorId ?? "").trim() === actorId);
+  if (existingIndex === entryIndex) return false;
+  const movedEntry = existingIndex >= 0 ? fixedRows[existingIndex] : { actorId, notes: "" };
+  if (existingIndex >= 0) fixedRows[existingIndex] = null;
+
+  const currentEntry = fixedRows[entryIndex];
+  fixedRows[entryIndex] = {
+    actorId,
+    notes:
+      existingIndex >= 0
+        ? String(movedEntry?.notes ?? "")
+        : String(currentEntry?.actorId ?? "").trim() === actorId
+          ? String(currentEntry?.notes ?? "")
+          : ""
+  };
+  slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+  return true;
+}
+
+function removeRestWatchVisibleSlotAtIndex(slot, entryIndexInput) {
+  if (!slot) return false;
+  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
+  if (!Number.isInteger(entryIndex) || entryIndex < 0 || entryIndex >= REST_WATCH_MAX_ENTRIES) return false;
+
+  const entries = ensureRestSlotEntriesList(slot);
+  const currentVisible = normalizeRestWatchVisibleEntryCount(slot, entries);
+  if (currentVisible <= 1 || entryIndex >= currentVisible) return false;
+
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+  if (fixedRows[entryIndex]) return false;
+
+  for (let index = entryIndex; index < REST_WATCH_MAX_ENTRIES - 1; index += 1) {
+    fixedRows[index] = fixedRows[index + 1] ?? null;
+  }
+  fixedRows[REST_WATCH_MAX_ENTRIES - 1] = null;
+
+  slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+  slot.visibleEntryCount = Math.max(1, currentVisible - 1);
+  return true;
+}
+
+function buildRestWatchActorOptionsCacheKey(actors = []) {
+  return (Array.isArray(actors) ? actors : [])
+    .map((actor) => `${String(actor?.id ?? "").trim()}:${String(actor?.name ?? "").trim()}`)
+    .join("|");
+}
+
+function getRestWatchSelectOptionsCacheKey(
+  baseOptions = [],
+  rowIndex = 0,
+  actorIdInput = "",
+  selectedLabelInput = "",
+  hasSelectedOption = false
+) {
+  const actorId = String(actorIdInput ?? "").trim();
+  const selectedLabel = String(selectedLabelInput ?? "").trim();
+  const baseSignature = (Array.isArray(baseOptions) ? baseOptions : [])
+    .map((option) => `${String(option?.value ?? "").trim()}:${String(option?.label ?? "").trim()}`)
+    .join("|");
+  return `${rowIndex}|${actorId}|${selectedLabel}|${hasSelectedOption ? "1" : "0"}|${baseSignature}`;
+}
+
+function getCachedRestWatchSelectOptions(
+  baseOptions = [],
+  rowIndex = 0,
+  actorIdInput = "",
+  selectedLabelInput = "",
+  hasSelectedOption = false
+) {
+  const key = getRestWatchSelectOptionsCacheKey(
+    baseOptions,
+    rowIndex,
+    actorIdInput,
+    selectedLabelInput,
+    hasSelectedOption
+  );
+  const cached = restWatchSelectOptionsCache.get(key);
+  if (cached) return cached;
+
+  const actorId = String(actorIdInput ?? "").trim();
+  const selectedLabel = String(selectedLabelInput ?? "").trim();
+  const options = [{ value: "", label: `Open Slot ${rowIndex + 1}`, selected: !actorId }];
+  if (actorId && !hasSelectedOption) {
+    options.push({
+      value: actorId,
+      label: selectedLabel ? `${selectedLabel} (Other Actor)` : "Assigned Actor",
+      selected: true
+    });
+  }
+  for (const option of Array.isArray(baseOptions) ? baseOptions : []) {
+    options.push({
+      value: option.value,
+      label: option.label,
+      selected: option.value === actorId
+    });
+  }
+
+  if (restWatchSelectOptionsCache.size >= REST_WATCH_SELECT_OPTIONS_CACHE_MAX) {
+    const oldest = restWatchSelectOptionsCache.keys().next();
+    if (!oldest.done) restWatchSelectOptionsCache.delete(oldest.value);
+  }
+  restWatchSelectOptionsCache.set(key, options);
+  return options;
+}
+
+function buildRestWatchPlayerActorOptions(user = game.user) {
+  const canManage = canAccessAllPlayerOps(user);
+  const actors = (canManage ? getOwnedPcActors() : getSelectablePlayerActorsForUser(user))
+    .slice()
+    .sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
+  const key = `${String(user?.id ?? "anon")}:${canManage ? "all" : "owned"}:${buildRestWatchActorOptionsCacheKey(actors)}`;
+  if (restWatchActorOptionsCache.key === key && Array.isArray(restWatchActorOptionsCache.options)) {
+    return restWatchActorOptionsCache.options;
+  }
+  if (restWatchActorOptionsCache.key !== key) {
+    restWatchSelectOptionsCache.clear();
+  }
+  const options = actors.map((actor) => ({
+    value: String(actor.id ?? "").trim(),
+    label: String(actor.name ?? "Unnamed Actor").trim() || "Unnamed Actor"
+  }));
+  restWatchActorOptionsCache = { key, options };
+  return options;
+}
+
+function buildRestWatchAssignmentRows(entries, actorOptions, entriesView = []) {
+  const baseOptions = Array.isArray(actorOptions) ? actorOptions : [];
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+  const entryViewByActorId = new Map(
+    (Array.isArray(entriesView) ? entriesView : [])
+      .map((entryView) => {
+        const actorId = String(entryView?.actorId ?? "").trim();
+        return actorId ? [actorId, entryView] : null;
+      })
+      .filter(Boolean)
+  );
+  return Array.from({ length: REST_WATCH_MAX_ENTRIES }, (_, rowIndex) => {
+    const entry = fixedRows[rowIndex] ?? null;
+    const actorId = String(entry?.actorId ?? "").trim();
+    const actor = actorId ? game.actors.get(actorId) : null;
+    const entryView = actorId ? (entryViewByActorId.get(actorId) ?? null) : null;
+    const selectedLabel = String(actor?.name ?? "").trim();
+    const hasSelectedOption = actorId && baseOptions.some((option) => option.value === actorId);
+    const options = getCachedRestWatchSelectOptions(baseOptions, rowIndex, actorId, selectedLabel, hasSelectedOption);
+    return {
+      index: rowIndex,
+      slotLabel: `Slot ${rowIndex + 1}`,
+      committedActorId: actorId,
+      actorId,
+      actorName: selectedLabel,
+      occupied: Boolean(actorId),
+      hasSelectableValue: Boolean(actorId),
+      selectOptions: options,
+      hasActorDetails: Boolean(entryView?.actor),
+      actor: entryView?.actor ?? null,
+      activity: entryView?.activity ?? null,
+      notes: entryView?.notes ?? "",
+      canEditNotes: Boolean(entryView?.canEditNotes),
+      isActiveCharacter: Boolean(entryView?.isActiveCharacter),
+      hasPassivePerception:
+        entryView?.actor?.passivePerception !== null && entryView?.actor?.passivePerception !== undefined,
+      hasPassiveInvestigation:
+        entryView?.actor?.passiveInvestigation !== null && entryView?.actor?.passiveInvestigation !== undefined,
+      ...buildRestWatchNoteButtonContext(selectedLabel || actor?.name || "Actor", entryView?.notes ?? "")
+    };
+  });
+}
+
+function buildVisibleRestWatchAssignmentRows(entries, actorOptions, entriesView = [], visibleEntryCountInput = 1) {
+  const visibleEntryCount = Math.max(
+    1,
+    Math.min(REST_WATCH_MAX_ENTRIES, Number.parseInt(visibleEntryCountInput, 10) || 1)
+  );
+  return buildRestWatchAssignmentRows(entries, actorOptions, entriesView).map((row) => ({
+    ...row,
+    isVisible: row.index < visibleEntryCount,
+    canRemoveVisibleSlot: row.index < visibleEntryCount && visibleEntryCount > 1 && !row.occupied,
+    clearButtonLabel:
+      row.index < visibleEntryCount && visibleEntryCount > 1 && !row.occupied
+        ? `Remove ${row.slotLabel}`
+        : `Clear ${row.slotLabel}`
+  }));
+}
+
+function summarizeRestWatchLanguages(entriesView) {
+  const labels = [];
+  const seen = new Set();
+
+  for (const entry of entriesView ?? []) {
+    for (const labelInput of entry?.actor?.languageList ?? []) {
+      const label = String(labelInput ?? "").trim();
+      const normalized = label.toLowerCase();
+      if (!label || seen.has(normalized)) continue;
+      seen.add(normalized);
+      labels.push(label);
+    }
+  }
+
+  if (labels.length === 0) {
+    return {
+      count: 0,
+      display: "-",
+      tooltip: "",
+      countLabel: "No Languages"
+    };
+  }
+
+  const full = labels.join(", ");
+  return {
+    count: labels.length,
+    display: labels.length <= 4 ? full : `${labels.length} languages`,
+    tooltip: labels.length <= 4 ? "" : full,
+    countLabel: labels.length === 1 ? "1 Language" : `${labels.length} Languages`
+  };
+}
+
+function buildDefaultMarchRankPlacements() {
+  return Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, {}]));
+}
+
+function normalizeMarchRankPlacements(state) {
+  const base = buildDefaultMarchRankPlacements();
+  const source = state?.rankPlacements ?? {};
+  for (const rankId of Object.keys(base)) {
+    const actorIds = new Set(state?.ranks?.[rankId] ?? []);
+    const placements = {};
+    for (const [actorId, cellIndex] of Object.entries(source?.[rankId] ?? {})) {
+      const normalizedActorId = String(actorId ?? "").trim();
+      const normalizedCellIndex = Number.parseInt(String(cellIndex ?? ""), 10);
+      if (!normalizedActorId || !actorIds.has(normalizedActorId)) continue;
+      if (!Number.isInteger(normalizedCellIndex) || normalizedCellIndex < 0) continue;
+      placements[normalizedActorId] = normalizedCellIndex;
+    }
+    base[rankId] = placements;
+  }
+  return base;
+}
+
+function clearMarchActorPlacement(state, actorId) {
+  if (!state.rankPlacements || typeof state.rankPlacements !== "object") {
+    state.rankPlacements = buildDefaultMarchRankPlacements();
+  }
+  for (const rankId of Object.keys(state.rankPlacements)) {
+    if (state.rankPlacements[rankId] && typeof state.rankPlacements[rankId] === "object") {
+      delete state.rankPlacements[rankId][actorId];
+    }
+  }
+}
+
+function setMarchActorPlacement(state, rankId, actorId, cellIndex) {
+  clearMarchActorPlacement(state, actorId);
+  if (!Number.isInteger(cellIndex) || cellIndex < 0) return;
+  if (!state.rankPlacements || typeof state.rankPlacements !== "object") {
+    state.rankPlacements = buildDefaultMarchRankPlacements();
+  }
+  if (!state.rankPlacements[rankId] || typeof state.rankPlacements[rankId] !== "object") {
+    state.rankPlacements[rankId] = {};
+  }
+  state.rankPlacements[rankId][actorId] = cellIndex;
+}
+
+function buildRestWatchDetailSummary(slot, entriesView) {
+  const activeCount = Array.isArray(entriesView) ? entriesView.length : 0;
+  const visibleEntryCount = Math.max(
+    1,
+    Math.min(REST_WATCH_MAX_ENTRIES, Number.parseInt(slot?.visibleEntryCount, 10) || 1)
+  );
+  const ppRange = slot?.slotPpRange ?? computePassiveRangeForEntries(entriesView, "passivePerception");
+  const pivRange = slot?.slotPivRange ?? computePassiveRangeForEntries(entriesView, "passiveInvestigation");
+  const languages = summarizeRestWatchLanguages(entriesView);
+  const hasCoverageWarning = activeCount > 0 && Boolean(slot?.slotNoDarkvision);
+  const darkvisionRange = Number.isFinite(Number(slot?.slotDarkvisionRange))
+    ? Number(slot.slotDarkvisionRange)
+    : computeHighestNumericValue((entriesView ?? []).map((entry) => entry?.actor?.darkvision));
+  const coverageLabel =
+    activeCount === 0
+      ? "Coverage Pending"
+      : hasCoverageWarning
+        ? "Missing Darkvision"
+        : darkvisionRange !== null
+          ? `Darkvision ${darkvisionRange} ft`
+          : "No Darkvision";
+  return {
+    activeCountLabel: `${activeCount} / ${visibleEntryCount}`,
+    openCountLabel: `${Math.max(0, visibleEntryCount - activeCount)} Open`,
+    hasCoverageWarning,
+    coverageLabel,
+    coverageStateClass: hasCoverageWarning ? "is-warn" : "is-ready",
+    campfireLabel: slot?.campfireActive ? "Lit" : "Out",
+    campfireStateClass: slot?.campfireActive ? "is-active" : "is-inactive",
+    languagesLabel: languages.display,
+    languagesTooltip: languages.tooltip,
+    languagesCountLabel: languages.countLabel,
+    hasLanguages: languages.count > 0,
+    ppRangeLabel: `High ${ppRange.highLabel} / Low ${ppRange.lowLabel}`,
+    pivRangeLabel: `High ${pivRange.highLabel} / Low ${pivRange.lowLabel}`
+  };
+}
+
+function buildRestWatchNoteButtonContext(actorNameInput, noteTextInput) {
+  const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
+  const noteText = String(noteTextInput ?? "");
+  const savedNote = noteText.trim();
+  const hasSavedNote = savedNote.length > 0;
+  return {
+    hasSavedNote,
+    noteButtonTitle: hasSavedNote
+      ? `Open shared note for ${actorName}.\nSaved note available.`
+      : `Open shared note for ${actorName}`,
+    noteButtonAriaLabel: hasSavedNote
+      ? `Open shared note for ${actorName}. Saved note available.`
+      : `Open shared note for ${actorName}`
+  };
+}
+
+function bindActorSearchDialog(dialog, actors) {
+  const root = dialog?.element?.[0] ?? dialog?.element ?? null;
+  if (!root) return;
+  const searchInput = root.querySelector("input[name='actorSearch']");
+  const actorSelect = root.querySelector("select[name='actorId']");
+  if (!searchInput || !actorSelect) return;
+
+  const renderOptions = (needle = "") => {
+    const search = String(needle ?? "")
+      .trim()
+      .toLowerCase();
+    const previousValue = String(actorSelect.value ?? "").trim();
+    const matchingActors = actors.filter((actor) => {
+      const name = String(actor?.name ?? "").toLowerCase();
+      const type = String(actor?.type ?? "").toLowerCase();
+      return !search || name.includes(search) || type.includes(search);
+    });
+    actorSelect.innerHTML =
+      matchingActors.length > 0
+        ? matchingActors
+            .map((actor) => `<option value="${poEscapeHtml(actor.id)}">${poEscapeHtml(actor.name)}</option>`)
+            .join("")
+        : `<option value="">No matching actors</option>`;
+    if (matchingActors.some((actor) => String(actor.id ?? "").trim() === previousValue)) {
+      actorSelect.value = previousValue;
+    }
+  };
+
+  searchInput.addEventListener("input", () => {
+    renderOptions(searchInput.value);
+  });
+
+  renderOptions("");
+  searchInput.focus?.({ preventScroll: true });
+}
+
+async function assignSlotToUser(element) {
+  const state = getRestWatchState();
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  if (!game.user?.isGM) {
+    const selectableActors = getSelectablePlayerActorsForUser(game.user);
+    if (selectableActors.length <= 0) {
+      ui.notifications?.warn("No assigned character for this user.");
+      return;
+    }
+    const actor = await promptPlayerActorSelection(selectableActors, {
+      title: "Assign Character to Rest Watch",
+      label: "Character"
+    });
+    if (!actor) return;
+    const slotId = element?.closest(".po-card")?.dataset?.slotId;
+    const clicked = state.slots.find((s) => s.id === slotId);
+    if (!clicked) return;
+    if (restSlotHasActor(clicked, actor.id)) {
+      ui.notifications?.info(`${actor.name} is already assigned to this watch.`);
+      return;
+    }
+    if ((sanitizeRestWatchEntries(clicked)?.length ?? 0) >= REST_WATCH_MAX_ENTRIES) {
+      ui.notifications?.warn(`${getRestWatchSlotLabel(clicked.id)} is full.`);
+      return;
+    }
+    await updateRestWatchState({ op: "assignMe", slotId: clicked.id, actorId: actor.id });
+    return;
+  }
+  const actor = getActiveActorForUser();
+  if (!actor) {
+    ui.notifications?.warn("No assigned character for this user.");
+    return;
+  }
+  const slotId = element?.closest(".po-card")?.dataset?.slotId;
+  if (!slotId) return;
+  await updateRestWatchState((state) => {
+    const slot = state.slots.find((entry) => entry.id === slotId);
+    if (!slot) return;
+    if (!addActorToRestSlot(slot, actor.id)) {
+      if (restSlotHasActor(slot, actor.id)) {
+        ui.notifications?.info(`${actor.name} is already assigned to this watch.`);
+      } else {
+        ui.notifications?.warn(
+          `Watch is full. Remove someone from ${getRestWatchSlotLabel(slotId)} before adding ${actor.name}.`
+        );
+      }
+    }
+  });
+}
+
+async function assignSlotByPicker(element, config = {}) {
+  const slotIdFromCard = element?.closest(".po-card")?.dataset?.slotId;
+  const source = config?.source === "all" ? "all" : config?.source === "neutral-friendly" ? "neutral-friendly" : "pc";
+  const actors =
+    source === "pc"
+      ? getOwnedPcActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+      : source === "all"
+        ? game.actors.contents.slice().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+        : getNeutralFriendlyActors();
+  if (!actors.length) {
+    const message =
+      source === "pc"
+        ? "No player characters are available to assign."
+        : source === "all"
+          ? "No actors are available to assign."
+          : "No neutral or friendly actors are available to assign.";
+    ui.notifications?.warn(message);
+    return;
+  }
+  const state = getRestWatchState();
+  const slotOptions = (state.slots ?? []).map((slot) => {
+    const suffix = String(slot?.timeRange ?? "").trim();
+    const label = `Watch ${String(slot?.id ?? "").replace("watch-", "")}${suffix ? ` (${suffix})` : ""}`;
+    return `<option value="${slot.id}" ${slot.id === slotIdFromCard ? "selected" : ""}>${label}</option>`;
+  });
+  const actorOptions = actors.map((actor) => `<option value="${actor.id}">${actor.name}</option>`);
+  const actorLabel = source === "pc" ? "Character" : "Actor";
+  const needsSlotSelection = !slotIdFromCard;
+  const slotField = needsSlotSelection
+    ? `<div class="form-group"><label>Watch</label><select name="slotId">${slotOptions.join("")}</select></div>`
+    : "";
+  const searchable = source !== "pc";
+  const searchField = searchable
+    ? `<div class="form-group"><label>Search</label><input type="search" name="actorSearch" placeholder="Search actors..." autocomplete="off" /></div>`
+    : "";
+  const actorField = searchable
+    ? `<div class="form-group"><label>${actorLabel}</label><select name="actorId" size="10">${actorOptions.join("")}</select></div>`
+    : `<div class="form-group"><label>${actorLabel}</label><select name="actorId">${actorOptions.join("")}</select></div>`;
+  const content = `${slotField}${searchField}${actorField}`;
+  const dialog = new Dialog({
+    title: source === "pc" ? "Assign Character" : "Assign Actor",
+    content,
+    buttons: {
+      assign: {
+        label: "Assign",
+        callback: async (html) => {
+          const targetSlotId = String(slotIdFromCard ?? html.find("select[name=slotId]").val() ?? "").trim();
+          const actorId = html.find("select[name=actorId]").val();
+          if (!targetSlotId || !actorId) return;
+          let addStatus = "missing";
+          const updated = await updateRestWatchState(
+            (state) => {
+              const slot = state.slots.find((entry) => entry.id === targetSlotId);
+              if (!slot) return;
+              if (restSlotHasActor(slot, actorId)) {
+                addStatus = "duplicate";
+                return;
+              }
+              if ((ensureRestSlotEntriesList(slot)?.length ?? 0) >= REST_WATCH_MAX_ENTRIES) {
+                addStatus = "full";
+                return;
+              }
+              addStatus = addActorToRestSlot(slot, actorId) ? "added" : "missing";
+            },
+            { skipLocalRefresh: true }
+          );
+          if (!updated) return;
+          if (addStatus !== "added") {
+            const actorName = game.actors.get(actorId)?.name ?? "That actor";
+            if (addStatus === "duplicate") ui.notifications?.info(`${actorName} is already assigned to that watch.`);
+            else if (addStatus === "full")
+              ui.notifications?.warn(`Watch is full. Remove someone before adding ${actorName}.`);
+            return;
+          }
+          if (canAccessAllPlayerOps()) refreshRestWatchAppsImmediately();
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "assign"
+  });
+  dialog.render(true);
+  if (searchable) bindActorSearchDialog(dialog, actors);
+}
+
+async function commitRestWatchEntrySelection(slotIdInput, entryIndexInput, actorIdInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  const entryIndex = Number.parseInt(entryIndexInput, 10);
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return false;
+  if (!game.user?.isGM) {
+    const updated = await updateRestWatchState(
+      { op: "setSlotEntry", slotId, entryIndex, actorId },
+      { skipLocalRefresh: true }
+    );
+    if (!updated) return false;
+    refreshRestWatchAppsImmediately();
+    return true;
+  }
+  const updated = await updateRestWatchState(
+    (state) => {
+      const slot = state.slots.find((entry) => entry.id === slotId);
+      if (!slot) return;
+      setRestSlotEntryAtIndex(slot, entryIndex, actorId);
+    },
+    { skipLocalRefresh: true }
+  );
+  if (!updated) return false;
+  refreshRestWatchAppsImmediately();
+  return true;
+}
+
+async function updateRestWatchEntrySelection(element) {
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  const actorId = String(element?.value ?? "").trim();
+  await commitRestWatchEntrySelection(slotId, entryIndex, actorId);
+}
+
+async function clearRestWatchEntrySelection(element) {
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  const committedActorId = String(element?.dataset?.committedActorId ?? "").trim();
+  if (committedActorId) {
+    await commitRestWatchEntrySelection(slotId, entryIndex, "");
+    return;
+  }
+  if (!game.user?.isGM) {
+    const visibleEntryCount = Math.max(0, entryIndex);
+    const updated = await updateRestWatchState(
+      { op: "setVisibleEntryCount", slotId, visibleEntryCount },
+      { skipLocalRefresh: true }
+    );
+    if (!updated) return;
+    refreshRestWatchAppsImmediately();
+    return;
+  }
+  const updated = await updateRestWatchState(
+    (state) => {
+      const slot = state.slots.find((entry) => entry.id === slotId);
+      if (!slot) return;
+      removeRestWatchVisibleSlotAtIndex(slot, entryIndex);
+    },
+    { skipLocalRefresh: true }
+  );
+  if (!updated) return;
+  refreshRestWatchAppsImmediately();
+}
+
+async function addRestWatchVisibleSlot(element) {
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  if (!slotId) return;
+  let nextVisibleIndex = -1;
+  if (!game.user?.isGM) {
+    const card = element?.closest?.(".po-card");
+    const visibleRows = Array.from(card?.querySelectorAll?.(".po-watch-assignment-row:not(.is-hidden)") ?? []);
+    nextVisibleIndex = visibleRows.length;
+    const updated = await updateRestWatchState(
+      { op: "setVisibleEntryCount", slotId, visibleEntryCount: nextVisibleIndex + 1 },
+      { skipLocalRefresh: true }
+    );
+    if (!updated) return;
+    refreshRestWatchAppsImmediately();
+    revealRestWatchAssignmentRow(element, slotId, nextVisibleIndex);
+    return;
+  }
+  const updated = await updateRestWatchState(
+    (state) => {
+      const slot = Array.isArray(state?.slots)
+        ? state.slots.find((entry) => String(entry?.id ?? "").trim() === slotId)
+        : null;
+      if (!slot) return;
+      const entries = sanitizeRestWatchEntries(slot);
+      const currentVisible = normalizeRestWatchVisibleEntryCount(slot, entries);
+      nextVisibleIndex = currentVisible;
+      slot.visibleEntryCount = Math.min(REST_WATCH_MAX_ENTRIES, currentVisible + 1);
+    },
+    { skipLocalRefresh: true }
+  );
+  if (!updated) return;
+  refreshRestWatchAppsImmediately();
+  revealRestWatchAssignmentRow(element, slotId, nextVisibleIndex);
+}
+
+function revealRestWatchAssignmentRow(element, slotIdInput, entryIndexInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  const entryIndex = Number.parseInt(entryIndexInput, 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  const appWindow = element?.closest?.(".po-window");
+  if (!appWindow) return;
+  const row = appWindow.querySelector(
+    `.po-card[data-slot-id="${slotId}"] .po-watch-assignment-row[data-entry-index="${entryIndex}"]`
+  );
+  if (!row) return;
+  row.classList.remove("is-hidden", "is-revealed");
+  void row.offsetWidth;
+  row.classList.add("is-revealed");
+  window.setTimeout(() => {
+    row.classList.remove("is-revealed");
+  }, 650);
+}
+
+async function clearSlotEntry(element) {
+  const state = getRestWatchState();
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  const card = element?.closest(".po-card");
+  const slotId = card?.dataset?.slotId;
+  const actorId = element?.closest(".po-watch-entry")?.dataset?.actorId;
+  if (!slotId || !actorId) return;
+  const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
+
+  if (!game.user?.isGM) {
+    const updated = await updateRestWatchState({ op: "clearEntry", slotId, actorId });
+    if (!updated) return;
+    clearNoteDraftCacheValue(cacheKey);
+    return;
+  }
+
+  const updated = await updateRestWatchState((state) => {
+    const slot = state.slots.find((entry) => entry.id === slotId);
+    if (!slot) return;
+    // Migrate old format
+    if (!slot.entries && slot.actorId) {
+      slot.entries = [];
+      slot.actorId = null;
+      slot.notes = "";
+      return;
+    }
+    if (!slot.entries) slot.entries = [];
+    slot.entries = sanitizeRestWatchEntries({
+      entries: slot.entries.filter((entry) => entry.actorId !== actorId)
+    });
+    if (slot.entries.length === 0) {
+      slot.actorId = null;
+      slot.notes = "";
+    }
+  });
+  if (!updated) return;
+  clearNoteDraftCacheValue(cacheKey);
+}
+
+async function swapSlots(element) {
+  const state = getRestWatchState();
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  const slotId = element?.closest(".po-card")?.dataset?.slotId;
+  if (!slotId) return;
+
+  const otherOptions = state.slots
+    .filter((s) => s.id !== slotId)
+    .map((s) => {
+      const entryCount = s.entries?.length ?? 0;
+      const label = entryCount > 0 ? ` (${entryCount} assigned)` : "";
+      return `<option value="${s.id}">Slot ${s.id.replace("watch-", "")}${label}</option>`;
+    })
+    .join("");
+
+  const content = `<div class="form-group"><label>Swap with:</label><select name="targetSlotId">${otherOptions}</select></div>`;
+  const dialog = new Dialog({
+    title: "Swap Slots",
+    content,
+    buttons: {
+      swap: {
+        label: "Swap",
+        callback: async (html) => {
+          const targetSlotId = html.find("select[name=targetSlotId]").val();
+          if (!targetSlotId) return;
+          await updateRestWatchState((state) => {
+            const slot1 = state.slots.find((s) => s.id === slotId);
+            const slot2 = state.slots.find((s) => s.id === targetSlotId);
+            if (!slot1 || !slot2) return;
+            // Migrate old format for both slots
+            if (!slot1.entries && slot1.actorId) {
+              slot1.entries = [{ actorId: slot1.actorId, notes: slot1.notes ?? "" }];
+              slot1.actorId = null;
+              slot1.notes = "";
+            }
+            if (!slot2.entries && slot2.actorId) {
+              slot2.entries = [{ actorId: slot2.actorId, notes: slot2.notes ?? "" }];
+              slot2.actorId = null;
+              slot2.notes = "";
+            }
+            if (!slot1.entries) slot1.entries = [];
+            if (!slot2.entries) slot2.entries = [];
+            [slot1.entries, slot2.entries] = [slot2.entries, slot1.entries];
+          });
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "swap"
+  });
+  dialog.render(true);
+}
+
+async function updateVisibility(element) {
+  const value = element?.value ?? element?.querySelector?.("select")?.value;
+  if (!value) return;
+  await updateRestWatchState((state) => {
+    state.visibility = value;
+  });
+}
+
+async function updateTimeRange(element) {
+  if (!canAccessAllPlayerOps()) return; // GM only
+  const slotId = element?.dataset?.slotId;
+  const timeRange = element?.value ?? "";
+  if (!slotId) return;
+  await updateRestWatchState((state) => {
+    const slot = state.slots.find((s) => s.id === slotId);
+    if (!slot) return;
+    slot.timeRange = timeRange;
+  });
+}
+
+function getRestWatchAutofillEligibleActors() {
+  return game.actors.contents.filter((actor) => {
+    if (actor.hasPlayerOwner) return true;
+    const folderName = actor.folder?.name ?? "";
+    return folderName.toLowerCase().includes("hireling");
+  });
+}
+
+async function autofillFromParty() {
+  const state = getRestWatchState();
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  const actors = getRestWatchAutofillEligibleActors();
+  const assignmentSummary = {
+    totalActors: actors.length,
+    totalVisibleSlots: 0,
+    assignedActors: 0,
+    unassignedActors: 0,
+    watchCount: 0
+  };
+  await updateRestWatchState((state) => {
+    const slots = Array.isArray(state?.slots) ? state.slots : [];
+    assignmentSummary.watchCount = slots.length;
+    let actorIndex = 0;
+    slots.forEach((slot) => {
+      const existingEntries = sanitizeRestWatchEntries(slot);
+      const visibleEntryCount = normalizeRestWatchVisibleEntryCount(slot, existingEntries);
+      assignmentSummary.totalVisibleSlots += visibleEntryCount;
+      const fixedRows = Array.from({ length: REST_WATCH_MAX_ENTRIES }, () => null);
+      for (let rowIndex = 0; rowIndex < visibleEntryCount && actorIndex < actors.length; rowIndex += 1) {
+        const actorId = String(actors[actorIndex]?.id ?? "").trim();
+        if (!actorId) continue;
+        fixedRows[rowIndex] = { actorId, notes: "" };
+        actorIndex += 1;
+      }
+      slot.visibleEntryCount = visibleEntryCount;
+      slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+      slot.actorId = null;
+      slot.notes = "";
+    });
+    assignmentSummary.assignedActors = Math.min(assignmentSummary.totalActors, actorIndex);
+    assignmentSummary.unassignedActors = Math.max(0, assignmentSummary.totalActors - assignmentSummary.assignedActors);
+  });
+  if (assignmentSummary.totalActors <= 0) return;
+  if (assignmentSummary.unassignedActors > 0) {
+    ui.notifications?.warn(
+      `Autofill assigned ${assignmentSummary.assignedActors} of ${assignmentSummary.totalActors} actors. ${assignmentSummary.unassignedActors} actor${assignmentSummary.unassignedActors === 1 ? " was" : "s were"} not placed.`
+    );
+    return;
+  }
+  ui.notifications?.info(
+    `Autofill assigned ${assignmentSummary.assignedActors} actor${assignmentSummary.assignedActors === 1 ? "" : "s"} across ${assignmentSummary.watchCount} watch${assignmentSummary.watchCount === 1 ? "" : "es"}.`
+  );
+}
+
+async function restoreRestCommitted() {
+  const committed = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(
+    SETTINGS.REST_STATE,
+    foundry.utils.deepClone(committed)
+  );
+  if (!saved) return;
+  scheduleIntegrationSync("rest-watch-restore");
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST }); // ensures local refresh even if socket doesn't echo back
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+}
+
+async function commitRestWatchState() {
+  const state = getRestWatchState();
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(
+    SETTINGS.REST_COMMITTED,
+    foundry.utils.deepClone(state)
+  );
+  if (!saved) return;
+  ui.notifications?.info("Rest watch snapshot saved.");
+}
+
+async function writeClipboardText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    if (foundry?.utils?.copyToClipboard) {
+      foundry.utils.copyToClipboard(text);
+      return true;
+    }
+    throw err;
+  }
+}
+
+async function copyRestWatchText(asMarkdown) {
+  const state = getRestWatchState();
+  const isGM = canAccessAllPlayerOps();
+  let text = "";
+
+  if (asMarkdown && isGM) {
+    const rows = [];
+    state.slots.forEach((slot, index) => {
+      const entries = slot.entries ?? [];
+      const timeRange = slot.timeRange || "-";
+      const slotNumber = getRestWatchSlotNumber(slot?.id, index) ?? index + 1;
+      if (entries.length === 0) {
+        rows.push(`| ${slotNumber} | (empty) | - | ${timeRange} |`);
+      } else {
+        entries.forEach((entry) => {
+          const actor = game.actors.get(entry.actorId);
+          const name = actor?.name ?? "(unknown)";
+          const pp = actor ? (getPassive(actor, "prc") ?? "-") : "-";
+          rows.push(`| ${slotNumber} | ${name} | ${pp} | ${timeRange} |`);
+        });
+      }
+    });
+    text = `| Watch | Actor | PP | Time |\n| --- | --- | --- | --- |\n${rows.join("\n")}`;
+  } else {
+    const lines = [];
+    state.slots.forEach((slot, index) => {
+      const entries = slot.entries ?? [];
+      const label = getRestWatchSlotLabel(slot?.id, index);
+      if (entries.length === 0) {
+        lines.push(asMarkdown ? `| ${label} | (empty) |` : `${label}: (empty)`);
+      } else {
+        entries.forEach((entry) => {
+          const actor = game.actors.get(entry.actorId);
+          const name = actor?.name ?? "(unknown)";
+          lines.push(asMarkdown ? `| ${label} | ${name} |` : `${label}: ${name}`);
+        });
+      }
+    });
+    text = asMarkdown ? `| Slot | Actor |\n| --- | --- |\n${lines.join("\n")}` : lines.join("\n");
+  }
+
+  try {
+    await writeClipboardText(text);
+    ui.notifications?.info("Copied to clipboard.");
+  } catch (err) {
+    console.warn("Clipboard write failed:", err);
+    ui.notifications?.warn("Failed to copy to clipboard. Check browser permissions.");
+  }
+}
+
+async function clearRestWatchAll() {
+  const state = getRestWatchState();
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear all.");
+    return;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Clear Rest Watch",
+    content: "<p>Clear all rest watch slots?</p>"
+  });
+  if (!confirmed) return;
+  await updateRestWatchState((state) => {
+    state.slots = buildStoredWatchSlots();
+    state.campfire = false;
+    state.campfireBySlot = {};
+  });
+}
+
+async function runDoctrineCheckPrompt() {
+  if (!canAccessAllPlayerOps()) return;
+  const state = getMarchingOrderState();
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const doctrineRows = getMarchDoctrineActorRows(state);
+  const trigger = formationSnapshot.doctrine.pendingTrigger || MARCH_DOCTRINE_TRIGGERS.MANUAL;
+
+  // Get current failure and success streak from tracker for DC escalation
+  const currentTracker = formationSnapshot.doctrineTracker ?? {};
+  const currentFailureStreak = Math.max(0, Number(currentTracker.failureStreakCount ?? 0));
+  const currentSuccessStreak = Math.max(0, Number(currentTracker.consecutiveSuccessCount ?? 0));
+
+  const checkPayloadBase = buildDoctrineCheckPayload({
+    formationId: formationSnapshot.formation.id,
+    doctrineState: formationSnapshot.doctrine.state,
+    trigger,
+    actorRows: doctrineRows,
+    failureStreakCount: currentFailureStreak,
+    consecutiveSuccessCount: currentSuccessStreak
+  });
+
+  if (!checkPayloadBase.active) {
+    ui.notifications?.info("Free formation bypasses doctrine checks.");
+    return;
+  }
+
+  const roll = await new Roll(`1d20 + ${checkPayloadBase.averageModifier}`).evaluate();
+  const checkPayload = buildDoctrineCheckPayload({
+    formationId: formationSnapshot.formation.id,
+    doctrineState: formationSnapshot.doctrine.state,
+    trigger,
+    actorRows: doctrineRows,
+    rollTotal: roll.total,
+    failureStreakCount: currentFailureStreak,
+    consecutiveSuccessCount: currentSuccessStreak
+  });
+
+  await updateMarchingOrderState((draft) => {
+    const tracker = ensureDoctrineTracker(draft);
+    tracker.state = checkPayload.state;
+    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tracker.lastCheckTrigger = checkPayload.trigger;
+    tracker.lastCheckSummary = checkPayload.summary;
+    tracker.lastCheckRollTotal = Number(checkPayload.rollTotal ?? 0);
+    tracker.lastCheckDc = Number(checkPayload.dc ?? 0);
+    tracker.lastCheckWasSuccess = checkPayload.checkPassed ?? false;
+
+    // Update failure/success streaks based on check result
+    if (checkPayload.checkPassed) {
+      tracker.failureStreakCount = 0;
+      tracker.consecutiveSuccessCount = Math.min(10, (tracker.consecutiveSuccessCount ?? 0) + 1);
+    } else {
+      tracker.failureStreakCount = Math.min(10, (tracker.failureStreakCount ?? 0) + 1);
+      tracker.consecutiveSuccessCount = 0;
+    }
+
+    clearDoctrineTriggerPending(draft);
+  });
+  await flushIntegrationSyncQueue("march-doctrine-check");
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+
+  // Build detailed result card with severity callout
+  const resultEmoji = checkPayload.checkPassed ? "✓" : "✗";
+  const severityLabel =
+    checkPayload.severityLevel === "success"
+      ? "<span style='color: #28c44e; font-weight: bold;'>✓ SUCCESS</span>"
+      : checkPayload.severityLevel === "light"
+        ? "<span style='color: #f59e0b; font-weight: bold;'>⚠ STRAINED</span>"
+        : "<span style='color: #dc2626; font-weight: bold;'>✗ CRITICAL - FORMATION BROKEN</span>";
+
+  const momentumLabel =
+    checkPayload.momentumBonus > 0
+      ? `<p><em>★ Momentum Bonus: +${checkPayload.momentumBonus} (from ${checkPayload.consecutiveSuccesses} successes)</em></p>`
+      : "";
+
+  const streakLabel =
+    currentFailureStreak > 0
+      ? `<p><em>Difficulty escalated by +${currentFailureStreak} due to failure streak.</em></p>`
+      : "";
+
+  const recoveryHint =
+    !checkPayload.checkPassed && checkPayload.recoveryPath !== MARCH_DOCTRINE_RECOVERY_PATHS.NONE
+      ? `<p><em>Recovery option: ${escape(checkPayload.recoveryPathLabel)}</em></p>`
+      : "";
+
+  const doctrinePartySummary =
+    doctrineRows.length > 0
+      ? `<ul>${doctrineRows.map((row) => `<li><strong>${escape(row.name)}</strong> (${escape(row.rankId)}) CHA ${row.charismaModifier >= 0 ? "+" : ""}${row.charismaModifier}</li>`).join("")}</ul>`
+      : "<p><em>No assigned actors were available for the check.</em></p>";
+
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Joint Leadership Check</strong></p>
+      <p><strong>Formation:</strong> ${escape(formationSnapshot.formation.label)}</p>
+      <p><strong>Category:</strong> ${escape(formationSnapshot.formation.categoryLabel)}</p>
+      <p><strong>Trigger:</strong> ${escape(getMarchDoctrineTriggerLabel(checkPayload.trigger))}</p>
+      <p><strong>Method:</strong> ${escape(checkPayload.methodLabel)}</p>
+      <p><strong>Roll:</strong> ${escape(checkPayload.summary)} Result ${roll.total}</p>
+      ${streakLabel}
+      ${momentumLabel}
+      <p><strong>Result:</strong> ${severityLabel}</p>
+      <p><strong>Doctrine State:</strong> ${escape(checkPayload.stateLabel)}</p>
+      <p><strong>Formation State:</strong> ${escape(updatedSnapshot.formationState.stateLabel)}</p>
+      ${recoveryHint}
+      <p><strong>Assigned Group:</strong></p>
+      ${doctrinePartySummary}
+      <p><strong>Current Effects:</strong> ${escape(updatedSnapshot.effectSummaries.join(", ") || "None")}</p>
+    `
+  });
+}
+
+async function markTheaterDoctrineTrigger() {
+  if (!canAccessAllPlayerOps()) return;
+  await updateMarchingOrderState((state) => {
+    const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+    if (formationId === "free") return;
+    markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.THEATER_SCENE);
+  });
+  ui.notifications?.info("Theater-of-the-mind pressure marked. Run Joint Leadership to maintain formation bonuses.");
+}
+
+async function runDoctrineRallyCheck() {
+  if (!canAccessAllPlayerOps()) return;
+  const state = getMarchingOrderState();
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const doctrineRows = getMarchDoctrineActorRows(state);
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  if (formationSnapshot?.formation?.id === "free") {
+    ui.notifications?.info("Free formation has no doctrine pressure to rally.");
+    return;
+  }
+
+  const averageModifier =
+    doctrineRows.length > 0
+      ? Math.round(doctrineRows.reduce((sum, row) => sum + Number(row?.charismaModifier ?? 0), 0) / doctrineRows.length)
+      : 0;
+  const dc = 10;
+  const roll = await new Roll(`1d20 + ${averageModifier}`).evaluate();
+  const success = Number(roll.total ?? 0) >= dc;
+
+  await updateMarchingOrderState((draft) => {
+    const tracker = ensureDoctrineTracker(draft);
+    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tracker.lastCheckTrigger = MARCH_DOCTRINE_TRIGGERS.MANUAL;
+    tracker.lastCheckRollTotal = Number(roll.total ?? 0);
+    tracker.lastCheckDc = dc;
+    tracker.lastCheckWasSuccess = success;
+    if (success) {
+      tracker.failureStreakCount = Math.max(0, Number(tracker.failureStreakCount ?? 0) - 1);
+      tracker.consecutiveSuccessCount = Math.min(10, Number(tracker.consecutiveSuccessCount ?? 0) + 1);
+      tracker.state =
+        tracker.state === MARCH_DOCTRINE_STATES.BROKEN ? MARCH_DOCTRINE_STATES.STRAINED : MARCH_DOCTRINE_STATES.STABLE;
+      tracker.lastCheckSummary = `Rally Check succeeded (${roll.total} vs DC ${dc}). Doctrine pressure eased.`;
+      clearDoctrineTriggerPending(draft);
+    } else {
+      tracker.failureStreakCount = Math.min(10, Number(tracker.failureStreakCount ?? 0) + 1);
+      tracker.consecutiveSuccessCount = 0;
+      if (tracker.state === MARCH_DOCTRINE_STATES.STABLE) tracker.state = MARCH_DOCTRINE_STATES.STRAINED;
+      tracker.lastCheckSummary = `Rally Check failed (${roll.total} vs DC ${dc}). Doctrine pressure increased.`;
+    }
+  });
+  await flushIntegrationSyncQueue("march-doctrine-rally");
+
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Rally Check</strong></p>
+      <p><strong>Formation:</strong> ${escape(formationSnapshot?.formation?.label ?? "Unknown")}</p>
+      <p><strong>Roll:</strong> 1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)} = ${escape(roll.total)} vs DC ${dc}</p>
+      <p><strong>Outcome:</strong> ${success ? "<span style='color: #28c44e; font-weight: bold;'>SUCCESS</span>" : "<span style='color: #dc2626; font-weight: bold;'>FAILURE</span>"}</p>
+      <p><strong>Doctrine State:</strong> ${escape(updatedSnapshot?.doctrine?.stateLabel ?? "Unknown")}</p>
+    `
+  });
+}
+
+async function runDoctrineLeadersCommand() {
+  if (!canAccessAllPlayerOps()) return;
+  const state = getMarchingOrderState();
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const doctrineRows = getMarchDoctrineActorRows(state);
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  if (formationSnapshot?.formation?.id === "free") {
+    ui.notifications?.info("Free formation has no doctrine pressure to command.");
+    return;
+  }
+
+  const activeCombatId = String(game.combats?.active?.id ?? "").trim();
+  const tracker = formationSnapshot?.doctrineTracker ?? {};
+  if (activeCombatId && String(tracker.leadersCommandCombatId ?? "") === activeCombatId) {
+    ui.notifications?.warn("Leader's Command was already used this combat.");
+    return;
+  }
+
+  const averageModifier =
+    doctrineRows.length > 0
+      ? Math.round(doctrineRows.reduce((sum, row) => sum + Number(row?.charismaModifier ?? 0), 0) / doctrineRows.length)
+      : 0;
+  const dc = 12;
+  const roll = await new Roll(`1d20 + ${averageModifier}`).evaluate();
+  const success = Number(roll.total ?? 0) >= dc;
+
+  await updateMarchingOrderState((draft) => {
+    const nextTracker = ensureDoctrineTracker(draft);
+    nextTracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    nextTracker.lastCheckTrigger = MARCH_DOCTRINE_TRIGGERS.MANUAL;
+    nextTracker.lastCheckRollTotal = Number(roll.total ?? 0);
+    nextTracker.lastCheckDc = dc;
+    nextTracker.lastCheckWasSuccess = success;
+    if (success) {
+      nextTracker.failureStreakCount = Math.max(0, Number(nextTracker.failureStreakCount ?? 0) - 2);
+      nextTracker.consecutiveSuccessCount = Math.min(10, Number(nextTracker.consecutiveSuccessCount ?? 0) + 1);
+      nextTracker.state =
+        nextTracker.state === MARCH_DOCTRINE_STATES.BROKEN
+          ? MARCH_DOCTRINE_STATES.STRAINED
+          : MARCH_DOCTRINE_STATES.STABLE;
+      nextTracker.lastCheckSummary = `Leader's Command succeeded (${roll.total} vs DC ${dc}). Failure streak reduced by 2.`;
+      if (activeCombatId) nextTracker.leadersCommandCombatId = activeCombatId;
+      clearDoctrineTriggerPending(draft);
+    } else {
+      nextTracker.failureStreakCount = Math.min(10, Number(nextTracker.failureStreakCount ?? 0) + 1);
+      nextTracker.consecutiveSuccessCount = 0;
+      if (nextTracker.state === MARCH_DOCTRINE_STATES.STABLE) nextTracker.state = MARCH_DOCTRINE_STATES.STRAINED;
+      nextTracker.lastCheckSummary = `Leader's Command failed (${roll.total} vs DC ${dc}). Doctrine pressure increased.`;
+    }
+  });
+  await flushIntegrationSyncQueue("march-doctrine-leaders-command");
+
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Leader's Command</strong></p>
+      <p><strong>Formation:</strong> ${escape(formationSnapshot?.formation?.label ?? "Unknown")}</p>
+      <p><strong>Roll:</strong> 1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)} = ${escape(roll.total)} vs DC ${dc}</p>
+      <p><strong>Outcome:</strong> ${success ? "<span style='color: #28c44e; font-weight: bold;'>SUCCESS</span>" : "<span style='color: #dc2626; font-weight: bold;'>FAILURE</span>"}</p>
+      <p><strong>Doctrine State:</strong> ${escape(updatedSnapshot?.doctrine?.stateLabel ?? "Unknown")}</p>
+    `
+  });
+}
+
+async function runDoctrineFormationDropRecovery() {
+  if (!canAccessAllPlayerOps()) return;
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const state = getMarchingOrderState();
+  const currentFormationId = normalizeMarchingFormation(state.formation ?? "loose");
+  if (currentFormationId === "free") {
+    ui.notifications?.info("Formation is already Free. No further drop is available.");
+    return;
+  }
+
+  const currentDefinition = getMarchFormationDefinition(currentFormationId);
+  const candidateFormations = getMarchFormationDefinitions()
+    .filter((entry) => entry.id !== currentFormationId)
+    .filter((entry) => Number(entry.doctrineDc ?? 0) <= Number(currentDefinition.doctrineDc ?? 0))
+    .sort((a, b) => Number(a.doctrineDc ?? 0) - Number(b.doctrineDc ?? 0));
+
+  if (!candidateFormations.length) {
+    ui.notifications?.warn("No lower-pressure formation is available.");
+    return;
+  }
+
+  const optionsHtml = candidateFormations
+    .map((entry) => `<option value="${entry.id}">${entry.label} (DC ${entry.doctrineDc})</option>`)
+    .join("");
+
+  let selectedFormationId = candidateFormations[0].id;
+  const confirmed = await Dialog.confirm({
+    title: "Drop Formation Pressure",
+    content: `
+      <p>Choose a lower-pressure formation to stabilize doctrine.</p>
+      <div class="form-group">
+        <label>Target Formation</label>
+        <select name="formationId">${optionsHtml}</select>
+      </div>
+    `,
+    yes: (html) => {
+      const picked = String(html?.find?.("select[name=formationId]")?.val?.() ?? "").trim();
+      if (picked) selectedFormationId = picked;
+    }
+  });
+  if (!confirmed) return;
+
+  await updateMarchingOrderState((draft) => {
+    draft.formation = selectedFormationId;
+    const tracker = ensureDoctrineTracker(draft);
+    tracker.failureStreakCount = Math.max(0, Number(tracker.failureStreakCount ?? 0) - 1);
+    tracker.consecutiveSuccessCount = 0;
+    tracker.lastCheckWasSuccess = true;
+    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tracker.lastCheckTrigger = MARCH_DOCTRINE_TRIGGERS.MANUAL;
+    tracker.lastCheckSummary = `Formation dropped to ${selectedFormationId}. Doctrine pressure reduced.`;
+    if (selectedFormationId === "free") {
+      tracker.state = MARCH_DOCTRINE_STATES.STABLE;
+      clearDoctrineTriggerPending(draft);
+    } else if (tracker.state === MARCH_DOCTRINE_STATES.BROKEN) {
+      tracker.state = MARCH_DOCTRINE_STATES.STRAINED;
+    }
+  });
+  await flushIntegrationSyncQueue("march-doctrine-formation-drop");
+
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Formation Recovery</strong></p>
+      <p><strong>Action:</strong> Formation Drop</p>
+      <p><strong>New Formation:</strong> ${escape(updatedSnapshot?.formation?.label ?? selectedFormationId)}</p>
+      <p><strong>Doctrine State:</strong> ${escape(updatedSnapshot?.doctrine?.stateLabel ?? "Unknown")}</p>
+    `
+  });
+}
+
+async function onMarchSceneEntry() {
+  return;
+}
+
+let marchSpacingCheckTimeout = null;
+let lastMarchDoctrineCombatRoundKey = "";
+
+const FORMATION_REMINDER_VISIBILITY = Object.freeze({
+  PUBLIC: "public",
+  GM_ONLY: "gm-only"
+});
+
+function normalizeFormationReminderVisibility(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return normalized === FORMATION_REMINDER_VISIBILITY.GM_ONLY
+    ? FORMATION_REMINDER_VISIBILITY.GM_ONLY
+    : FORMATION_REMINDER_VISIBILITY.PUBLIC;
+}
+
+function getFormationReminderVisibility() {
+  return FORMATION_REMINDER_VISIBILITY.PUBLIC;
+}
+
+async function onMarchCombatRound(combat, changed = {}) {
+  if (!game.user?.isGM) return;
+  const round = Number(combat?.round ?? 0);
+  if (!Number.isFinite(round) || round <= 0) return;
+  const combatId = String(combat?.id ?? "").trim();
+  if (!combatId) return;
+
+  const triggerSource = String(changed?.source ?? "").trim();
+  if (!triggerSource && changed && changed.round === undefined) return;
+
+  const roundKey = `${combatId}:${round}`;
+  if (roundKey === lastMarchDoctrineCombatRoundKey) return;
+  lastMarchDoctrineCombatRoundKey = roundKey;
+
+  await updateMarchingOrderState((state) => {
+    const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+    if (formationId === "free") return;
+    markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.COMBAT_ROUND);
+  });
+
+  const snapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  const pendingTrigger = String(snapshot?.doctrine?.pendingTrigger ?? "").trim();
+  if (pendingTrigger === MARCH_DOCTRINE_TRIGGERS.COMBAT_ROUND && snapshot?.doctrine?.cohesionCheckRequired) {
+    notifyUiWarnThrottled(
+      "Combat round maintenance is pending. Roll Joint Leadership to keep formation bonuses active.",
+      {
+        key: `march-doctrine-combat-round-${roundKey}`,
+        ttlMs: 5000
+      }
+    );
+
+    const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+    const effectSummary =
+      Array.isArray(snapshot?.effectSummaries) && snapshot.effectSummaries.length > 0
+        ? snapshot.effectSummaries.join(", ")
+        : "No active effects";
+    const reminderVisibility = getFormationReminderVisibility();
+    const gmWhisperIds =
+      reminderVisibility === FORMATION_REMINDER_VISIBILITY.GM_ONLY
+        ? Array.from(game.users ?? [])
+            .filter((user) => user?.isGM)
+            .map((user) => user.id)
+            .filter(Boolean)
+        : [];
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      whisper: gmWhisperIds,
+      content: `
+        <p><strong>Formation Maintenance Due</strong></p>
+        <p><strong>Round:</strong> ${escape(round)}</p>
+        <p><strong>Formation:</strong> ${escape(snapshot?.formation?.label ?? "Unknown")}</p>
+        <p><strong>Trigger:</strong> ${escape(snapshot?.doctrine?.pendingTriggerLabel ?? "Combat round maintenance")}</p>
+        <p><strong>Action:</strong> Roll <em>Joint Leadership</em> to keep formation bonuses active this round.</p>
+        <p><strong>Current Effects:</strong> ${escape(effectSummary)}</p>
+      `
+    });
+  }
+}
+
+function onMarchCombatEnded(combat) {
+  const combatId = String(combat?.id ?? "").trim();
+  if (!combatId) return;
+  if (lastMarchDoctrineCombatRoundKey.startsWith(`${combatId}:`)) {
+    lastMarchDoctrineCombatRoundKey = "";
+  }
+}
+
+function scheduleSpacingViolationCheck() {
+  if (!game.user?.isGM) return;
+  if (marchSpacingCheckTimeout) clearTimeout(marchSpacingCheckTimeout);
+  marchSpacingCheckTimeout = setTimeout(async () => {
+    marchSpacingCheckTimeout = null;
+    const state = getMarchingOrderState();
+    const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+    if (formationId === "free") return;
+    const snapshot = getMarchingFormationSnapshot(state);
+    const validityState = snapshot.validity?.state;
+    if (!validityState || validityState === MARCH_DOCTRINE_STATES.STABLE) return;
+    await updateMarchingOrderState((draft) => {
+      markDoctrineTriggerPending(draft, MARCH_DOCTRINE_TRIGGERS.SPACING_VIOLATION);
+    });
+  }, 500);
+}
+
+function onMarchTokenMoved(tokenDoc) {
+  if (!game.user?.isGM) return;
+  const actorId = String(tokenDoc?.actorId ?? tokenDoc?.actor?.id ?? "").trim();
+  if (!actorId) return;
+  const state = getMarchingOrderState();
+  const ordered = getOrderedMarchingActors(state);
+  if (!ordered.includes(actorId)) return;
+  scheduleSpacingViolationCheck();
+}
+
+function refreshSingleAppPreservingView(app) {
+  if (!app?.render) return;
+  const windowState = captureWindowState(app);
+  if (windowState) pendingWindowRestore.set(app, windowState);
+  renderAppWithPreservedState(
+    app,
+    { force: true, parts: ["main"], focus: false },
+    {
+      action: "refresh-single-app",
+      eventType: "refresh"
+    }
+  );
+}
+
+function refreshRestWatchAppsImmediately() {
+  refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
+  refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL));
+  refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER));
+}
+
+function moveActorEntryToRankDom(rankId, actorId) {
+  const marchingOrderApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  const root = getAppRootElement(marchingOrderApp);
+  if (!root) return false;
+  const targetEntries = root.querySelector(`.po-rank-col[data-rank-id="${rankId}"] .po-rank-entries`);
+  if (!targetEntries) return false;
+
+  const entry = root.querySelector(`.po-entry[data-actor-id="${actorId}"]`);
+  if (!entry) return false;
+
+  targetEntries.appendChild(entry);
+
+  root.querySelectorAll(".po-rank-col .po-rank-entries").forEach((container) => {
+    const hasEntries = Boolean(container.querySelector(".po-entry"));
+    const emptyState = container.querySelector(".po-rank-empty");
+    if (!emptyState) return;
+    emptyState.style.display = hasEntries ? "none" : "";
+  });
+
+  return true;
+}
+
+async function assignActorToRank(element) {
+  if (!canAccessAllPlayerOps()) return;
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, true)) {
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  const rankId = element?.dataset?.rankId;
+  if (!rankId) return;
+  const requestedInsertIndex = Number.parseInt(String(element?.dataset?.insertIndex ?? ""), 10);
+  const hasRequestedInsertIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0;
+  const requestedCellIndex = Number.parseInt(String(element?.dataset?.cellIndex ?? ""), 10);
+  const hasRequestedCellIndex = Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0;
+
+  const actors = game.actors.contents.filter((actor) => isEligiblePartyCharacterActor(actor));
+  const options = actors.map((actor) => `<option value="${actor.id}">${actor.name}</option>`);
+  const content = `<div class="form-group"><label>Actor</label><select name="actorId">${options.join("")}</select></div>`;
+  const dialog = new Dialog({
+    title: `Assign Actor - ${rankId}`,
+    content,
+    buttons: {
+      assign: {
+        label: "Assign",
+        callback: async (html) => {
+          const actorId = html.find("select[name=actorId]").val();
+          if (!actorId) return;
+          const request = { op: "joinRank", actorId, rankId };
+          if (hasRequestedInsertIndex) request.insertIndex = requestedInsertIndex;
+          if (hasRequestedCellIndex) request.cellIndex = requestedCellIndex;
+          const updated = !game.user?.isGM
+            ? await updateMarchingOrderState(request, { skipLocalRefresh: true })
+            : await updateMarchingOrderState(
+                (state) => {
+                  for (const key of Object.keys(state.ranks)) {
+                    state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
+                  }
+                  clearMarchActorPlacement(state, actorId);
+                  if (!state.ranks[rankId]) state.ranks[rankId] = [];
+                  const target = state.ranks[rankId];
+                  const safeIndex = hasRequestedInsertIndex
+                    ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+                    : target.length;
+                  target.splice(safeIndex, 0, actorId);
+                  setMarchActorPlacement(state, rankId, actorId, hasRequestedCellIndex ? requestedCellIndex : null);
+                  if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+                    markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+                  }
+                },
+                { skipLocalRefresh: true }
+              );
+          if (!updated) {
+            refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+            return;
+          }
+
+          const moved = moveActorEntryToRankDom(rankId, actorId);
+          if (!moved) {
+            refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+          }
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "assign"
+  });
+  dialog.render(true);
+}
+
+async function removeActorFromRanks(element) {
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  if (!actorId) return;
+  const actor = game.actors.get(actorId);
+  if (!actor) return;
+
+  if (!canAccessAllPlayerOps()) {
+    const state = getMarchingOrderState();
+    if (isLockedForUser(state, false)) {
+      notifyUiWarnThrottled("Marching order is locked by the GM.", {
+        key: "marching-order-locked",
+        ttlMs: 1500
+      });
+      return;
+    }
+    if (!canUserControlActor(actor, game.user)) {
+      ui.notifications?.warn("You don't have permission to remove this actor from marching order.");
+      return;
+    }
+    const updated = await updateMarchingOrderState({ op: "leaveRank", actorId });
+    if (!updated) return;
+    clearNoteDraftCacheValue(getMarchingNoteCacheKey(actorId));
+    return;
+  }
+
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, true)) {
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  const updated = await updateMarchingOrderState((state) => {
+    for (const key of Object.keys(state.ranks)) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
+    }
+    clearMarchActorPlacement(state, actorId);
+    if (state.notes) delete state.notes[actorId];
+    if (state.light) delete state.light[actorId];
+    if (state.lightRanges) delete state.lightRanges[actorId];
+    if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+    }
+  });
+  if (!updated) return;
+  clearNoteDraftCacheValue(getMarchingNoteCacheKey(actorId));
+}
+
+async function joinRank(element) {
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  let rankId = String(element?.dataset?.rankId ?? "").trim();
+  if (!rankId) rankId = element?.closest(".po-rank-col")?.dataset?.rankId;
+  const requestedInsertIndex = Number.parseInt(String(element?.dataset?.insertIndex ?? ""), 10);
+  const hasRequestedInsertIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0;
+  const requestedCellIndex = Number.parseInt(String(element?.dataset?.cellIndex ?? ""), 10);
+  const hasRequestedCellIndex = Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0;
+
+  // If not clicked on a rank, default to middle
+  if (!rankId) {
+    rankId = "middle";
+  }
+
+  if (!game.user?.isGM) {
+    const selectableActors = getSelectablePlayerActorsForUser(game.user);
+    if (selectableActors.length <= 0) {
+      ui.notifications?.warn("No assigned character for this user.");
+      return;
+    }
+    const actor = await promptPlayerActorSelection(selectableActors, {
+      title: "Move Character in Marching Order",
+      label: "Character"
+    });
+    if (!actor) return;
+    const request = { op: "joinRank", rankId, actorId: actor.id };
+    if (hasRequestedInsertIndex) request.insertIndex = requestedInsertIndex;
+    if (hasRequestedCellIndex) request.cellIndex = requestedCellIndex;
+    await updateMarchingOrderState(request);
+    return;
+  }
+  const actor = getActiveActorForUser();
+  if (!actor) {
+    ui.notifications?.warn("No assigned character for this user.");
+    return;
+  }
+  await updateMarchingOrderState((state) => {
+    for (const key of Object.keys(state.ranks)) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actor.id);
+    }
+    clearMarchActorPlacement(state, actor.id);
+    if (!state.ranks[rankId]) state.ranks[rankId] = [];
+    const target = state.ranks[rankId];
+    const safeIndex = hasRequestedInsertIndex
+      ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+      : target.length;
+    target.splice(safeIndex, 0, actor.id);
+    setMarchActorPlacement(state, rankId, actor.id, hasRequestedCellIndex ? requestedCellIndex : null);
+    if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+    }
+  });
+}
+
+async function toggleLight(element) {
+  const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
+  const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
+  if (!actorId) return;
+  if (!canAccessAllPlayerOps()) {
+    const updated = await updateMarchingOrderState({ op: "setLight", actorId, enabled: Boolean(checked) });
+    if (!updated) {
+      refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    }
+    return;
+  }
+  const updated = await updateMarchingOrderState(
+    (state) => {
+      if (!state.light) state.light = {};
+      if (!state.lightRanges) state.lightRanges = {};
+      state.light[actorId] = Boolean(checked);
+      if (checked && !state.lightRanges[actorId]) {
+        state.lightRanges[actorId] = {
+          bright: DEFAULT_MARCH_LIGHT_BRIGHT,
+          dim: DEFAULT_MARCH_LIGHT_DIM
+        };
+      }
+    },
+    { skipLocalRefresh: true }
+  );
+  if (!updated) {
+    refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    return;
+  }
+  const marchingOrderApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  if (marchingOrderApp?.element?.isConnected) {
+    refreshSingleAppPreservingView(marchingOrderApp);
+  }
+}
+
+async function setLightRange(element) {
+  const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
+  const rangeKey = String(element?.dataset?.range ?? "")
+    .trim()
+    .toLowerCase();
+  if (!actorId || !["bright", "dim"].includes(rangeKey)) return;
+  const fallback = rangeKey === "bright" ? DEFAULT_MARCH_LIGHT_BRIGHT : DEFAULT_MARCH_LIGHT_DIM;
+  const value = normalizeLightDistance(element?.value, fallback);
+  if (!canAccessAllPlayerOps()) {
+    const updated = await updateMarchingOrderState({ op: "setLightRange", actorId, range: rangeKey, value });
+    if (!updated) {
+      refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    }
+    return;
+  }
+  const updated = await updateMarchingOrderState(
+    (state) => {
+      if (!state.lightRanges) state.lightRanges = {};
+      const current = getMarchLightRange(state, actorId);
+      const next = {
+        bright: rangeKey === "bright" ? value : current.bright,
+        dim: rangeKey === "dim" ? value : current.dim
+      };
+      next.dim = Math.max(next.bright, next.dim);
+      state.lightRanges[actorId] = next;
+      if (!state.light) state.light = {};
+      if (state.light[actorId] && rangeKey === "bright" && next.dim < next.bright) {
+        state.lightRanges[actorId].dim = next.bright;
+      }
+    },
+    { skipLocalRefresh: true }
+  );
+  if (!updated) {
+    refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    return;
+  }
+  const marchingOrderApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  if (marchingOrderApp?.element?.isConnected) {
+    refreshSingleAppPreservingView(marchingOrderApp);
+  }
+}
+
+async function copyMarchingText(asMarkdown) {
+  const state = getMarchingOrderState();
+  const lines = Object.entries(state.ranks).map(([rank, actorIds]) => {
+    const names = (actorIds ?? []).map((actorId) => {
+      const name = game.actors.get(actorId)?.name ?? "(missing)";
+      if (!state.light?.[actorId]) return name;
+      const range = getMarchLightRange(state, actorId);
+      return `${name} [Torch ${range.bright}/${range.dim}ft]`;
+    });
+    const label = rank.charAt(0).toUpperCase() + rank.slice(1);
+    if (asMarkdown) return `| ${label} | ${names.join(", ") || "-"} |`;
+    return `${label}: ${names.join(", ") || "-"}`;
+  });
+  const text = asMarkdown ? `| Rank | Actors |\n| --- | --- |\n${lines.join("\n")}` : lines.join("\n");
+  try {
+    await writeClipboardText(text);
+    ui.notifications?.info("Copied to clipboard.");
+  } catch (err) {
+    console.warn("Clipboard write failed:", err);
+    ui.notifications?.warn("Failed to copy to clipboard. Check browser permissions.");
+  }
+}
+
+async function clearMarchingAll() {
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
+    return;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Clear Marching Order",
+    content: "<p>Clear all marching order entries?</p>"
+  });
+  if (!confirmed) return;
+  await updateMarchingOrderState((state) => {
+    state.ranks = Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []]));
+    state.rankPlacements = buildDefaultMarchRankPlacements();
+    state.notes = {};
+    state.light = {};
+    state.lightRanges = {};
+    state.gmNotes = "";
+    if (normalizeMarchingFormation(state.formation ?? "loose") === "free") {
+      clearDoctrineTriggerPending(state);
+    } else {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.GROUP_DISRUPTION);
+    }
+  });
+}
+
+function openMarchingOrderHelpDialog() {
+  const content = `
+    <div class="po-help">
+      <ul class="po-help-list">
+        <li>Click an <strong>Open</strong> or <strong>Suggested</strong> slot to place an actor directly from the formation board.</li>
+        <li>Drag cards between lanes to adjust the party's marching order.</li>
+        <li>Use the card actions for token ping and quick removal.</li>
+        <li>Rest Watch actors that are not placed yet can be dragged in from the roster below the board.</li>
+      </ul>
+    </div>
+  `;
+  const dialog = new Dialog({
+    title: "Marching Order Help",
+    content,
+    buttons: {
+      close: {
+        label: "Close"
+      }
+    },
+    default: "close"
+  });
+  dialog.render(true);
+}
+
+async function commitMarchingOrderState() {
+  const state = getMarchingOrderState();
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(
+    SETTINGS.MARCH_COMMITTED,
+    foundry.utils.deepClone(state)
+  );
+  if (!saved) return;
+  ui.notifications?.info("Marching order snapshot saved.");
+}
+
+function toggleNotesDrawer(element) {
+  const root = element?.closest(".po-window");
+  const drawer = root?.querySelector(".po-notes-drawer");
+  if (!drawer) return;
+  const isOpen = drawer.classList.toggle("is-open");
+  const actorId = element?.closest(".po-entry")?.dataset?.actorId;
+  if (isOpen && actorId) {
+    const row = drawer.querySelector(`[data-actor-id="${actorId}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+async function pingActorFromElement(element) {
+  const actorId = element?.closest("[data-actor-id], .po-card")?.dataset?.actorId;
+  const actor = actorId ? game.actors.get(actorId) : null;
+  if (!actor) return;
+  const token = actor.getActiveTokens?.(true, true)?.[0];
+  if (!token) {
+    ui.notifications?.warn(`${actor.name} has no active token on this scene.`);
+    return;
+  }
+  const center = token?.center ?? token?.object?.center;
+  if (!center || !canvas?.ping) return;
+  canvas.ping(center, { pingType: "pulse" });
+}
+
+function canUserOpenActorSheet(actor, user = game.user) {
+  return canUserControlActor(actor, user);
+}
+
+function openActorSheetFromElement(element) {
+  const actorId = element?.closest("[data-actor-id], .po-card")?.dataset?.actorId;
+  const actor = actorId ? game.actors.get(actorId) : null;
+  if (!actor) return;
+  if (!canUserOpenActorSheet(actor)) {
+    ui.notifications?.warn(`You do not have permission to open ${actor.name}.`);
+    return;
+  }
+  actor.sheet?.render(true);
+}
+
+function getRestWatchState() {
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_STATE);
+  const merged = foundry.utils.mergeObject(buildDefaultRestWatchState(), stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+  merged.slots = normalizeRestWatchSlots(merged?.slots);
+  if (merged.slots.length === 0) merged.slots = buildStoredWatchSlots();
+  const slotIds = merged.slots.map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+  merged.campfire = Boolean(merged.campfire);
+  merged.campfireBySlot = normalizeRestWatchCampfireBySlot(merged?.campfireBySlot, slotIds, merged.campfire);
+  applyPublishedRestWatchNotesToState(merged);
+  merged.locked = false;
+  merged.lockedBy = "";
+  return merged;
+}
+
+function getMarchingOrderState() {
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.MARCH_STATE);
+  const merged = foundry.utils.mergeObject(buildDefaultMarchingOrderState(), stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+  if (Object.prototype.hasOwnProperty.call(merged, "formation")) delete merged.formation;
+  if (Object.prototype.hasOwnProperty.call(merged, "doctrineTracker")) delete merged.doctrineTracker;
+  merged.rankPlacements = normalizeMarchRankPlacements(merged);
+  applyPublishedMarchingNotesToState(merged);
+  return merged;
+}
+
+function buildVisibilityOptions(current) {
+  return [
+    { value: "names-only", label: "Names only", selected: current === "names-only" },
+    {
+      value: "names-passives",
+      label: "Names + passives",
+      selected: current === "names-passives"
+    },
+    {
+      value: "names-passives-notes",
+      label: "Names + passives + notes",
+      selected: current === "names-passives-notes"
+    }
+  ];
+}
+
+function buildPlayerCharacterSelector(slots) {
+  // Find all unique actors in the watch slots that belong to the current player
+  const uniqueActorIds = new Set();
+  slots.forEach((slot) => {
+    (slot.entries ?? []).forEach((entry) => {
+      const actor = game.actors.get(entry.actorId);
+      if (actor && userOwnsActor(actor)) {
+        uniqueActorIds.add(entry.actorId);
+      }
+    });
+  });
+
+  if (uniqueActorIds.size <= 1) return []; // Only show selector if 2+ characters
+
+  const activeActorId = getActiveCharacterId();
+  const characters = Array.from(uniqueActorIds)
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      return {
+        id: actorId,
+        name: actor?.name ?? "Unknown",
+        img: normalizeFoundryAssetImagePath(actor?.img, { fallback: "" }),
+        isActive: actorId === activeActorId
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return characters;
+}
+
+function getActiveCharacterId() {
+  // Check if user has a stored active character, otherwise use their current character
+  const stored = sessionStorage.getItem(`po-active-char-${game.user.id}`);
+  if (stored) return stored;
+  return game.user.character?.id ?? null;
+}
+
+function setActiveCharacterId(actorId) {
+  sessionStorage.setItem(`po-active-char-${game.user.id}`, actorId);
+  // Also set as the user's active character
+  if (actorId) {
+    game.user.update({ character: actorId });
+  }
+}
+
+async function switchActiveCharacter(element) {
+  const actorId = element?.dataset?.actorId;
+  if (!actorId) return;
+  setActiveCharacterId(actorId);
+  // Re-render to update the selector highlight and context
+  const apps = Object.values(ui.windows).filter(
+    (app) => app instanceof RestWatchApp || app instanceof RestWatchPlayerApp
+  );
+  for (const app of apps) {
+    refreshSingleAppPreservingView(app);
+  }
+}
+
+async function updateExhaustion(element) {
+  if (!canAccessAllPlayerOps()) return; // GM only
+  const actorId = element?.dataset?.actorId;
+  const level = parseInt(element?.dataset?.level) ?? 0;
+  if (!actorId) return;
+
+  const activities = getRestActivities();
+  if (!activities.activities[actorId]) activities.activities[actorId] = {};
+  activities.activities[actorId].exhaustion = level;
+
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+}
+
+async function updateActivity(element, options = {}) {
+  const actorId = sanitizeSocketIdentifier(element?.dataset?.actorId, { maxLength: 64 });
+  const activityType = normalizeSocketActivityType(element?.value ?? element?.dataset?.activity);
+  if (!actorId || !activityType) return;
+
+  if (canAccessAllPlayerOps()) {
+    // GM updates directly
+    const activities = getRestActivities();
+    if (!activities.activities[actorId]) activities.activities[actorId] = {};
+    activities.activities[actorId].activity = activityType;
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
+    if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+  } else {
+    if (!hasActiveGmClient()) {
+      const activities = getRestActivities();
+      if (!activities.activities[actorId]) activities.activities[actorId] = {};
+      activities.activities[actorId].activity = activityType;
+      await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
+      if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+      return;
+    }
+    // Player updates their own activity via socket (non-GMs can't modify world settings)
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "activity:update",
+      userId: game.user.id,
+      actorId,
+      activity: activityType
+    });
+    if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+  }
+}
+
+async function resetAllActivities() {
+  if (!canAccessAllPlayerOps()) return; // GM only
+  const confirmed = await Dialog.confirm({
+    title: "Reset Activities for New Day",
+    content:
+      "<p>This will reset all party members' exhaustion levels to 0 and activities to 'Rested'.</p><p><strong>This action cannot be undone.</strong></p>",
+    yes: () => true,
+    no: () => false
+  });
+  if (!confirmed) return;
+  const state = getRestWatchState();
+  const activities = buildDefaultActivityState();
+  const actorIds = Array.from(
+    new Set(
+      (state.slots ?? []).flatMap((slot) => {
+        const entries = slot.entries ?? [];
+        const entryIds = entries.map((entry) => entry.actorId);
+        return slot.actorId ? entryIds.concat([slot.actorId]) : entryIds;
+      })
+    )
+  );
+
+  actorIds.forEach((actorId) => {
+    activities.activities[actorId] = {
+      exhaustion: 0,
+      activity: "rested"
+    };
+  });
+
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
+
+  for (const actorId of actorIds) {
+    const actor = game.actors.get(actorId);
+    if (!actor) continue;
+    try {
+      const exhaustion = actor.system?.attributes?.exhaustion;
+      if (exhaustion && typeof exhaustion === "object" && "value" in exhaustion) {
+        await actor.update({ "system.attributes.exhaustion.value": 0 });
+      } else if (exhaustion !== undefined) {
+        await actor.update({ "system.attributes.exhaustion": 0 });
+      }
+    } catch (error) {
+      console.warn(`party-operations: failed to reset exhaustion for ${actorId}`, error);
+    }
+  }
+
+  ui.notifications?.info("Activities reset for new day.");
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+}
+
+function buildWatchSlotsView(state, isGM, visibility) {
+  const lockedForUser = isRestWatchLockedForUser(state, isGM);
+  const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "") : null;
+  const hasSelectablePlayerActor = !isGM && getSelectablePlayerActorsForUser(game.user).length > 0;
+  const activities = getRestActivities();
+  const sourceSlots = getRestWatchSourceSlots(state);
+  const playerActorOptions = buildRestWatchPlayerActorOptions(game.user);
+
+  const buildNoteButtonContext = (actorNameInput, noteTextInput) => {
+    const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
+    const noteText = String(noteTextInput ?? "");
+    const savedNote = noteText.trim();
+    const hasSavedNote = savedNote.length > 0;
+    return {
+      hasSavedNote,
+      noteButtonTitle: hasSavedNote
+        ? `Open shared note for ${actorName}.\nSaved note available.`
+        : `Open shared note for ${actorName}`,
+      noteButtonAriaLabel: hasSavedNote
+        ? `Open shared note for ${actorName}. Saved note available.`
+        : `Open shared note for ${actorName}`
+    };
+  };
+
+  return sourceSlots.map((slot, index) => {
+    const slotId = String(slot?.id ?? `watch-${index + 1}`);
+    const entries = sanitizeRestWatchEntries(slot);
+    const visibleEntryCount = normalizeRestWatchVisibleEntryCount(slot, entries);
+    const campfireActive = getRestWatchSlotCampfireState(state, slotId);
+
+    const entriesView = entries
+      .map((entry) => {
+        const actor = game.actors.get(entry.actorId);
+        if (!actor) return null;
+        const canEditNotes = !lockedForUser && (isGM || userOwnsActor(actor));
+        const activityData = activities.activities[entry.actorId] ?? {};
+        const notes = String(entry.notes ?? "");
+        return {
+          actorId: entry.actorId,
+          actor: buildActorView(actor, isGM, visibility),
+          notes,
+          canClear: (isGM || userOwnsActor(actor)) && !lockedForUser,
+          canEditNotes,
+          isActiveCharacter: !isGM && activeActorId === entry.actorId,
+          activity: buildActivityView(actor, activityData),
+          ...buildNoteButtonContext(actor.name, notes)
+        };
+      })
+      .filter(Boolean);
+
+    const coverageEntries = entries
+      .map((entry) => {
+        const actor = game.actors.get(entry.actorId);
+        if (!actor) return null;
+        return {
+          actor: {
+            darkvision: getDarkvision(actor)
+          }
+        };
+      })
+      .filter(Boolean);
+
+    const slotHighestPP = computeHighestPPForEntries(entriesView);
+    const slotPpRange = computePassiveRangeForEntries(entriesView, "passivePerception");
+    const slotPivRange = computePassiveRangeForEntries(entriesView, "passiveInvestigation");
+    const slotNoDarkvision = computeNoDarkvisionForEntries(coverageEntries);
+    const slotDarkvisionRange = computeHighestNumericValue(coverageEntries.map((entry) => entry?.actor?.darkvision));
+    const detailSummary = buildRestWatchDetailSummary(
+      {
+        slotNoDarkvision,
+        slotDarkvisionRange,
+        campfireActive,
+        slotPpRange,
+        slotPivRange,
+        visibleEntryCount
+      },
+      entriesView
+    );
+    const playerCoverageLabel =
+      entriesView.length === 0
+        ? "Coverage Pending"
+        : slotNoDarkvision
+          ? "Missing Darkvision"
+          : detailSummary.coverageLabel === "No Darkvision"
+            ? "No Darkvision"
+            : "Covered";
+    const playerCoverageStateClass = entriesView.length === 0 ? "" : slotNoDarkvision ? "is-warn" : "is-ready";
+
+    const assignmentRows = buildVisibleRestWatchAssignmentRows(
+      entries,
+      playerActorOptions,
+      entriesView,
+      visibleEntryCount
+    );
+
+    return {
+      id: slotId,
+      label: getRestWatchSlotLabel(slotId, index),
+      timeRange: slot.timeRange ?? "",
+      campfireActive,
+      campfireState: campfireActive ? "Lit" : "Out",
+      entries: entriesView,
+      hasEntries: entriesView.length > 0,
+      slotHighestPP,
+      slotPpHighLabel: slotPpRange.highLabel,
+      slotPpLowLabel: slotPpRange.lowLabel,
+      slotPivHighLabel: slotPivRange.highLabel,
+      slotPivLowLabel: slotPivRange.lowLabel,
+      slotNoDarkvision,
+      playerCoverageLabel,
+      playerCoverageStateClass,
+      visibleEntryCount,
+      detailSummary,
+      assignmentRows,
+      hasAssignmentDetails: assignmentRows.some((row) => row.hasActorDetails),
+      assignedCount: entriesView.length,
+      maxEntries: visibleEntryCount,
+      openCount: Math.max(0, visibleEntryCount - entriesView.length),
+      isFull: visibleEntryCount >= REST_WATCH_MAX_ENTRIES,
+      canAddVisibleSlot: visibleEntryCount < REST_WATCH_MAX_ENTRIES,
+      canAssign: !lockedForUser && playerActorOptions.length > 0,
+      canAssignMe: hasSelectablePlayerActor && !lockedForUser
+    };
+  });
+}
+
+function buildRanksView(state, isGM) {
+  const lockedForUser = isLockedForUser(state, isGM);
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const bandTargets = formationSnapshot.bandTargets ?? {};
+  const rankConfigs = {
+    vanguard: { desc: "Advance screen", icon: "fa-person-running" },
+    front: { desc: "Lead band", icon: "fa-shield" },
+    middle: { desc: "Center band", icon: "fa-users" },
+    rear: { desc: "Rear band", icon: "fa-arrow-turn-up" },
+    reserve: { desc: "Reserve support", icon: "fa-boxes-stacked" }
+  };
+
+  const base = buildEmptyRanks(isGM).map((rank) => {
+    const config = {
+      capacity: bandTargets?.[rank.id]?.recommended ?? null,
+      capLimit: bandTargets?.[rank.id]?.max ?? null,
+      ...(rankConfigs[rank.id] ?? { desc: `${rank.label} band`, icon: "fa-users" })
+    };
+    const actorIds = state.ranks?.[rank.id] ?? [];
+    const entries = actorIds
+      .map((actorId) => {
+        const actor = game.actors.get(actorId);
+        if (!isEligiblePartyCharacterActor(actor)) return null;
+        const hasLight = Boolean(state.light?.[actorId]);
+        const lightRange = getMarchLightRange(state, actorId);
+        const lightTooltip = hasLight ? `Torch active: Bright ${lightRange.bright} ft, Dim ${lightRange.dim} ft.` : "";
+        const canRemove = !lockedForUser && (isGM || userOwnsActor(actor));
+        return {
+          actorId,
+          actor: buildActorView(actor, isGM, "names-passives"),
+          hasLight,
+          lightBright: lightRange.bright,
+          lightDim: lightRange.dim,
+          lightTooltip,
+          canRemove
+        };
+      })
+      .filter(Boolean);
+
+    const capacity = config?.capacity;
+    const capacityForBar = config?.capLimit ?? capacity;
+    const capacityPercent = capacityForBar ? Math.min(100, (entries.length / capacityForBar) * 100) : 0;
+    const desc = capacity
+      ? `${config.desc} - target ${capacity}${config?.capLimit !== null && config?.capLimit !== capacity ? `, max ${config.capLimit}` : ""}`
+      : config.desc;
+
+    return {
+      ...rank,
+      ...config,
+      desc,
+      entries,
+      capacity,
+      capacityPercent,
+      collapsed: false,
+      toggleLabel: "Collapse",
+      toggleIcon: "fa-chevron-up"
+    };
+  });
+
+  return base;
+}
+
+function getRestWatchAssignedActorIds(state = getRestWatchState()) {
+  const seen = new Set();
+  const ordered = [];
+  for (const slot of state?.slots ?? []) {
+    for (const entry of sanitizeRestWatchEntries(slot)) {
+      const actorId = String(entry?.actorId ?? "").trim();
+      if (!actorId || seen.has(actorId)) continue;
+      seen.add(actorId);
+      ordered.push(actorId);
+    }
+  }
+  return ordered;
+}
+
+function buildFormationSpreadPositions(count, columns) {
+  const safeCount = Math.max(0, Math.min(Number(count) || 0, columns));
+  if (safeCount <= 0 || columns <= 0) return [];
+  if (safeCount === 1) return [Math.floor((columns - 1) / 2)];
+  const positions = new Set();
+  for (let index = 0; index < safeCount; index += 1) {
+    positions.add(Math.round((index * (columns - 1)) / Math.max(1, safeCount - 1)));
+  }
+  const normalized = Array.from(positions).sort((left, right) => left - right);
+  for (let index = 0; normalized.length < safeCount && index < columns; index += 1) {
+    if (!positions.has(index)) normalized.push(index);
+  }
+  return normalized.sort((left, right) => left - right).slice(0, safeCount);
+}
+
+function buildFormationTightPositions(count, columns, offset = 0) {
+  const safeCount = Math.max(0, Math.min(Number(count) || 0, columns));
+  if (safeCount <= 0 || columns <= 0) return [];
+  const maxStart = Math.max(0, columns - safeCount);
+  const centered = Math.floor((columns - safeCount) / 2);
+  const start = Math.max(0, Math.min(maxStart, centered + offset));
+  return Array.from({ length: safeCount }, (_, index) => start + index);
+}
+
+function buildFormationCellPositions(definition, rankId, count, columns) {
+  const safeColumns = Math.max(1, Number(columns) || 1);
+  const safeCount = Math.max(0, Math.min(Number(count) || 0, safeColumns));
+  if (safeCount <= 0) return [];
+
+  const formationId = String(definition?.id ?? "")
+    .trim()
+    .toLowerCase();
+  const category = String(definition?.category ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (formationId === "tight-column") {
+    const offset = rankId === "front" ? 0 : rankId === "middle" ? 1 : 0;
+    return buildFormationTightPositions(safeCount, safeColumns, offset);
+  }
+  if (formationId === "tight-guard") {
+    return buildFormationTightPositions(safeCount, safeColumns, 0);
+  }
+  if (formationId === "open-staggered") {
+    const offset = rankId === "middle" ? 1 : rankId === "rear" ? -1 : 0;
+    return buildFormationTightPositions(safeCount, safeColumns, offset);
+  }
+  if (formationId === "open-screen") {
+    return buildFormationSpreadPositions(safeCount, safeColumns);
+  }
+  if (formationId === "free") {
+    return buildFormationSpreadPositions(safeCount, safeColumns);
+  }
+  if (category === "tight") {
+    return buildFormationTightPositions(safeCount, safeColumns, 0);
+  }
+  return buildFormationSpreadPositions(safeCount, safeColumns);
+}
+
+function buildFormationPreviewRows(definition) {
+  const ranks = MARCH_BOARD_RANKS.map((rank) => ({ id: rank.id, label: rank.shortLabel }));
+  const recommendedCounts = ranks.map((row) => {
+    const recommended = Number(definition?.bandTargets?.[row.id]?.recommended ?? 0) || 0;
+    if (String(definition?.id ?? "") === "free") {
+      return row.id === "middle" ? 2 : 1;
+    }
+    return recommended;
+  });
+  const columns = Math.max(3, ...recommendedCounts, 1);
+  return ranks.map((row, rowIndex) => {
+    const activeCount = recommendedCounts[rowIndex];
+    const positions = buildFormationCellPositions(definition, row.id, activeCount, columns);
+    const cells = Array.from({ length: columns }, (_, columnIndex) => ({
+      filled: positions.includes(columnIndex)
+    }));
+    return {
+      id: row.id,
+      label: row.label,
+      cells
+    };
+  });
+}
+
+function buildMarchFormationChoiceCards(currentFormationId) {
+  const currentId = normalizeMarchingFormation(currentFormationId);
+  return getMarchFormationDefinitions().map((definition) => {
+    const passiveEffects = getMarchFormationPassiveEffectDetails(definition);
+    return {
+      id: definition.id,
+      label: definition.label,
+      category: definition.category,
+      categoryLabel: getMarchFormationCategoryLabel(definition.category),
+      summary: definition.summary,
+      passivePositiveLabel: "Potential (Stable) +",
+      passiveNegativeLabel: "Potential (Stable) -",
+      passivePositiveSummary: passiveEffects.positiveSummary,
+      passiveNegativeSummary: passiveEffects.negativeSummary,
+      active: definition.id === currentId,
+      previewRows: buildFormationPreviewRows(definition)
+    };
+  });
+}
+
+function buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks = []) {
+  const definition = getMarchFormationDefinition(formationSnapshot?.formation?.id ?? state?.formation ?? "loose");
+  const rankViewById = new Map((Array.isArray(ranks) ? ranks : []).map((rank) => [rank.id, rank]));
+  const rankRows = MARCH_BOARD_RANKS.map((rank) => ({ id: rank.id, label: rank.label }));
+  const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "").trim() : "";
+  const selectableActorCount = !isGM ? getSelectablePlayerActorsForUser(game.user).length : 0;
+  const lockedForUser = isLockedForUser(state, isGM);
+  const canQuickPlace = isGM || (selectableActorCount > 0 && !lockedForUser);
+  const actualCounts = rankRows.map((row) => rankViewById.get(row.id)?.entries?.length ?? 0);
+  const recommendedCounts = rankRows.map((row) => {
+    const recommended = Number(formationSnapshot?.bandTargets?.[row.id]?.recommended ?? 0) || 0;
+    if (definition.id === "free")
+      return Math.max(
+        recommended,
+        actualCounts[rankRows.findIndex((entry) => entry.id === row.id)],
+        row.id === "middle" ? 2 : 1
+      );
+    return recommended;
+  });
+  const columns = Math.max(3, ...actualCounts, ...recommendedCounts, 1);
+  const rows = rankRows.map((row, rowIndex) => {
+    const rankView = rankViewById.get(row.id);
+    const entries = Array.isArray(rankView?.entries) ? rankView.entries : [];
+    const recommendedPositions = buildFormationCellPositions(definition, row.id, recommendedCounts[rowIndex], columns);
+    const explicitPlacements = state?.rankPlacements?.[row.id] ?? {};
+    const occupiedColumns = new Set();
+    const entriesByColumn = new Map();
+    const unplacedEntries = [];
+    for (const entry of entries) {
+      const requestedColumn = Number.parseInt(String(explicitPlacements?.[entry.actorId] ?? ""), 10);
+      if (
+        Number.isInteger(requestedColumn) &&
+        requestedColumn >= 0 &&
+        requestedColumn < columns &&
+        !occupiedColumns.has(requestedColumn)
+      ) {
+        occupiedColumns.add(requestedColumn);
+        entriesByColumn.set(requestedColumn, entry);
+        continue;
+      }
+      unplacedEntries.push(entry);
+    }
+    const fallbackColumns = [];
+    for (const columnIndex of recommendedPositions) {
+      if (!occupiedColumns.has(columnIndex)) fallbackColumns.push(columnIndex);
+    }
+    for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+      if (!occupiedColumns.has(columnIndex) && !fallbackColumns.includes(columnIndex))
+        fallbackColumns.push(columnIndex);
+    }
+    for (let index = 0; index < unplacedEntries.length && index < fallbackColumns.length; index += 1) {
+      const columnIndex = fallbackColumns[index];
+      occupiedColumns.add(columnIndex);
+      entriesByColumn.set(columnIndex, unplacedEntries[index]);
+    }
+    const actorPositions = Array.from(entriesByColumn.keys()).sort((left, right) => left - right);
+    const cells = Array.from({ length: columns }, (_, columnIndex) => {
+      const entry = entriesByColumn.get(columnIndex) ?? null;
+      const actorId = entry?.actorId ?? "";
+      const actor = entry?.actor ?? null;
+      const insertIndex = actorPositions.filter((position) => position < columnIndex).length;
+      const isCurrentUserActor = Boolean(activeActorId && actorId && actorId === activeActorId);
+      return {
+        column: columnIndex,
+        insertIndex,
+        hasActor: Boolean(entry),
+        isRecommended: recommendedPositions.includes(columnIndex),
+        isCurrentUserActor,
+        entry,
+        actorId,
+        label: actor?.name ?? "",
+        hasToken: Boolean(actor?.img),
+        placeholderLabel: recommendedPositions.includes(columnIndex) ? "Suggested" : "Open",
+        action: isGM ? "assign-rank" : "join-rank",
+        actionLabel: isGM ? "Add Actor" : canQuickPlace ? "Move Here" : lockedForUser ? "Locked" : "No Character",
+        actionDisabled: !isGM && !canQuickPlace
+      };
+    });
+    return {
+      id: row.id,
+      label: row.label,
+      actualCount: entries.length,
+      recommendedCount: recommendedCounts[rowIndex],
+      cells
+    };
+  });
+
+  const assignedActorIds = new Set(getOrderedMarchingActors(state));
+  const restWatchActorIds = getRestWatchAssignedActorIds();
+  const unassignedRestActors = restWatchActorIds
+    .filter((actorId) => !assignedActorIds.has(actorId))
+    .map((actorId) => game.actors.get(actorId))
+    .filter(Boolean)
+    .map((actor) => buildActorView(actor, isGM, "names-passives"));
+
+  return {
+    formationId: definition.id,
+    formationLabel: definition.label,
+    formationCategoryLabel: getMarchFormationCategoryLabel(definition.category),
+    summary: definition.summary,
+    rows,
+    columnCount: columns,
+    hasUnassignedRestActors: unassignedRestActors.length > 0,
+    unassignedRestActors,
+    restWatchRosterCount: restWatchActorIds.length,
+    assignedActorCount: formationSnapshot?.assignedActorIds?.length ?? 0
+  };
+}
+
+function buildNotesView(state, ranks, isGM) {
+  const lockedForUser = isLockedForUser(state, isGM);
+  const actorIds = ranks.flatMap((rank) => rank.entries.map((entry) => entry.actorId));
+  const uniqueIds = Array.from(new Set(actorIds));
+  return uniqueIds
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      const canEdit = !lockedForUser;
+      return {
+        actorId,
+        actorName: actor.name,
+        text: state.notes?.[actorId] ?? "",
+        canEdit
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildLightToggles(state, ranks, isGM) {
+  const lockedForUser = isLockedForUser(state, isGM);
+  const actorIds = ranks.flatMap((rank) => rank.entries.map((entry) => entry.actorId));
+  const uniqueIds = Array.from(new Set(actorIds));
+  return uniqueIds
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      const range = getMarchLightRange(state, actorId);
+      const canEdit = !lockedForUser && (isGM || userOwnsActor(actor));
+      return {
+        actorId,
+        actorName: actor.name,
+        hasLight: Boolean(state.light?.[actorId]),
+        bright: range.bright,
+        dim: range.dim,
+        canEdit
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildMarchSpacingGridContext(state, formationBoard) {
+  const size = 12;
+  const centerCell = Math.floor(size / 2);
+  const tokenPositions = getMarchingTokenPositions(state);
+  const tokenEntries = Object.entries(tokenPositions);
+  const gridUnitPixels = getMarchingGridUnitPixels();
+  const actors = [];
+
+  if (tokenEntries.length > 0) {
+    const centroid = tokenEntries.reduce(
+      (acc, [, position]) => ({
+        x: acc.x + position.x,
+        y: acc.y + position.y
+      }),
+      { x: 0, y: 0 }
+    );
+    centroid.x /= tokenEntries.length;
+    centroid.y /= tokenEntries.length;
+
+    for (const [actorId, position] of tokenEntries) {
+      const actor = game.actors.get(actorId);
+      if (!actor) continue;
+      const dxFeet = Math.round(((position.x - centroid.x) / gridUnitPixels) * 5);
+      const dyFeet = Math.round(((position.y - centroid.y) / gridUnitPixels) * 5);
+      const column = Math.max(0, Math.min(size - 1, centerCell + Math.round(dxFeet / 5)));
+      const row = Math.max(0, Math.min(size - 1, centerCell + Math.round(dyFeet / 5)));
+      actors.push({
+        actorId,
+        name: actor.name,
+        initial:
+          String(actor.name ?? "?")
+            .trim()
+            .slice(0, 1)
+            .toUpperCase() || "?",
+        row,
+        column,
+        offsetLabel: `${dxFeet >= 0 ? "+" : ""}${dxFeet} ft, ${dyFeet >= 0 ? "+" : ""}${dyFeet} ft`
+      });
+    }
+  } else {
+    const rows = Array.isArray(formationBoard?.rows) ? formationBoard.rows : [];
+    rows.forEach((rankRow, rowIndex) => {
+      const cells = Array.isArray(rankRow?.cells) ? rankRow.cells : [];
+      cells.forEach((cell) => {
+        if (!cell?.hasActor || !cell?.actorId) return;
+        const actor = game.actors.get(cell.actorId);
+        if (!actor) return;
+        const columnCount = Math.max(1, Number(formationBoard?.columnCount ?? cells.length) || cells.length || 1);
+        const column = Math.max(
+          0,
+          Math.min(size - 1, Math.round(((Number(cell.column ?? 0) + 0.5) / columnCount) * (size - 1)))
+        );
+        const row = Math.max(
+          0,
+          Math.min(size - 1, Math.round(((rowIndex + 0.5) / Math.max(1, rows.length)) * (size - 1)))
+        );
+        actors.push({
+          actorId: cell.actorId,
+          name: actor.name,
+          initial:
+            String(actor.name ?? "?")
+              .trim()
+              .slice(0, 1)
+              .toUpperCase() || "?",
+          row,
+          column,
+          offsetLabel: `${rankRow.label}, column ${Number(cell.column ?? 0) + 1}`
+        });
+      });
+    });
+  }
+
+  const actorsByCell = new Map();
+  for (const actor of actors) {
+    const key = `${actor.row}:${actor.column}`;
+    if (!actorsByCell.has(key)) actorsByCell.set(key, []);
+    actorsByCell.get(key).push(actor);
+  }
+  const boardRows = Array.isArray(formationBoard?.rows) ? formationBoard.rows : [];
+  const columnCount = Math.max(1, Number(formationBoard?.columnCount ?? 1) || 1);
+  const resolveSpacingCellTarget = (rowIndex, columnIndex) => {
+    const boardRowIndex = Math.max(
+      0,
+      Math.min(boardRows.length - 1, Math.floor(((rowIndex + 0.5) / size) * Math.max(1, boardRows.length)))
+    );
+    const boardColumnIndex = Math.max(
+      0,
+      Math.min(columnCount - 1, Math.floor(((columnIndex + 0.5) / size) * columnCount))
+    );
+    const rankId = String(boardRows[boardRowIndex]?.id ?? "middle").trim() || "middle";
+    const boardCells = Array.isArray(boardRows[boardRowIndex]?.cells) ? boardRows[boardRowIndex].cells : [];
+    const boardCell = boardCells.find((cell) => Number(cell?.column) === boardColumnIndex) ?? null;
+    return {
+      rankId,
+      cellIndex: boardColumnIndex,
+      insertIndex: Number.isInteger(Number(boardCell?.insertIndex)) ? Number(boardCell.insertIndex) : 0
+    };
+  };
+
+  const rows = Array.from({ length: size }, (_, rowIndex) => ({
+    cells: Array.from({ length: size }, (_, columnIndex) => {
+      const cellActors = actorsByCell.get(`${rowIndex}:${columnIndex}`) ?? [];
+      const target = resolveSpacingCellTarget(rowIndex, columnIndex);
+      return {
+        ...target,
+        hasActors: cellActors.length > 0,
+        actors: cellActors,
+        label: cellActors.map((actor) => `${actor.name} (${actor.offsetLabel})`).join(", ")
+      };
+    })
+  }));
+
+  return {
+    rows,
+    actors,
+    hasActors: actors.length > 0,
+    sourceLabel: tokenEntries.length > 0 ? "Canvas token spacing" : "March board spacing"
+  };
+}
+
+function getActorTokenImage(actor) {
+  return normalizeFoundryAssetImagePath(actor?.prototypeToken?.texture?.src || actor?.img, {
+    fallback: "icons/svg/mystery-man.svg"
+  });
+}
+
+function formatClockLabel(hours24, minutes) {
+  const hh = String(Math.max(0, Math.min(23, Number(hours24) || 0))).padStart(2, "0");
+  const mm = String(Math.max(0, Math.min(59, Number(minutes) || 0))).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function isSimpleCalendarActive() {
+  return isSimpleCalendarActiveBridge({ gameRef: game, globalRef: globalThis });
+}
+
+function getSimpleCalendarApiCandidates() {
+  return getSimpleCalendarApiCandidatesBridge({ gameRef: game, globalRef: globalThis });
+}
+
+function getSimpleCalendarApi() {
+  return getSimpleCalendarApiBridge({ gameRef: game, globalRef: globalThis });
+}
+
+function hasKnownSimpleCalendarMutationMethods(api) {
+  if (!api || typeof api !== "object") return false;
+  return [
+    api.addEvent,
+    api.createEvent,
+    api.addNote,
+    api.createNote,
+    api.addCalendarNote,
+    api.updateEvent,
+    api.updateNote,
+    api.updateEntry,
+    api.removeEvent,
+    api.deleteEvent,
+    api.removeNote,
+    api.deleteNote,
+    api.removeEntry
+  ].some((fn) => typeof fn === "function");
+}
+
+function getSimpleCalendarMutationApi() {
+  const candidates = getSimpleCalendarApiCandidates();
+  if (!candidates.length) return null;
+  const known = candidates.find((api) => hasKnownSimpleCalendarMutationMethods(api));
+  if (known) return known;
+  const discovered = candidates.find((api) => hasSimpleCalendarMutationApi(api));
+  return discovered ?? null;
+}
+
+function collectSimpleCalendarMethods(source, test, prefix = "api", depth = 0, seen = new Set()) {
+  if (!source || typeof source !== "object" || depth > 2) return [];
+  const methods = [];
+  for (const [key, value] of Object.entries(source)) {
+    const path = `${prefix}.${key}`;
+    if (typeof value === "function") {
+      const token = `${path}:${String(value.name || "anonymous")}`;
+      if (!seen.has(token) && test(key, path)) {
+        seen.add(token);
+        methods.push({ fn: value, ctx: source, name: path });
+      }
+      continue;
+    }
+    if (value && typeof value === "object") {
+      methods.push(...collectSimpleCalendarMethods(value, test, path, depth + 1, seen));
+    }
+  }
+  return methods;
+}
+
+function getSimpleCalendarMutationMethods(api) {
+  if (!api) return { updateMethods: [], createMethods: [], removeMethods: [] };
+  const isCreateMethod = (key, path) => /(add|create)/i.test(key) && /(note|event|entry)/i.test(path);
+  const isUpdateMethod = (key, path) => /(update|edit|set)/i.test(key) && /(note|event|entry)/i.test(path);
+  const isRemoveMethod = (key, path) => /(remove|delete)/i.test(key) && /(note|event|entry)/i.test(path);
+
+  const preferredUpdate = [
+    { fn: api.updateEvent, ctx: api, name: "api.updateEvent" },
+    { fn: api.updateNote, ctx: api, name: "api.updateNote" },
+    { fn: api.updateEntry, ctx: api, name: "api.updateEntry" }
+  ].filter((entry) => typeof entry.fn === "function");
+  const preferredCreate = [
+    { fn: api.addEvent, ctx: api, name: "api.addEvent" },
+    { fn: api.createEvent, ctx: api, name: "api.createEvent" },
+    { fn: api.addNote, ctx: api, name: "api.addNote" },
+    { fn: api.createNote, ctx: api, name: "api.createNote" },
+    { fn: api.addCalendarNote, ctx: api, name: "api.addCalendarNote" }
+  ].filter((entry) => typeof entry.fn === "function");
+  const preferredRemove = [
+    { fn: api.removeEvent, ctx: api, name: "api.removeEvent" },
+    { fn: api.deleteEvent, ctx: api, name: "api.deleteEvent" },
+    { fn: api.removeNote, ctx: api, name: "api.removeNote" },
+    { fn: api.deleteNote, ctx: api, name: "api.deleteNote" },
+    { fn: api.removeEntry, ctx: api, name: "api.removeEntry" }
+  ].filter((entry) => typeof entry.fn === "function");
+
+  const discoveredUpdate = collectSimpleCalendarMethods(api, isUpdateMethod).filter(
+    (candidate) => !preferredUpdate.some((entry) => entry.fn === candidate.fn)
+  );
+  const discoveredCreate = collectSimpleCalendarMethods(api, isCreateMethod).filter(
+    (candidate) => !preferredCreate.some((entry) => entry.fn === candidate.fn)
+  );
+  const discoveredRemove = collectSimpleCalendarMethods(api, isRemoveMethod).filter(
+    (candidate) => !preferredRemove.some((entry) => entry.fn === candidate.fn)
+  );
+
+  const updateMethods = [...preferredUpdate, ...discoveredUpdate];
+  const createMethods = [...preferredCreate, ...discoveredCreate];
+  const removeMethods = [...preferredRemove, ...discoveredRemove];
+  return { updateMethods, createMethods, removeMethods };
+}
+
+function hasSimpleCalendarMutationApi(api) {
+  const methods = getSimpleCalendarMutationMethods(api);
+  return methods.updateMethods.length > 0 || methods.createMethods.length > 0 || methods.removeMethods.length > 0;
+}
+
+function getCurrentWorldTimestamp() {
+  return getCurrentWorldTimestampBridge({ gameRef: game });
+}
+
+function extractCalendarEntryId(result) {
+  if (!result) return "";
+  if (typeof result === "string") return result;
+  return String(
+    result.id ??
+      result._id ??
+      result.eventId ??
+      result.noteId ??
+      result.event?.id ??
+      result.note?.id ??
+      result.data?.id ??
+      result.data?._id ??
+      ""
+  );
+}
+
+function isModuleDebugEnabled() {
+  try {
+    return Boolean(game.settings.get(MODULE_ID, SETTINGS.DEBUG_ENABLED));
+  } catch {
+    // Continue to legacy debug probes.
+  }
+  try {
+    const devModeApi = game.modules.get("_dev-mode")?.api;
+    if (typeof devModeApi?.getPackageDebugValue === "function") {
+      return Boolean(devModeApi.getPackageDebugValue(MODULE_ID));
+    }
+  } catch {
+    // Fall through to CONFIG debug checks.
+  }
+  return Boolean(globalThis.CONFIG?.debug?.[MODULE_ID] || globalThis.CONFIG?.debug?.partyOperations);
+}
+
+function logSimpleCalendarSyncDebug(message, details = {}) {
+  if (!isModuleDebugEnabled()) return;
+  try {
+    console.debug(`[${MODULE_ID}] ${message}`, details);
+  } catch {
+    // Never fail user actions because of logging.
+  }
+}
+
+function toSimpleCalendarDateObject(api, timestamp) {
+  const worldTimeSeconds = Number(timestamp ?? getCurrentWorldTimestamp());
+  if (!Number.isFinite(worldTimeSeconds)) return null;
+  if (typeof api?.timestampToDate === "function") {
+    try {
+      const date = api.timestampToDate(worldTimeSeconds);
+      return {
+        year: Number(date?.year ?? 0),
+        month: Number(date?.month ?? 0),
+        day: Number(date?.day ?? 0),
+        hour: Number(date?.hour ?? date?.hours ?? 0),
+        minute: Number(date?.minute ?? date?.minutes ?? 0),
+        second: Number(date?.second ?? date?.seconds ?? 0)
+      };
+    } catch {
+      // Fallback below
+    }
+  }
+  const day = Math.floor(worldTimeSeconds / 86400);
+  const totalMinutes = ((Math.floor(worldTimeSeconds / 60) % 1440) + 1440) % 1440;
+  return {
+    year: 0,
+    month: 1,
+    day: day + 1,
+    hour: Math.floor(totalMinutes / 60),
+    minute: totalMinutes % 60,
+    second: 0
+  };
+}
+
+function buildSimpleCalendarPayloadVariants(api, payload) {
+  const base = payload && typeof payload === "object" ? foundry.utils.deepClone(payload) : {};
+  const rawStartTs = Number(base.timestamp ?? base.startTimestamp ?? base.startTime ?? getCurrentWorldTimestamp());
+  const startTs = Number.isFinite(rawStartTs) ? rawStartTs : getCurrentWorldTimestamp();
+  const rawEndTs = Number(base.endTimestamp ?? base.endTime ?? startTs);
+  const endTs = Number.isFinite(rawEndTs) ? rawEndTs : startTs + 60;
+  const safeEndTs = endTs >= startTs ? endTs : startTs + 60;
+  const title = String(base.name ?? base.title ?? "Party Operations").trim() || "Party Operations";
+  const content = String(base.content ?? base.description ?? "");
+  const visible = base.playerVisible ?? base.visibleToPlayers ?? true;
+  const allDay = Boolean(base.allDay ?? true);
+  const startDate = toSimpleCalendarDateObject(api, startTs) ?? toSimpleCalendarDateObject(null, startTs);
+  const endDate = toSimpleCalendarDateObject(api, safeEndTs) ?? toSimpleCalendarDateObject(null, safeEndTs);
+
+  const variants = [
+    base,
+    {
+      ...base,
+      name: title,
+      title,
+      content,
+      description: content,
+      timestamp: startTs,
+      startTime: startTs,
+      endTime: safeEndTs,
+      startTimestamp: startTs,
+      endTimestamp: safeEndTs,
+      allDay,
+      public: true,
+      isPrivate: false,
+      playerVisible: visible,
+      visibleToPlayers: visible
+    }
+  ];
+
+  if (startDate) {
+    variants.push({
+      ...variants[1],
+      date: startDate,
+      startDate,
+      endDate: endDate ?? startDate,
+      start: startDate,
+      end: endDate ?? startDate
+    });
+  }
+
+  const unique = [];
+  const seen = new Set();
+  for (const variant of variants) {
+    const token = JSON.stringify(variant);
+    if (seen.has(token)) continue;
+    seen.add(token);
+    unique.push(variant);
+  }
+  return unique;
+}
+
+async function updateSimpleCalendarEntry(api, entryId, payload) {
+  if (!api || !entryId) return false;
+  const candidates = getSimpleCalendarMutationMethods(api).updateMethods;
+  const payloadVariants = buildSimpleCalendarPayloadVariants(api, payload);
+  let lastError = null;
+  for (const candidate of candidates) {
+    const fn = candidate?.fn;
+    const ctx = candidate?.ctx ?? api;
+    const methodName = String(candidate?.name ?? fn?.name ?? "unknownUpdateMethod");
+    if (typeof fn !== "function") continue;
+    for (const variant of payloadVariants) {
+      try {
+        await fn.call(ctx, entryId, variant);
+        return true;
+      } catch (error) {
+        lastError = error;
+        try {
+          await fn.call(ctx, { id: entryId, ...variant });
+          return true;
+        } catch (nestedError) {
+          lastError = nestedError;
+          let signatureError = nestedError;
+          try {
+            await fn.call(ctx, variant, entryId);
+            return true;
+          } catch (fallbackError) {
+            lastError = fallbackError;
+            signatureError = fallbackError;
+          }
+          logSimpleCalendarSyncDebug("Update method signature attempts failed", {
+            methodName,
+            entryId,
+            reason: String(signatureError?.message ?? signatureError ?? "unknown")
+          });
+          // Try next signature.
+        }
+      }
+    }
+  }
+  logSimpleCalendarSyncDebug("Unable to update Simple Calendar injury entry", {
+    entryId,
+    methodsTried: candidates.map((fn) => String(fn.name || "anonymous")),
+    reason: String(lastError?.message ?? lastError ?? "unknown")
+  });
+  return false;
+}
+
+async function createSimpleCalendarEntry(api, payload) {
+  if (!api) return { success: false, id: "" };
+  const candidates = getSimpleCalendarMutationMethods(api).createMethods;
+  const payloadVariants = buildSimpleCalendarPayloadVariants(api, payload);
+  let lastError = null;
+  for (const candidate of candidates) {
+    const fn = candidate?.fn;
+    const ctx = candidate?.ctx ?? api;
+    const methodName = String(candidate?.name ?? fn?.name ?? "unknownCreateMethod");
+    if (typeof fn !== "function") continue;
+    for (const variant of payloadVariants) {
+      try {
+        const result = await fn.call(ctx, variant);
+        const id = extractCalendarEntryId(result);
+        return { success: true, id };
+      } catch (error) {
+        lastError = error;
+        let signatureError = error;
+        try {
+          const result = await fn.call(ctx, { ...variant });
+          const id = extractCalendarEntryId(result);
+          return { success: true, id };
+        } catch (nestedError) {
+          lastError = nestedError;
+          signatureError = nestedError;
+        }
+        const variantDate = variant.startDate ?? variant.date ?? null;
+        const variantEndDate = variant.endDate ?? variant.end ?? null;
+        if (variantDate) {
+          try {
+            const result = await fn.call(ctx, variantDate, variant);
+            const id = extractCalendarEntryId(result);
+            return { success: true, id };
+          } catch (dateFirstError) {
+            lastError = dateFirstError;
+            signatureError = dateFirstError;
+          }
+          try {
+            const result = await fn.call(ctx, variant, variantDate);
+            const id = extractCalendarEntryId(result);
+            return { success: true, id };
+          } catch (dateSecondError) {
+            lastError = dateSecondError;
+            signatureError = dateSecondError;
+          }
+          if (variantEndDate) {
+            try {
+              const result = await fn.call(
+                ctx,
+                variant.title ?? variant.name,
+                variant.content ?? variant.description,
+                variantDate,
+                variantEndDate,
+                variant
+              );
+              const id = extractCalendarEntryId(result);
+              return { success: true, id };
+            } catch (expandedError) {
+              lastError = expandedError;
+              signatureError = expandedError;
+            }
+            try {
+              const result = await fn.call(ctx, variant.name ?? variant.title, variantDate, variantEndDate, variant);
+              const id = extractCalendarEntryId(result);
+              return { success: true, id };
+            } catch (expandedShortError) {
+              lastError = expandedShortError;
+              signatureError = expandedShortError;
+            }
+          }
+        }
+        logSimpleCalendarSyncDebug("Create method signature attempts failed", {
+          methodName,
+          reason: String(signatureError?.message ?? signatureError ?? "unknown")
+        });
+        // Try next signature.
+      }
+    }
+  }
+  const reason = String(lastError?.message ?? lastError ?? "unknown");
+  logSimpleCalendarSyncDebug("Unable to create Simple Calendar injury entry", {
+    methodsTried: candidates.map((fn) => String(fn.name || "anonymous")),
+    reason
+  });
+  return { success: false, id: "", reason };
+}
+
+async function removeSimpleCalendarEntry(api, entryId) {
+  if (!api || !entryId) return false;
+  const candidates = getSimpleCalendarMutationMethods(api).removeMethods;
+  for (const candidate of candidates) {
+    const fn = candidate?.fn;
+    const ctx = candidate?.ctx ?? api;
+    if (typeof fn !== "function") continue;
+    try {
+      await fn.call(ctx, entryId);
+      return true;
+    } catch {
+      // Try next signature.
+    }
+  }
+  return false;
+}
+
+function formatRecoveryDueLabel(timestamp) {
+  return formatCalendarDateTimeLabelBridge(timestamp, { gameRef: game, globalRef: globalThis });
+}
+
+function getClockContext() {
+  return getCalendarClockContextBridge(getCurrentWorldTimestamp(), { gameRef: game, globalRef: globalThis });
+}
+
+function parseClockToken(value) {
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  const match = normalized.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1] ?? 0);
+  const minute = Number(match[2] ?? 0);
+  const suffix = match[3] ?? "";
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (suffix === "am") {
+    if (hour === 12) hour = 0;
+  } else if (suffix === "pm") {
+    if (hour !== 12) hour += 12;
+  }
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function parseSlotTimeRange(timeRange) {
+  if (!timeRange) return null;
+  const parts = String(timeRange).split("-");
+  if (parts.length !== 2) return null;
+  const start = parseClockToken(parts[0]);
+  const end = parseClockToken(parts[1]);
+  if (start === null || end === null) return null;
+  return { start, end };
+}
+
+function minuteWithinRange(minute, start, end) {
+  if (start === end) return true;
+  if (start < end) return minute >= start && minute < end;
+  return minute >= start || minute < end;
+}
+
+function resolveActiveWatchSlotId(slots, totalMinutes) {
+  const ranges = slots
+    .map((slot) => ({ id: slot.id, range: parseSlotTimeRange(slot.timeRange) }))
+    .filter((entry) => entry.range);
+
+  for (const entry of ranges) {
+    if (minuteWithinRange(totalMinutes, entry.range.start, entry.range.end)) return entry.id;
+  }
+
+  if (!slots.length) return null;
+  const slotMinutes = Math.max(1, Math.floor(1440 / slots.length));
+  const index = Math.floor(totalMinutes / slotMinutes) % slots.length;
+  return slots[index]?.id ?? null;
+}
+
+function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
+  const restState = getRestWatchState();
+  const marchState = getMarchingOrderState();
+  const activityState = getRestActivities();
+  const clock = getClockContext();
+  const activeWatchSlotId = resolveActiveWatchSlotId(restState.slots ?? [], clock.totalMinutes);
+  const rankLabel = Object.fromEntries(MARCH_BOARD_RANKS.map((rank) => [rank.id, rank.shortLabel]));
+
+  const watchByActorId = {};
+  const restSlots = (restState.slots ?? []).map((slot, index) => {
+    const entries = sanitizeRestWatchEntries(slot);
+    const slotId = String(slot?.id ?? `watch-${index + 1}`);
+    const isActive = slotId === activeWatchSlotId;
+    const actors = entries
+      .map((entry) => game.actors.get(entry.actorId))
+      .filter(Boolean)
+      .map((actor) => {
+        if (!watchByActorId[actor.id]) watchByActorId[actor.id] = [];
+        watchByActorId[actor.id].push(slotId);
+        const activity = activityState.activities?.[actor.id]?.activity ?? "rested";
+        const isOnWatch = isActive;
+        const isSleeping = !isOnWatch && activity === "rested";
+        const isAwake = isOnWatch || activity !== "rested";
+        return {
+          actorId: actor.id,
+          name: actor.name,
+          img: getActorTokenImage(actor),
+          isOnWatch,
+          isSleeping,
+          isAwake,
+          statusLabel: isOnWatch ? "On Watch" : isSleeping ? "Sleeping" : "Awake"
+        };
+      });
+
+    return {
+      id: slotId,
+      label: getRestWatchSlotLabel(slotId, index),
+      timeRange: slot.timeRange || "",
+      isActive,
+      actors,
+      hasActors: actors.length > 0
+    };
+  });
+
+  const rankByActorId = {};
+  for (const key of getMarchBoardRankIds()) {
+    for (const actorId of marchState.ranks?.[key] ?? []) {
+      if (actorId && !rankByActorId[actorId]) rankByActorId[actorId] = key;
+    }
+  }
+
+  const orderedIds = getOrderedMarchingActors(marchState);
+  const marchingActors = orderedIds
+    .map((actorId) => game.actors.get(actorId))
+    .filter(Boolean)
+    .map((actor) => {
+      const role = rankByActorId[actor.id] ?? "middle";
+      const activity = activityState.activities?.[actor.id]?.activity ?? "rested";
+      const isOnWatch = Boolean((watchByActorId[actor.id] ?? []).includes(activeWatchSlotId));
+      const isSleeping = !isOnWatch && activity === "rested";
+      const isAwake = isOnWatch || activity !== "rested";
+      return {
+        actorId: actor.id,
+        name: actor.name,
+        img: getActorTokenImage(actor),
+        rank: rankLabel[role] ?? "Middle",
+        watchLabel: (watchByActorId[actor.id] ?? []).join(", "),
+        isOnWatch,
+        isSleeping,
+        isAwake,
+        statusLabel: isOnWatch ? "On Watch" : isSleeping ? "Sleeping" : "Awake"
+      };
+    });
+
+  const restingActors = restSlots.flatMap((slot) => slot.actors);
+
+  return {
+    clockLabel: clock.label,
+    clockSource: clock.source,
+    hasSimpleCalendar: clock.source === "Simple Calendar",
+    activeWatchSlotId,
+    restSlots,
+    marchingActors,
+    restingActors,
+    hasRestSlots: restSlots.length > 0,
+    hasMarchingActors: marchingActors.length > 0,
+    visibility
+  };
+}
+
+function userOwnsActor(actor) {
+  return canUserControlActor(actor, game.user);
+}
+
+function canUserControlActor(actor, user = game.user) {
+  return canUserOwnActor(user, actor, { requireCharacter: false });
+}
+
+function canUserOperatePartyActor(actor, user = game.user) {
+  if (!user || !actor) return false;
+  if (canAccessAllPlayerOps(user)) return true;
+  if (canAccessGmPage(user)) return true;
+  const actorType = String(actor?.type ?? "")
+    .trim()
+    .toLowerCase();
+  return actorType === "character";
+}
+
+function canDragEntry(actorId, isGM, locked) {
+  if (locked) return false;
+  if (isGM) return true;
+  if (canAccessAllPlayerOps(game.user)) return true;
+  const actorIdText = String(actorId ?? "").trim();
+  if (!actorIdText) return false;
+  const actor = game?.actors?.get?.(actorIdText) ?? null;
+  if (!actor) return false;
+  return canUserOperatePartyActor(actor, game.user);
+}
+
+function isLockedForUser(state, isGM) {
+  if (isGM) return false;
+  const worldLock = isMarchingOrderPlayerLocked(game.user);
+  const stateLock = Boolean(state?.locked);
+  return worldLock || stateLock;
+}
+
+function buildActorView(actor, isGM, visibility) {
+  const languageData = getLanguages(actor);
+  const data = {
+    id: actor.id,
+    name: actor.name,
+    img: normalizeFoundryAssetImagePath(actor.img, { fallback: "icons/svg/mystery-man.svg" }),
+    passivePerception: getPassive(actor, "prc"),
+    passiveInsight: getPassive(actor, "ins"),
+    passiveInvestigation: getPassive(actor, "inv"),
+    darkvision: getDarkvision(actor),
+    stealthDisadv: getStealthDisadv(actor),
+    ac: getArmorClass(actor),
+    hp: getCurrentHitPoints(actor),
+    hpMax: getMaxHitPoints(actor),
+    hpLabel: getHitPointLabel(actor),
+    languages: languageData?.display ?? null,
+    languagesTooltip: languageData?.tooltip ?? "",
+    languageList: Array.isArray(languageData?.labels) ? [...languageData.labels] : []
+  };
+
+  if (isGM) return data;
+
+  const showPassives = visibility === "names-passives" || visibility === "names-passives-notes";
+  return {
+    id: data.id,
+    name: data.name,
+    img: data.img,
+    passivePerception: showPassives ? data.passivePerception : null,
+    passiveInsight: null,
+    passiveInvestigation: null,
+    darkvision: null,
+    stealthDisadv: null,
+    ac: null,
+    hp: null,
+    hpMax: null,
+    hpLabel: null,
+    languages: null,
+    languageList: []
+  };
+}
+
+function getPassive(actor, skillKey) {
+  const passive = actor?.system?.skills?.[skillKey]?.passive;
+  if (passive !== undefined && passive !== null) return passive;
+  // Fallback: 10 + skill modifier
+  const mod = actor?.system?.skills?.[skillKey]?.mod;
+  if (mod !== undefined && mod !== null) return 10 + mod;
+  return null;
+}
+
+function getSenseRange(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/(\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+  if (typeof value === "object") {
+    return getSenseRange(value.value ?? value.distance ?? value.range ?? value.amount ?? null);
+  }
+  return null;
+}
+
+function getDarkvision(actor) {
+  if (!actor) return null;
+  const darkvision = getSenseRange(
+    actor?.system?.attributes?.senses?.darkvision ??
+      actor?.system?.traits?.senses?.darkvision ??
+      actor?.system?.details?.senses?.darkvision
+  );
+  if (darkvision !== null) return darkvision;
+
+  const senses = actor?.system?.attributes?.senses ?? actor?.system?.traits?.senses ?? actor?.system?.details?.senses;
+  const fallbackSense = getSenseRange(senses?.special ?? senses?.units ?? null);
+  if (fallbackSense !== null && /darkvision/i.test(String(senses?.special ?? senses?.units ?? "")))
+    return fallbackSense;
+
+  const token = actor.getActiveTokens?.(true, true)?.[0] ?? actor.getActiveTokens?.()?.[0];
+  const tokenDarkvision = getSenseRange(
+    token?.document?.detectionModes?.find?.((mode) =>
+      String(mode?.id ?? "")
+        .toLowerCase()
+        .includes("darkvision")
+    )?.range ??
+      (/darkvision/i.test(String(token?.document?.sight?.visionMode ?? ""))
+        ? (token?.document?.sight?.range ?? token?.document?.sight?.visionRange)
+        : null)
+  );
+  return tokenDarkvision;
+}
+
+function getStealthDisadv(actor) {
+  return actor?.system?.traits?.stealth?.disadv ?? false;
+}
+
+function getArmorClass(actor) {
+  return actor?.system?.attributes?.ac?.value ?? null;
+}
+
+function getCurrentHitPoints(actor) {
+  const value = Number(actor?.system?.attributes?.hp?.value);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getMaxHitPoints(actor) {
+  const value = Number(actor?.system?.attributes?.hp?.max);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getHitPointLabel(actor) {
+  const current = getCurrentHitPoints(actor);
+  const max = getMaxHitPoints(actor);
+  if (current === null && max === null) return null;
+  if (max === null || max <= 0) return current === null ? null : String(current);
+  return `${current ?? 0}/${max}`;
+}
+
+function getLanguages(actor) {
+  const languageState = actor?.system?.traits?.languages;
+  if (!languageState) return null;
+
+  const rawValue = languageState.value;
+  let keys = [];
+  if (Array.isArray(rawValue)) {
+    keys = rawValue.map((entry) => String(entry ?? "").trim());
+  } else if (rawValue instanceof Set) {
+    keys = Array.from(rawValue).map((entry) => String(entry ?? "").trim());
+  } else if (typeof rawValue === "string") {
+    keys = rawValue.split(/[;,]/).map((entry) => String(entry ?? "").trim());
+  } else if (rawValue && typeof rawValue === "object") {
+    keys = Object.entries(rawValue)
+      .filter(([, enabled]) => enabled === true || enabled === 1 || enabled === "1")
+      .map(([key]) => String(key ?? "").trim());
+    if (keys.length === 0) keys = Object.keys(rawValue).map((key) => String(key ?? "").trim());
+  }
+
+  const catalog = CONFIG?.DND5E?.languages ?? CONFIG?.languages ?? {};
+  const resolveLabel = (key) => {
+    const id = String(key ?? "").trim();
+    if (!id || id.toLowerCase() === "undefined") return "";
+    const raw = catalog?.[id];
+    if (typeof raw === "string") return raw.includes(".") ? (game.i18n?.localize?.(raw) ?? raw) : raw;
+    if (raw && typeof raw === "object") {
+      const label = String(raw.label ?? raw.name ?? raw.value ?? id).trim();
+      return label.includes(".") ? (game.i18n?.localize?.(label) ?? label) : label;
+    }
+    return id;
+  };
+
+  const customRaw = String(languageState.custom ?? languageState.special ?? "").trim();
+  const customValues = customRaw
+    ? customRaw
+        .split(/[;,]/)
+        .map((entry) => String(entry ?? "").trim())
+        .filter(Boolean)
+    : [];
+
+  const labels = [...keys.map((key) => resolveLabel(key)), ...customValues]
+    .map((entry) => String(entry ?? "").trim())
+    .filter((entry, index, arr) => entry && entry.toLowerCase() !== "undefined" && arr.indexOf(entry) === index);
+
+  if (labels.length === 0) return null;
+  const full = labels.join(", ");
+  if (labels.length <= 3) {
+    return {
+      display: full,
+      tooltip: "",
+      labels
+    };
+  }
+  return {
+    display: `${labels.length} langs`,
+    tooltip: full,
+    labels
+  };
+}
+
+function computeHighestPP(slots) {
+  const values = slots
+    .flatMap((slot) => slot.entries ?? [])
+    .map((entry) => entry.actor?.passivePerception)
+    .filter((value) => typeof value === "number");
+  if (values.length === 0) return "-";
+  return Math.max(...values);
+}
+
+function computeHighestPPForEntries(entries) {
+  const values = (entries ?? [])
+    .map((entry) => entry.actor?.passivePerception)
+    .filter((value) => typeof value === "number");
+  if (values.length === 0) return null;
+  return Math.max(...values);
+}
+
+function computeHighestNumericValue(values) {
+  const numericValues = (values ?? []).filter((value) => typeof value === "number" && Number.isFinite(value));
+  if (numericValues.length === 0) return null;
+  return Math.max(...numericValues);
+}
+
+function computePassiveRangeForEntries(entries, key) {
+  const values = (entries ?? [])
+    .map((entry) => entry?.actor?.[key])
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
+  if (values.length === 0) {
+    return {
+      high: null,
+      low: null,
+      highLabel: "-",
+      lowLabel: "-"
+    };
+  }
+  const high = Math.max(...values);
+  const low = Math.min(...values);
+  return {
+    high,
+    low,
+    highLabel: String(high),
+    lowLabel: String(low)
+  };
+}
+
+function computeNoDarkvision(slots) {
+  for (const slot of slots) {
+    const entries = slot.entries ?? [];
+    let hasAssignedActor = false;
+    let hasDarkvisionCoverage = false;
+    for (const entry of entries) {
+      if (!entry.actor) continue;
+      hasAssignedActor = true;
+      if (entry.actor.darkvision) {
+        hasDarkvisionCoverage = true;
+        break;
+      }
+    }
+    if (hasAssignedActor && !hasDarkvisionCoverage) return slot.label;
+  }
+  return "";
+}
+
+function computeNoDarkvisionForEntries(entries) {
+  let hasAssignedActor = false;
+  for (const entry of entries ?? []) {
+    if (!entry.actor) continue;
+    hasAssignedActor = true;
+    if (entry.actor.darkvision) return false;
+  }
+  return hasAssignedActor;
+}
+
+function buildQuickNotes(state) {
+  const notes = [];
+  state.slots.forEach((slot, index) => {
+    const entries = slot.entries ?? [];
+    entries.forEach((entry) => {
+      const actor = game.actors.get(entry.actorId);
+      const text = String(entry.notes ?? "").trim();
+      if (text.length > 0) {
+        notes.push({
+          label: getRestWatchSlotLabel(slot?.id, index),
+          actorName: actor?.name ?? "Unknown",
+          text
+        });
+      }
+    });
+  });
+  return notes;
+}
+
+function queueInventoryRefresh(actor, reason = "inventory-update") {
+  if (!actor || actor.documentName !== "Actor") return;
+  const hookMode = getInventoryHookModeSetting();
+  if (hookMode === INVENTORY_HOOK_MODES.OFF) return;
+  const actorId = String(actor.id ?? "").trim();
+  if (!actorId) return;
+
+  const existing = pendingInventoryRefreshByActor.get(actorId);
+  if (existing) window.clearTimeout(existing);
+
+  const timeoutId = window.setTimeout(() => {
+    pendingInventoryRefreshByActor.delete(actorId);
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    if (hookMode === INVENTORY_HOOK_MODES.SYNC && canAccessAllPlayerOps()) {
+      scheduleIntegrationSync(reason);
+    }
+  }, 120);
+
+  pendingInventoryRefreshByActor.set(actorId, timeoutId);
+}
+
+function hasInventoryDelta(changed) {
+  if (!changed || typeof changed !== "object") return false;
+  if (Object.prototype.hasOwnProperty.call(changed, "items")) return true;
+  const itemDelta = foundry.utils.getProperty(changed, "items");
+  return Boolean(itemDelta && typeof itemDelta === "object");
+}
+
+mainTabNavigator = createMainTabNavigator({
+  normalizeMainTabId,
+  logUiDebug,
+  getTemplateForMainTab,
+  canAccessAllPlayerOps,
+  canAccessGmPage,
+  notifyUiWarnThrottled,
+  getAppInstance,
+  appInstanceKeys: APP_INSTANCE_KEYS,
+  RestWatchApp,
+  OperationsShellApp,
+  MarchingOrderApp,
+  getResponsiveWindowOptions,
+  setActiveRestMainTab,
+  setPlayerHubTab,
+  queueManagedAudioMixPlaybackResync,
+  openRestWatchPlayerApp
+});
+
+launcherUiController = createLauncherUiController({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  launcherRecoveryDelaysMs: LAUNCHER_RECOVERY_DELAYS_MS,
+  poEscapeHtml,
+  setModuleSettingWithLocalRefreshSuppressed,
+  getMainTabIdFromAction,
+  getTemplateForMainTab,
+  openMainTab,
+  canAccessAllPlayerOps,
+  canAccessGmPage,
+  logUiDebug,
+  refreshOpenApps,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  getAudioLibraryCatalog,
+  getSelectedAudioMixPreset,
+  getAudioMixPlaybackState,
+  getPlayableAudioMixCandidates,
+  getAllAudioMixPresets,
+  selectAudioMixPreset,
+  playAudioMixPresetById,
+  toggleAudioMixPlayback,
+  playNextAudioMixTrack,
+  stopAudioMixPlayback,
+  clearAudioLibraryError,
+  setAudioLibraryError,
+  getGame: () => game,
+  getDocument: () => document,
+  getWindow: () => window,
+  getUi: () => ui
+});
+
+const {
+  getLauncherPlacement,
+  setLauncherPlacement,
+  isFloatingLauncherLocked,
+  resetFloatingLauncherPosition,
+  refreshLauncherAudioUi,
+  getLauncherStatusSnapshot,
+  forceLauncherRecovery
+} = launcherUiController;
+

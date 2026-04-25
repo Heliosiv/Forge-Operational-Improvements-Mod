@@ -1,0 +1,3418 @@
+# Application Shells And Page Adapters
+
+Source: legacy/party-operations-monolith.js:7402-10810
+Feature IDs: rest-watch, march, gm-pages, loot, merchants, audio, downtime
+Target Modules: scripts/apps, scripts/features/*-ui.js
+
+RestWatchApp, OperationsShellApp, GM page app adapters, loot claims board, and marching order app.
+
+----- legacy source begins -----
+export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "rest-watch-app",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Rest Watch" },
+    position: getResponsiveWindowPosition("rest-watch"),
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/rest-watch.hbs" }
+  };
+
+  async _prepareContext() {
+    try {
+      const isGM = canAccessAllPlayerOps();
+      const state = getRestWatchState();
+      const visibility = state.visibility ?? "names-passives";
+      const slots = buildWatchSlotsView(state, isGM, visibility);
+      const campfireOverview = buildRestWatchCampfireOverview(slots);
+      const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
+      const lockBannerTooltip = state.locked
+        ? isGM
+          ? "Players cannot edit while locked."
+          : "Edits are disabled while the GM lock is active."
+        : "";
+      const playerCharacters = isGM ? [] : buildPlayerCharacterSelector(slots);
+      const quickNotes = isGM ? buildQuickNotes(state) : [];
+      const light = calculateLightSources(state.slots, campfireOverview.anyLit);
+      let operations;
+      try {
+        operations = buildOperationsContext();
+        this._lastGoodOperationsContext = operations;
+      } catch (operationsError) {
+        console.error(`${MODULE_ID}: buildOperationsContext failed`, operationsError);
+        operations = this._lastGoodOperationsContext ?? buildOperationsContextFallback();
+      }
+      let injuryRecovery;
+      try {
+        injuryRecovery = buildInjuryRecoveryContext();
+        this._lastGoodInjuryRecoveryContext = injuryRecovery;
+      } catch (injuryRecoveryError) {
+        console.error(`${MODULE_ID}: buildInjuryRecoveryContext failed`, injuryRecoveryError);
+        injuryRecovery = this._lastGoodInjuryRecoveryContext ?? {};
+      }
+      const mainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "rest-watch");
+      const operationsTabActive = mainTab === "operations" || mainTab === "gm";
+      const operationsPageValue =
+        mainTab === "gm"
+          ? "gm"
+          : (() => {
+              const active = getActiveOperationsPage();
+              return active === "gm" ? "planning" : active;
+            })();
+      if (
+        operationsPageValue === "merchants" &&
+        operations?.merchants?.shouldLogAccess === true &&
+        operations?.merchants?.accessLogPayload
+      ) {
+        void logMerchantUiAccess(operations.merchants.accessLogPayload).catch((error) => {
+          logUiFailure("merchant-access", "failed to record merchant UI access", error, {
+            userId: operations?.merchants?.accessLogPayload?.userId,
+            actorId: operations?.merchants?.accessLogPayload?.actorId
+          });
+        });
+      }
+      const operationsPlanningTab = getActiveOperationsPlanningTab();
+      const gmOperationsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
+      this._gmOperationsTab = gmOperationsTab;
+      const lootRegistryTab = normalizeLootRegistryTab(
+        this._lootRegistryTab ?? operations?.lootSources?.registryTab ?? getActiveLootRegistryTab()
+      );
+      this._lootRegistryTab = lootRegistryTab;
+      if (operations?.lootSources) {
+        operations.lootSources.registryTab = lootRegistryTab;
+        operations.lootSources.registryTabPreview = lootRegistryTab === "preview";
+        operations.lootSources.registryTabSettings = lootRegistryTab === "settings";
+      }
+      const moduleVersion = getCurrentModuleVersion();
+      const miniViz = buildMiniVisualizationContext({ visibility });
+      const miniVizUi = buildMiniVizUiContext();
+      const totalSlots = slots.length;
+      const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+      const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
+      const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+      const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
+      const autofillRosterCount = isGM ? getRestWatchAutofillEligibleActors().length : 0;
+      const autofillVisibleCapacity = isGM
+        ? slots.reduce(
+            (sum, slot) => sum + Math.max(1, Number(slot?.visibleEntryCount ?? slot?.maxEntries ?? 1) || 1),
+            0
+          )
+        : 0;
+      const autofillOverflowCount = Math.max(0, autofillRosterCount - autofillVisibleCapacity);
+
+      const context = {
+        isGM,
+        showGmPageTab: canAccessGmPage(),
+        locked: state.locked,
+        lockBannerText,
+        lockBannerTooltip,
+        lockBannerClass: isGM ? "is-gm" : "",
+        showPopout: false,
+        lastUpdatedAt: state.lastUpdatedAt ?? "-",
+        lastUpdatedBy: state.lastUpdatedBy ?? "-",
+        moduleVersion,
+        mainContextLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        mainSubtitleLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        visibilityOptions: buildVisibilityOptions(visibility),
+        highestPP: isGM ? computeHighestPP(slots) : "-",
+        noDarkvision: isGM ? computeNoDarkvision(slots) : "",
+        quickNotes,
+        hasQuickNotes: quickNotes.length > 0,
+        playerCharacters,
+        slots,
+        campfire: campfireOverview.anyLit,
+        campfireOverview,
+        light,
+        operations,
+        injuryRecovery,
+        miniViz,
+        ...miniVizUi,
+        mainTab,
+        activeTab: getSwitchTabIdFromMainTabId(mainTab),
+        mainTabRestWatch: mainTab === "rest-watch",
+        mainTabOperations: mainTab === "operations",
+        mainTabGm: mainTab === "gm",
+        mainTabOperationsOrGm: operationsTabActive,
+        gmPanelTabCore: mainTab === "rest-watch",
+        gmPanelTabOperations: operationsTabActive,
+        operationsPagePlanning: operationsPageValue === "planning",
+        operationsPageReputation: operationsPageValue === "reputation",
+        operationsPageSupply: false,
+        operationsPageMerchants: operationsPageValue === "merchants",
+        operationsPageDowntime: operationsPageValue === "downtime",
+        operationsPageRecovery: operationsPageValue === "recovery",
+        operationsPageGm: operationsPageValue === "gm",
+        gmOpsTabEnvironment: gmOperationsTab === "environment",
+        gmOpsTabLootSources: gmOperationsTab === "loot-sources",
+        operationsPlanningSops: false,
+        operationsPlanningResources: operationsPlanningTab === "resources",
+        operationsPlanningLoot: operationsPlanningTab === "loot",
+        autofillSummary: {
+          rosterCount: autofillRosterCount,
+          visibleCapacity: autofillVisibleCapacity,
+          overflowCount: autofillOverflowCount,
+          hasOverflow: autofillOverflowCount > 0
+        },
+        overview: {
+          totalSlots,
+          occupiedSlots,
+          assignedEntries,
+          lowDarkvisionSlots,
+          hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
+          lockState,
+          campfireState: campfireOverview.stateLabel
+        },
+        windowToolId: "rest-watch",
+        windowAriaLabel: "Party Operations Rest Watch"
+      };
+
+      logUiDebug("rest-watch", "prepared rest context", {
+        mainTab,
+        gmOperationsTab,
+        lootRegistryTab,
+        template: getTemplateForMainTab(mainTab),
+        slots: slots.length,
+        isGM
+      });
+      return context;
+    } catch (error) {
+      console.error(`${MODULE_ID}: RestWatchApp _prepareContext failed`, error);
+      const mainTab = normalizeMainTabId(getActiveRestMainTab(), "rest-watch");
+      const operationsTabActive = mainTab === "operations" || mainTab === "gm";
+      const isGM = Boolean(canAccessAllPlayerOps());
+      const fallbackState = getRestWatchState();
+      const fallbackVisibility = fallbackState.visibility ?? "names-passives";
+      const fallbackSlots = buildWatchSlotsView(fallbackState, isGM, fallbackVisibility);
+      const fallbackCampfireOverview = buildRestWatchCampfireOverview(fallbackSlots);
+      const fallbackTotalSlots = fallbackSlots.length;
+      const fallbackOccupiedSlots = fallbackSlots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+      const fallbackAssignedEntries = fallbackSlots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
+      const fallbackLowDarkvisionSlots = fallbackSlots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+      const fallbackAutofillRosterCount = isGM ? getRestWatchAutofillEligibleActors().length : 0;
+      const fallbackAutofillVisibleCapacity = isGM
+        ? fallbackSlots.reduce(
+            (sum, slot) => sum + Math.max(1, Number(slot?.visibleEntryCount ?? slot?.maxEntries ?? 1) || 1),
+            0
+          )
+        : 0;
+      const fallbackAutofillOverflowCount = Math.max(0, fallbackAutofillRosterCount - fallbackAutofillVisibleCapacity);
+      const fallbackGmOpsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
+      const fallbackOpsPage =
+        mainTab === "gm"
+          ? "gm"
+          : (() => {
+              const active = getActiveOperationsPage();
+              return active === "gm" ? "planning" : active;
+            })();
+      const fallbackPlanningTab = getActiveOperationsPlanningTab();
+      logUiDebug("rest-watch", "falling back to safe context", { mainTab, error: String(error?.message ?? error) });
+      return {
+        isGM,
+        showGmPageTab: canAccessGmPage(),
+        locked: Boolean(fallbackState.locked),
+        lockBannerText: fallbackState.locked ? (isGM ? "Players locked" : "Locked by GM") : "",
+        lockBannerTooltip: fallbackState.locked
+          ? isGM
+            ? "Players cannot edit while locked."
+            : "Edits are disabled while the GM lock is active."
+          : "",
+        lockBannerClass: isGM ? "is-gm" : "",
+        showPopout: false,
+        lastUpdatedAt: fallbackState.lastUpdatedAt ?? "-",
+        lastUpdatedBy: fallbackState.lastUpdatedBy ?? "-",
+        moduleVersion: getCurrentModuleVersion(),
+        mainContextLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        mainSubtitleLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        visibilityOptions: buildVisibilityOptions(fallbackVisibility),
+        highestPP: isGM ? computeHighestPP(fallbackSlots) : "-",
+        noDarkvision: isGM ? computeNoDarkvision(fallbackSlots) : "",
+        quickNotes: [],
+        hasQuickNotes: false,
+        playerCharacters: [],
+        slots: fallbackSlots,
+        campfire: fallbackCampfireOverview.anyLit,
+        campfireOverview: fallbackCampfireOverview,
+        light: calculateLightSources(fallbackState.slots, fallbackCampfireOverview.anyLit),
+        operations: this._lastGoodOperationsContext ?? buildOperationsContextFallback(),
+        injuryRecovery: this._lastGoodInjuryRecoveryContext ?? {},
+        miniViz: {},
+        ...buildMiniVizUiContext(),
+        mainTab,
+        activeTab: getSwitchTabIdFromMainTabId(mainTab),
+        mainTabRestWatch: mainTab === "rest-watch",
+        mainTabOperations: mainTab === "operations",
+        mainTabGm: mainTab === "gm",
+        mainTabOperationsOrGm: operationsTabActive,
+        gmPanelTabCore: mainTab === "rest-watch",
+        gmPanelTabOperations: operationsTabActive,
+        operationsPagePlanning: fallbackOpsPage === "planning",
+        operationsPageReputation: fallbackOpsPage === "reputation",
+        operationsPageSupply: false,
+        operationsPageMerchants: fallbackOpsPage === "merchants",
+        operationsPageDowntime: fallbackOpsPage === "downtime",
+        operationsPageRecovery: fallbackOpsPage === "recovery",
+        operationsPageGm: fallbackOpsPage === "gm",
+        gmOpsTabEnvironment: fallbackGmOpsTab === "environment",
+        gmOpsTabLootSources: fallbackGmOpsTab === "loot-sources",
+        operationsPlanningSops: false,
+        operationsPlanningResources: fallbackPlanningTab === "resources",
+        operationsPlanningLoot: fallbackPlanningTab === "loot",
+        autofillSummary: {
+          rosterCount: fallbackAutofillRosterCount,
+          visibleCapacity: fallbackAutofillVisibleCapacity,
+          overflowCount: fallbackAutofillOverflowCount,
+          hasOverflow: fallbackAutofillOverflowCount > 0
+        },
+        overview: {
+          totalSlots: fallbackTotalSlots,
+          occupiedSlots: fallbackOccupiedSlots,
+          assignedEntries: fallbackAssignedEntries,
+          lowDarkvisionSlots: fallbackLowDarkvisionSlots,
+          hasLowDarkvisionCoverage: fallbackLowDarkvisionSlots > 0,
+          lockState: fallbackState.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open",
+          campfireState: fallbackCampfireOverview.stateLabel
+        },
+        windowToolId: "rest-watch",
+        windowAriaLabel: "Party Operations Rest Watch"
+      };
+    }
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    if (DEBUG_LOG) console.log("RestWatchApp: _onRender called");
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
+    bindTabListKeyboardNavigation(this.element);
+    syncApplicationWindowTitle(this, getRestMainWindowTitle(getActiveRestMainTab()));
+    bindRestWatchDelegatedListeners({
+      app: this,
+      boundDatasetKey: "poBoundRest",
+      debugScope: "rest-watch",
+      onSwitchTabClick: (event, tabSwitch) => this.#onSwitchTabClick(event, tabSwitch),
+      onAction: (event) => this._onAction(event),
+      changeHandlers: [
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_ACTION_CONTROL_SELECTOR)) return false;
+          void this._onAction(event);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_DOWNTIME_DRAFT_SELECTOR)) return false;
+          syncDowntimeUiDraftFromElement(event.target);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[name='merchantCityCatalog']")) return false;
+          setMerchantCityCatalogDraftValue(event.target?.value ?? "");
+          return true;
+        }
+      ],
+      inputHandlers: [
+        (event) => {
+          if (!event.target?.matches("input[data-merchant-pack-filter]")) return false;
+          setMerchantEditorPackFilter(event.target?.value ?? "");
+          applyMerchantEditorFilters(this.element);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[data-merchant-item-filter]")) return false;
+          setMerchantEditorItemFilter(event.target?.value ?? "");
+          applyMerchantEditorFilters(this.element);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[data-action='set-loot-pack-filter']")) return false;
+          void this._onAction(event);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("textarea[data-action='set-sop-note']")) return false;
+          cacheOperationalSopNoteDraftFromElement(event.target);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[data-action='set-journal-filter']")) return false;
+          scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          });
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_DOWNTIME_DRAFT_SELECTOR)) return false;
+          syncDowntimeUiDraftFromElement(event.target);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[name='merchantCityCatalog']")) return false;
+          setMerchantCityCatalogDraftValue(event.target?.value ?? "");
+          return true;
+        }
+      ],
+      dragStartHandler: (event) => {
+        const curatedRow = event.target?.closest?.("[data-merchant-curated-row]");
+        if (curatedRow) {
+          const itemUuid = String(curatedRow?.dataset?.itemUuid ?? "").trim();
+          if (!itemUuid || !event.dataTransfer) return;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-po-merchant-curated", itemUuid);
+          event.dataTransfer.setData("text/plain", itemUuid);
+          return;
+        }
+
+        const candidateRow = event.target?.closest?.("[data-merchant-candidate-row]");
+        if (!candidateRow) return;
+        const candidateUuid = String(candidateRow?.dataset?.itemUuid ?? "").trim();
+        if (!candidateUuid || !event.dataTransfer) return;
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData("application/x-po-merchant-candidate", candidateUuid);
+        event.dataTransfer.setData("text/plain", candidateUuid);
+      },
+      dragOverHandler: (event) => {
+        const merchantDropTarget = event.target?.closest?.(
+          "[data-merchant-curated-dropzone], [data-merchant-curated-list], [data-merchant-curated-row]"
+        );
+        if (merchantDropTarget) {
+          event.preventDefault();
+          if (merchantDropTarget.classList?.contains("po-merchant-curated-row"))
+            merchantDropTarget.classList.add("is-drop-target");
+          return;
+        }
+        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
+        if (materialDropZone) {
+          event.preventDefault();
+          return;
+        }
+        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return;
+        event.preventDefault();
+      },
+      dragLeaveHandler: (event) => {
+        const merchantDropRow = event.target?.closest?.("[data-merchant-curated-row]");
+        if (!merchantDropRow) return;
+        merchantDropRow.classList.remove("is-drop-target");
+      },
+      dropHandler: async (event) => {
+        this.element
+          .querySelectorAll?.("[data-merchant-curated-row].is-drop-target")
+          .forEach((node) => node.classList.remove("is-drop-target"));
+        const merchantDropZone = event.target?.closest?.("[data-merchant-curated-dropzone]");
+        if (merchantDropZone) {
+          event.preventDefault();
+          const draggedCuratedUuid = getMerchantCuratedDragUuidFromEvent(event);
+          if (draggedCuratedUuid) {
+            const moved = await reorderMerchantCuratedItemsFromElement(merchantDropZone, draggedCuratedUuid, "");
+            if (moved) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const draggedCandidateUuid = getMerchantCandidateDragUuidFromEvent(event);
+          if (draggedCandidateUuid) {
+            const added = await addMerchantCuratedItemFromElement(merchantDropZone, draggedCandidateUuid);
+            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const added = await addMerchantCuratedItemFromDropEvent(event);
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        const merchantDropRow = event.target?.closest?.("[data-merchant-curated-row]");
+        if (merchantDropRow) {
+          event.preventDefault();
+          const draggedUuid = getMerchantCuratedDragUuidFromEvent(event);
+          const targetUuid = String(merchantDropRow?.dataset?.itemUuid ?? "").trim();
+          if (draggedUuid) {
+            const moved = await reorderMerchantCuratedItemsFromElement(merchantDropRow, draggedUuid, targetUuid);
+            if (moved) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const draggedCandidateUuid = getMerchantCandidateDragUuidFromEvent(event);
+          if (draggedCandidateUuid) {
+            const added = await addMerchantCuratedItemFromElement(merchantDropRow, draggedCandidateUuid);
+            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const added = await addMerchantCuratedItemFromDropEvent(event);
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
+        if (materialDropZone) {
+          event.preventDefault();
+          const added = await addDowntimeSubmissionMaterialDropFromDropEvent(event);
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return;
+        event.preventDefault();
+        const added = await addLootPreviewItemFromDropEvent(event);
+        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      }
+    });
+
+    // Update activity UI state
+    this.#updateActivityUI();
+    this.#applyOperationsHoverHints();
+    renderDowntimeSubmissionMaterialDropLists(this.element);
+    applyNonGmOperationsReadonly(this);
+    applyMerchantEditorFilters(this.element);
+    refreshTabAccessibility(this.element);
+    diagnoseRenderedMainTabs(this.element, "rest-watch");
+    this._activePanel = normalizeMainTabId(
+      this.element?.dataset?.mainTab ?? this._activePanel ?? getActiveRestMainTab(),
+      "rest-watch"
+    );
+    if (isModuleDebugEnabled()) {
+      const activeTab = getSwitchTabIdFromMainTabId(this._activePanel);
+      const activeButton = this.element?.querySelector?.(
+        `.po-tabs-main [data-action="switch-tab"][data-tab="${activeTab}"]`
+      );
+      const panelTarget = this._activePanel === "rest-watch" ? "#po-panel-rest-watch" : "#po-panel-operations";
+      const panelExists = Boolean(this.element?.querySelector?.(panelTarget));
+      logUiDebug("rest-watch", "after render active tab", {
+        activeTab,
+        activePanel: this._activePanel,
+        activeButtonFound: Boolean(activeButton),
+        panelTarget,
+        panelExists
+      });
+    }
+
+    // Setup drag-and-drop for rest watch entries
+    setupRestWatchDragAndDropFeature(this.element, {
+      getRestWatchState,
+      isActualGM: game.user?.isGM, // Pass actual GM status, not shared permissions
+      isLockedForUser,
+      updateRestWatchState,
+      ensureRestSlotEntriesList,
+      addActorToRestSlot,
+      refreshRestWatchAppsImmediately
+    });
+
+    if (game.user?.isGM && canAccessAllPlayerOps() && shouldAutoOpenRestForPlayers() && !this._openedPlayers) {
+      emitOpenRestPlayers();
+      this._openedPlayers = true;
+    }
+
+    finalizeRestWatchRender(this, "rest-watch");
+
+    if (DEBUG_LOG) console.log("RestWatchApp: event delegation attached", this.element);
+  }
+
+  #updateActivityUI() {
+    updateRestWatchActivityUi(getAppRootElement(this));
+  }
+
+  #applyOperationsHoverHints() {
+    const root = getAppRootElement(this);
+    if (!root || (root.dataset.mainTab !== "operations" && root.dataset.mainTab !== "gm")) return;
+
+    root.querySelectorAll(".po-gm-panel label.po-resource-row").forEach((label) => {
+      const hintText = label.querySelector("span")?.textContent?.trim();
+      if (hintText && !label.getAttribute("title")) {
+        label.setAttribute("title", `${hintText}: configure this operations setting.`);
+      }
+      label.querySelectorAll("input, select, textarea").forEach((control) => {
+        if (control.getAttribute("title") || !hintText) return;
+        control.setAttribute("title", hintText);
+      });
+    });
+
+    root.querySelectorAll(".po-gm-panel .po-btn, .po-gm-panel .po-switch").forEach((element) => {
+      if (element.getAttribute("title")) return;
+      const text = element.textContent?.trim().replace(/\s+/g, " ");
+      if (!text) return;
+      element.setAttribute("title", text);
+    });
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    renderAppWithPreservedState(this, renderOptions);
+  }
+
+  setActivePanel(panelId, options = {}) {
+    const normalized = normalizeMainTabId(panelId, "rest-watch");
+    if (normalized === "gm" && !canAccessGmPage()) {
+      notifyUiWarnThrottled("GM permissions are required for the GM section.", {
+        key: "gm-section-permission",
+        ttlMs: 1500
+      });
+      return;
+    }
+    if (!(this instanceof OperationsShellApp) && (normalized === "operations" || normalized === "gm")) {
+      openMainTab(normalized, { force: true });
+      return;
+    }
+    this._activePanel = normalized;
+    setActiveRestMainTab(normalized);
+    if (options?.rerender !== false) {
+      this.#renderWithPreservedState({ force: true, parts: ["main"] });
+    }
+  }
+
+  setActiveTab(tabId) {
+    const requested = String(tabId ?? "")
+      .trim()
+      .toLowerCase();
+    if (!PO_SWITCH_TAB_IDS.has(requested)) {
+      logUiDebug("rest-watch", "setActiveTab ignored unknown tab", { tabId: requested });
+      return;
+    }
+    const normalizedSwitchTab = normalizeSwitchTabId(requested, "rest");
+    const normalizedMainTab = normalizeMainTabId(normalizedSwitchTab, "rest-watch");
+    const previousMainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "rest-watch");
+    if (normalizedMainTab === previousMainTab) return;
+
+    const windowContent =
+      this.element?.closest?.(".window-content") ?? this.element?.querySelector?.(".window-content") ?? null;
+    const previousScrollTop = windowContent?.scrollTop ?? 0;
+
+    this._activePanel = normalizedMainTab;
+    setActiveRestMainTab(normalizedMainTab);
+
+    if (normalizedMainTab === "marching-order" || normalizedMainTab === "operations" || normalizedMainTab === "gm") {
+      openMainTab(normalizedMainTab, { force: true });
+    } else {
+      this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      requestAnimationFrame(() => {
+        const nextWindowContent =
+          this.element?.closest?.(".window-content") ?? this.element?.querySelector?.(".window-content") ?? null;
+        if (nextWindowContent) nextWindowContent.scrollTop = previousScrollTop;
+      });
+    }
+  }
+
+  #onSwitchTabClick(event, tabButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const tabId = String(tabButton?.dataset?.tab ?? "")
+      .trim()
+      .toLowerCase();
+    logUiDebug("rest-watch", "switch-tab click", {
+      tabId,
+      target: summarizeClickTarget(event.target)
+    });
+    this.setActiveTab(tabId);
+  }
+
+  #onTabClick(tabElement, html, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const tabName = normalizeMainTabId(getRequestedPanelIdFromElement(tabElement), "rest-watch");
+    logUiDebug("rest-watch", "main tab click", {
+      tabName,
+      target: summarizeClickTarget(event?.target ?? tabElement)
+    });
+    if (tabName === "rest-watch" || tabName === "operations" || tabName === "gm") {
+      this.setActivePanel(tabName);
+      return;
+    }
+    if (tabName === "marching-order") {
+      this.setActiveTab("march");
+    }
+  }
+
+  async _onAction(event) {
+    const element = event.target?.closest("[data-action]");
+    const action = element?.dataset?.action;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+    try {
+      const isFormAction = isFormActionElement(element);
+      if (event?.type === "click" && !isFormAction) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (DEBUG_LOG) console.log("RestWatchApp #onAction:", { action, element, event });
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
+
+      const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+      if (handledJournalAction) return;
+
+      try {
+        const actionHandlers = {
+          "switch-tab": async () => {
+            this.#onSwitchTabClick(event, element);
+          },
+          refresh: async () => {
+            emitSocketRefresh();
+          },
+          popout: async () => {
+            this.render({ force: true, popOut: true });
+          },
+          "open-settings-hub": async () => {
+            if (!canAccessGmPage()) {
+              ui.notifications?.warn("GM permissions are required to open Party Operations settings.");
+              return;
+            }
+            openPartyOperationsSettingsHub({ force: true });
+          },
+          assign: async () => {
+            await assignSlotByPicker(element, { source: "pc" });
+          },
+          "assign-character": async () => {
+            await assignSlotByPicker(element, { source: "pc" });
+          },
+          "assign-actor": async () => {
+            await assignSlotByPicker(element, { source: "all" });
+          },
+          "assign-actor-global": async () => {
+            await addRestWatchVisibleSlot(element);
+          },
+          "set-slot-entry": async () => {
+            await updateRestWatchEntrySelection(element);
+          },
+          "clear-slot-entry": async () => {
+            await clearRestWatchEntrySelection(element);
+          },
+          "assign-me": async () => {
+            await assignSlotToUser(element);
+          },
+          clear: async () => {
+            await clearSlotEntry(element);
+          },
+          swap: async () => {
+            await swapSlots(element);
+          },
+          "open-shared-note": async () => {
+            await openRestWatchSharedNoteEditorFromElement(element);
+          },
+          visibility: async () => {
+            await updateVisibility(element);
+          },
+          "autofill-party": async () => {
+            await autofillFromParty();
+          },
+          "autofill-last": async () => {
+            await restoreRestCommitted();
+          },
+          "commit-plan": async () => {
+            await commitRestWatchState();
+          },
+          "copy-text": async () => {
+            await copyRestWatchText(false);
+          },
+          "copy-md": async () => {
+            await copyRestWatchText(true);
+          },
+          "clear-all": async () => {
+            await clearRestWatchAll();
+          },
+          ping: async () => {
+            await pingActorFromElement(element);
+          },
+          "time-range": async () => {
+            await updateTimeRange(element);
+          },
+          "switch-character": async () => {
+            await switchActiveCharacter(element);
+          },
+          "set-exhaustion": async () => {
+            await updateExhaustion(element);
+          },
+          "set-activity": async () => {
+            await updateActivity(element, { skipLocalRefresh: true });
+          },
+          "reset-activities": async () => {
+            await resetAllActivities();
+          },
+          "toggle-campfire": async () => {
+            await toggleCampfire(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "toggle-campfire-all": async () => {
+            await toggleCampfireAll();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "toggle-mini-viz": async () => {
+            setMiniVizCollapsed(!isMiniVizCollapsed());
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-panel-tab": async () => {
+            const panelKey = String(element?.dataset?.panel ?? "")
+              .trim()
+              .toLowerCase();
+            if (panelKey) {
+              openGmPanelByKey(panelKey, { force: true });
+              return;
+            }
+            setActiveGmPanelTab(element?.dataset?.tab);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "operations-page": async () => {
+            setActiveOperationsPage(element?.dataset?.page);
+            if (String(element?.dataset?.page ?? "").trim() === "gm" && canAccessGmPage()) setActiveRestMainTab("gm");
+            else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-select-actor": async () => {
+            if (setMerchantActorSelectionFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-select-city": async () => {
+            if (setMerchantSettlementSelectionFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-save-city-catalog": async () => {
+            if (await saveMerchantCityCatalogFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-assign-city": async () => {
+            if (await assignMerchantCityFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-select-tab": async () => {
+            if (setSelectedMerchantTabIdFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-open-shop": async () => {
+            await openMerchantShopFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-settlement": async () => {
+            await setMerchantSettlementFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-editor-draft-change": async () => {
+            if (cacheMerchantEditorDraftChangeFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-new": async () => {
+            resetMerchantEditorSelection();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-randomize-name": async () => {
+            if (randomizeMerchantNameFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-randomize-race": async () => {
+            if (randomizeMerchantRaceFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-apply-preset-defaults": async () => {
+            if (applyMerchantPresetDefaultsFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-edit": async () => {
+            if (setMerchantEditorSelectionFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-save": async () => {
+            await saveMerchantFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-delete": async () => {
+            await deleteMerchantFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-refresh-stock": async () => {
+            await refreshMerchantStockFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-refresh-all-stock": async () => {
+            await refreshAllMerchantStocksFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-assign-by-contract-key": async () => {
+            await assignMerchantByContractKeyFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-assign-toggle": async () => {
+            await setMerchantAssignmentFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-assign-all": async () => {
+            await setMerchantAssignmentAllEnabledFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-assign-none": async () => {
+            await setMerchantAssignmentAllDisabledFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-set-access-mode": async () => {
+            await setMerchantAccessModeFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-open-actor": async () => {
+            await openMerchantActorFromElement(element);
+          },
+          "toggle-merchant-pack-source": async () => {
+            await toggleMerchantPackSourceFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "toggle-merchant-allowed-type": async () => {
+            await toggleMerchantAllowedTypeFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-add-curated-item": async () => {
+            await addMerchantCuratedItemFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-remove-curated-item": async () => {
+            await removeMerchantCuratedItemFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-clear-curated-items": async () => {
+            await clearMerchantCuratedItemsFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "operations-planning-tab": async () => {
+            setActiveOperationsPlanningTab(element?.dataset?.planningTab);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-ops-tab": async () => {
+            if (isModuleDebugEnabled()) {
+              logUiDebug("loot", "gm ops tab click", {
+                requestedTab: String(element?.dataset?.gmTab ?? ""),
+                beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+                beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+              });
+            }
+            this._gmOperationsTab = normalizeGmOperationsTab(element?.dataset?.gmTab);
+            setActiveGmOperationsTab(this._gmOperationsTab);
+            if (isModuleDebugEnabled()) {
+              logUiDebug("loot", "gm ops tab applied", {
+                afterGmOpsTab: this._gmOperationsTab,
+                storedGmOpsTab: getActiveGmOperationsTab()
+              });
+            }
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "toggle-sop": async () => {
+            await toggleOperationalSOP(element, { skipLocalRefresh: true });
+          },
+          "set-sop-note": async () => {
+            clearScheduledSopNoteSave(this, String(element?.dataset?.sop ?? "").trim());
+            cacheOperationalSopNoteDraftFromElement(element);
+          },
+          "save-sop-note": async () => {
+            const sopKey = String(element?.dataset?.sop ?? "").trim();
+            clearScheduledSopNoteSave(this, sopKey);
+            const noteInput = getSopNoteTextareaFromElement(element);
+            if (!noteInput) {
+              logUiDebug("operations-sop", "save-sop-note could not resolve textarea", {
+                sopKey,
+                target: summarizeClickTarget(event?.target ?? element)
+              });
+              ui.notifications?.warn("Could not find the SOP note input to save.");
+              return;
+            }
+            await setOperationalSopNote(noteInput, {
+              suppressUiWarning: false,
+              notify: true
+            });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-sop-note": async () => {
+            const sopKey = String(element?.dataset?.sop ?? "").trim();
+            clearScheduledSopNoteSave(this, sopKey);
+            const noteInput = getSopNoteTextareaFromElement(element);
+            if (!noteInput) {
+              ui.notifications?.warn("Could not find the SOP note input to clear.");
+              return;
+            }
+            noteInput.value = "";
+            cacheOperationalSopNoteDraftFromElement(noteInput);
+            await setOperationalSopNote(noteInput, {
+              suppressUiWarning: false,
+              notify: true
+            });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-resource": async () => {
+            const result = await setOperationalResource(element);
+            if (result?.rerender) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "publish-downtime-hours": async () => {
+            await publishDowntimeHoursToPlayers();
+          },
+          "refresh-downtime-submit-selection": async () => {
+            syncDowntimeUiDraftFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-downtime-hours": async () => {
+            await setDowntimeHoursGranted(element);
+          },
+          "set-downtime-tuning": async () => {
+            await setDowntimeTuningField(element);
+          },
+          "set-downtime-resolve-target": async () => {
+            applyDowntimeResolverBaseToUi(element, { force: true });
+          },
+          "prefill-downtime-resolution": async () => {
+            applyDowntimeResolverBaseToUi(element, { force: true });
+          },
+          "pre-resolve-selected-downtime-entry": async () => {
+            await preResolveSelectedDowntimeEntry(element);
+          },
+          "submit-downtime-action": async () => {
+            await submitDowntimeAction(element);
+          },
+          "remove-downtime-material-drop": async () => {
+            const removed = removeDowntimeSubmissionMaterialDropFromUi(element);
+            if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-downtime-entry": async () => {
+            await clearDowntimeEntry(element);
+          },
+          "resolve-selected-downtime-entry": async () => {
+            await resolveSelectedDowntimeEntry(element);
+          },
+          "edit-downtime-result": async () => {
+            await editDowntimeResult(element);
+          },
+          "clear-downtime-results": async () => {
+            await clearDowntimeResults();
+          },
+          "unarchive-downtime-log": async () => {
+            await unarchiveDowntimeLogEntry(element);
+          },
+          "clear-downtime-log": async () => {
+            await clearDowntimeLogEntry(element);
+          },
+          "post-downtime-log": async () => {
+            await postDowntimeLogOutcome(element);
+          },
+          "collect-downtime-result": async () => {
+            await collectDowntimeResult(element);
+          },
+          "set-environment-preset": async () => {
+            await setOperationalEnvironmentPreset(element);
+          },
+          "set-environment-dc": async () => {
+            await setOperationalEnvironmentDc(element);
+          },
+          "set-environment-note": async () => {
+            await setOperationalEnvironmentNote(element);
+          },
+          "set-environment-successive": async () => {
+            await setOperationalEnvironmentSuccessive(element);
+          },
+          "reset-environment-successive-defaults": async () => {
+            await resetOperationalEnvironmentSuccessiveDefaults();
+          },
+          "toggle-environment-actor": async () => {
+            await toggleOperationalEnvironmentActor(element);
+          },
+          "add-environment-log": async () => {
+            await addOperationalEnvironmentLog();
+          },
+          "edit-environment-log": async () => {
+            await editOperationalEnvironmentLog(element);
+          },
+          "remove-environment-log": async () => {
+            await removeOperationalEnvironmentLog(element);
+          },
+          "request-environment-checks": async () => {
+            await requestOperationalEnvironmentChecks();
+          },
+          "show-environment-brief": async () => {
+            await showOperationalEnvironmentBrief();
+          },
+          "apply-upkeep": async () => {
+            await applyOperationalUpkeep();
+          },
+          "gather-resource-check": async () => {
+            triggerGatherResourceButtonAnimation(element);
+            await runGatherResourceCheck();
+          },
+          "run-gather-preset": async () => {
+            await runGatherPresetAction(element);
+          },
+          "approve-gather-request": async () => {
+            await approveGatherRequestAction(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "decline-gather-request": async () => {
+            await declineGatherRequestAction(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-gather-history-filter": async () => {
+            setGatherHistoryViewFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-gather-history-filters": async () => {
+            clearGatherHistoryFilters();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-gather-history": async () => {
+            await clearGatherHistoryAction();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "remove-gather-history-entry": async () => {
+            await removeGatherHistoryEntryAction(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "show-operational-brief": async () => {
+            await showOperationalBrief();
+          },
+          "set-recon-field": async () => {
+            await setReconField(element);
+          },
+          "run-recon-check": async () => {
+            await runReconCheck();
+          },
+          "show-recon-brief": async () => {
+            await showReconBrief();
+          },
+          "set-reputation-score": async () => {
+            await setReputationScore(element, { skipLocalRefresh: true });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "adjust-reputation-score": async () => {
+            await adjustReputationScore(element, { skipLocalRefresh: true });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-note": async () => {
+            await setReputationNote(element);
+          },
+          "log-reputation-note": async () => {
+            await logReputationNote(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "load-reputation-note-log": async () => {
+            await loadReputationNoteLog(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "use-reputation-note-log": async () => {
+            await useReputationNoteLog(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "post-reputation-note-log": async () => {
+            await postReputationNoteLog(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-reputation-note": async () => {
+            await clearReputationNote(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "remove-reputation-note-log": async () => {
+            await removeReputationNoteLog(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-label": async () => {
+            await setReputationLabel(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-detail": async () => {
+            await setReputationDetail(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-player-impact": async () => {
+            await setReputationPlayerImpactField(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "add-reputation-faction": async () => {
+            await addReputationFaction(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "add-reputation-player-impact": async () => {
+            await addReputationPlayerImpact(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "remove-reputation-player-impact": async () => {
+            await removeReputationPlayerImpact(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-builder-field": async () => {
+            await setReputationBuilderField(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-builder-impact": async () => {
+            await setReputationBuilderImpactField(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "add-reputation-builder-impact": async () => {
+            await addReputationBuilderImpact();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "remove-reputation-builder-impact": async () => {
+            await removeReputationBuilderImpact(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-reputation-builder": async () => {
+            await clearReputationBuilder();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "remove-reputation-faction": async () => {
+            await removeReputationFaction(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-filter-keyword": async () => {
+            setReputationFilterState({ keyword: String(element?.value ?? "") });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-filter-standing": async () => {
+            setReputationFilterState({ standing: String(element?.value ?? "all") });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-reputation-filters": async () => {
+            setReputationFilterState({ keyword: "", standing: "all" });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "show-reputation-brief": async () => {
+            await showReputationBrief({ scope: REPUTATION_VIEW_SCOPES.OPERATIONS });
+          },
+          "toggle-loot-pack-sources-collapsed": async () => {
+            const current = getLootPackSourcesUiState();
+            setLootPackSourcesUiState({ collapsed: !current.collapsed });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-registry-tab": async () => {
+            if (isModuleDebugEnabled()) {
+              logUiDebug("loot", "loot registry tab click", {
+                requestedTab: String(element?.dataset?.tab ?? ""),
+                beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+                beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+              });
+            }
+            this._lootRegistryTab = normalizeLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
+            setActiveLootRegistryTab(this._lootRegistryTab);
+            logUiDebug("loot", "set loot registry tab", {
+              tab: this._lootRegistryTab,
+              storedLootRegistryTab: getActiveLootRegistryTab()
+            });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-pack-filter": async () => {
+            setLootPackSourcesUiState({ filter: String(element?.value ?? "") });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-loot-pack-filter": async () => {
+            setLootPackSourcesUiState({ filter: "" });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "toggle-loot-pack-source": async () => {
+            await toggleLootPackSource(element);
+          },
+          "set-loot-pack-weight": async () => {
+            await setLootPackWeight(element);
+          },
+          "toggle-loot-table-source": async () => {
+            await toggleLootTableSource(element);
+          },
+          "set-loot-table-type": async () => {
+            await setLootTableType(element);
+          },
+          "toggle-loot-item-type": async () => {
+            await toggleLootItemType(element);
+          },
+          "set-loot-rarity-floor": async () => {
+            await setLootRarityFloor(element);
+          },
+          "set-loot-rarity-ceiling": async () => {
+            await setLootRarityCeiling(element);
+          },
+          "set-loot-manifest-pack": async () => {
+            await setLootManifestPack(element);
+          },
+          "set-loot-keyword-include-mode": async () => {
+            await setLootKeywordIncludeMode(element);
+          },
+          "set-loot-keyword-include-tags": async () => {
+            await setLootKeywordIncludeTags(element);
+          },
+          "set-loot-keyword-exclude-tags": async () => {
+            await setLootKeywordExcludeTags(element);
+          },
+          "reset-loot-source-config": async () => {
+            await resetLootSourceConfig();
+          },
+          "set-loot-preview-field": async () => {
+            setLootPreviewField(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "roll-loot-preview": async () => {
+            await rollLootPreview(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "generate-loot-preview-item": async () => {
+            const added = await generateLootPreviewItemFromSnapshot();
+            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "add-loot-preview-item": async () => {
+            const added = await addLootPreviewItemByPicker();
+            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "remove-loot-preview-item": async () => {
+            const removed = await removeLootPreviewItem(element);
+            if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "adjust-loot-preview-currency": async () => {
+            const adjusted = adjustLootPreviewCurrency(element);
+            if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-loot-preview": async () => {
+            clearLootPreviewResult();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "publish-loot-claims": async () => {
+            await publishLootPreviewToClaims();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-loot-claims": async () => {
+            await clearLootClaimsPool();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-claim-run": async () => {
+            if (setLootClaimRunSelectionFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "set-loot-claims-archive-sort": async () => {
+            setLootClaimsArchiveSort(element?.value);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "open-loot-item": async () => {
+            await openLootItemFromElement(element);
+          },
+          "claim-loot-item": async () => {
+            await claimLootItemForPlayer(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-claim-actor": async () => {
+            if (setLootClaimActorSelectionFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "set-loot-claims-live-sort": async () => {
+            if (setLootClaimsLiveSortFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "set-loot-claims-live-search": async () => {
+            if (setLootClaimsLiveSearchFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "claim-loot-currency": async () => {
+            await claimLootCurrencyForPlayer(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "split-loot-currency": async () => {
+            await splitLootCurrencyForPlayer(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "claim-all-loot-items": async () => {
+            await claimAllLootItemsForPlayer(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "claim-all-loot": async () => {
+            await claimAllLootForPlayer(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "undo-loot-claim": async () => {
+            await undoLootClaimFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "unlock-loot-claim-run": async () => {
+            await unlockLootClaimRunFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-major-item": async () => {
+            await setLootItemMajorFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "open-gm-loot-claims-board": async () => {
+            openGmLootClaimsBoard({
+              force: true,
+              runId: getLootClaimRunIdFromElement(element)
+            });
+          },
+          "open-gm-factions-page": async () => {
+            openGmFactionsPage({ force: true });
+          },
+          "gm-quick-add-faction": async () => {
+            await gmQuickAddFaction();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-quick-open-environment": async () => {
+            openGmDowntimePage({ force: true });
+          },
+          "gm-quick-open-downtime": async () => {
+            openGmDowntimePage({ force: true });
+          },
+          "gm-quick-open-merchants": async () => {
+            openGmMerchantsPage({ force: true });
+          },
+          "gm-quick-open-audio": async () => {
+            openGmAudioPage({ force: true });
+          },
+          "gm-quick-open-loot": async () => {
+            openGmLootPage({ force: true });
+          },
+          "gm-quick-cancel-panel": async () => {
+            setActiveGmQuickPanel("none");
+            setGmQuickWeatherDraft(null);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-quick-submit-faction": async () => {
+            await gmQuickSubmitFaction(element);
+          },
+          "gm-quick-session-autopilot": async () => {
+            await runSessionAutopilot();
+          },
+          "gm-quick-undo-autopilot": async () => {
+            await undoLastSessionAutopilot();
+          },
+          "gm-quick-log-weather": async () => {
+            await gmQuickLogCurrentWeather();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-quick-submit-weather": async () => {
+            await gmQuickSubmitWeather(element);
+          },
+          "gm-quick-weather-select": async () => {
+            await gmQuickSelectWeatherPreset(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-quick-weather-set": async () => {
+            gmQuickUpdateWeatherDraftField(element);
+          },
+          "gm-quick-weather-save-preset": async () => {
+            await gmQuickSaveWeatherPreset(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-quick-weather-delete-preset": async () => {
+            await gmQuickDeleteWeatherPreset(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-injury-config": async () => {
+            await setInjuryRecoveryConfig(element);
+          },
+          "upsert-injury": async () => {
+            await upsertInjuryEntry(element);
+          },
+          "roll-injury-table": async () => {
+            await rollInjuryTableForEditor(element);
+          },
+          "set-injury-result": async () => {
+            syncInjuryEditorFromSelection(element);
+          },
+          "stabilize-injury": async () => {
+            await stabilizeInjuryEntry(element);
+          },
+          "clear-injury": async () => {
+            await clearInjuryEntry(element);
+          },
+          "show-injury-table": async () => {
+            await showInjuryTable();
+          },
+          "apply-recovery-cycle": async () => {
+            await applyRecoveryCycle();
+          },
+          "show-recovery-brief": async () => {
+            await showRecoveryBrief();
+          }
+        };
+        const handler = actionHandlers[action];
+        if (typeof handler === "function") {
+          await handler();
+        }
+      } catch (error) {
+        logUiFailure("rest-watch", "action handler failed", error, {
+          action,
+          eventType: String(event?.type ?? ""),
+          target: summarizeClickTarget(event?.target)
+        });
+        ui.notifications?.error("Party Operations action failed. Check the console for details.");
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
+        });
+      }
+    }
+  }
+
+  async #onNotesChange(event) {
+    if (event?.type === "input") return;
+    const state = getRestWatchState();
+    if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
+      notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+        key: "rest-watch-locked",
+        ttlMs: 1500
+      });
+      return;
+    }
+    const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
+    if (!slotId) return;
+    const text = event.target.value ?? "";
+    const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
+    if (!actorId) return;
+
+    if (!game.user?.isGM) {
+      await saveRestWatchEntryNoteByContext(
+        { slotId, actorId, text },
+        {
+          notify: false,
+          source: "manual"
+        }
+      );
+      return;
+    }
+
+    await saveRestWatchEntryNoteByContext(
+      { slotId, actorId, text },
+      {
+        notify: false,
+        source: "manual"
+      }
+    );
+  }
+
+  async close(options = {}) {
+    if (isModuleDebugEnabled()) {
+      console.trace(`[${MODULE_ID}] RestWatchApp.close`, {
+        options,
+        activePanel: this._activePanel ?? getActiveRestMainTab()
+      });
+    }
+    return super.close(options);
+  }
+}
+
+export class OperationsShellApp extends RestWatchApp {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "operations-shell-app",
+    window: { title: "Party Operations - Operations" },
+    position: getResponsiveWindowPosition("operations-shell"),
+    resizable: true
+  });
+
+  async _prepareContext() {
+    const context = await super._prepareContext();
+    const requestedMainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "operations");
+    const mainTab = requestedMainTab === "gm" && canAccessGmPage() ? "gm" : "operations";
+    return {
+      ...context,
+      showGmPageTab: canAccessGmPage(),
+      mainTab,
+      activeTab: getSwitchTabIdFromMainTabId(mainTab),
+      mainTabRestWatch: false,
+      mainTabOperations: mainTab === "operations",
+      mainTabGm: mainTab === "gm",
+      mainTabOperationsOrGm: true,
+      gmPanelTabCore: false,
+      gmPanelTabOperations: true,
+      mainContextLabel: mainTab === "gm" ? "GM" : "Operations",
+      mainSubtitleLabel: mainTab === "gm" ? "GM" : "Operations",
+      windowToolId: "operations-shell",
+      windowAriaLabel: mainTab === "gm" ? "Party Operations GM Workspace" : "Party Operations Operations Workspace"
+    };
+  }
+
+  async _onRender(context, options) {
+    const openedPlayers = this._openedPlayers;
+    this._openedPlayers = true;
+    await super._onRender(context, options);
+    this._openedPlayers = openedPlayers;
+    if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
+      clearPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    }
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
+    syncApplicationWindowTitle(
+      this,
+      this._activePanel === "gm" ? "Party Operations - GM" : "Party Operations - Operations"
+    );
+  }
+
+  setActiveTab(tabId) {
+    const requested = String(tabId ?? "")
+      .trim()
+      .toLowerCase();
+    if (!PO_SWITCH_TAB_IDS.has(requested)) {
+      logUiDebug("operations-shell", "setActiveTab ignored unknown tab", { tabId: requested });
+      return;
+    }
+
+    const normalizedMainTab = normalizeMainTabId(requested, "operations");
+    if (normalizedMainTab === "rest-watch" || normalizedMainTab === "marching-order") {
+      openMainTab(normalizedMainTab, { force: true });
+      return;
+    }
+    if (normalizedMainTab === "gm" && !canAccessGmPage()) {
+      notifyUiWarnThrottled("GM permissions are required for the GM section.", {
+        key: "gm-section-permission",
+        ttlMs: 1500
+      });
+      return;
+    }
+
+    const previousMainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "operations");
+    if (normalizedMainTab === previousMainTab) return;
+
+    this._activePanel = normalizedMainTab;
+    setActiveRestMainTab(normalizedMainTab);
+    renderAppWithPreservedState(this, { force: true, parts: ["main"] });
+  }
+
+  async close(options = {}) {
+    clearPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
+    if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
+      clearPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    }
+    return super.close(options);
+  }
+}
+
+function getStandaloneOpsContext() {
+  try {
+    return buildOperationsContext();
+  } catch (error) {
+    console.warn(`${MODULE_ID}: buildOperationsContext failed for standalone page`, error);
+    return buildOperationsContextFallback();
+  }
+}
+
+function buildGmEnvironmentPageContext() {
+  const operations = getStandaloneOpsContext();
+  const environment = operations?.environment ?? {};
+  const weather = operations?.weather ?? {
+    currentLabel: "Not logged",
+    currentVisibilityModifier: 0,
+    currentDarkness: 0
+  };
+  const gmQuickTools = operations?.gmQuickTools ?? {
+    weatherSceneSnapshot: {
+      label: "-",
+      darkness: 0,
+      visibilityModifier: 0
+    },
+    weatherOptions: [],
+    weatherDraft: {
+      selectedKey: "",
+      darkness: 0,
+      visibilityModifier: 0,
+      note: "",
+      presetName: ""
+    }
+  };
+  const logs = Array.isArray(environment.logs) ? environment.logs : [];
+  const checkResults = Array.isArray(environment.checkResults) ? environment.checkResults : [];
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    environment,
+    weather,
+    gmQuickTools,
+    logs,
+    checkResults,
+    hasLogs: logs.length > 0,
+    hasCheckResults: checkResults.length > 0,
+    hasWeatherOptions: Array.isArray(gmQuickTools?.weatherOptions) && gmQuickTools.weatherOptions.length > 0
+  };
+}
+
+function buildGmDowntimePageContext() {
+  const ledger = getOperationsLedger();
+  const downtimeState = ensureDowntimeState(ledger);
+  const viewState = getGmDowntimeViewState();
+  const downtime = buildDowntimeContext(downtimeState, {
+    user: game.user,
+    entriesSort: viewState.entriesSort,
+    logsSort: viewState.logsSort
+  });
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    downtime
+  };
+}
+
+function buildGmMerchantsPageContext() {
+  const merchants = buildMerchantsContext(getOperationsLedger(), { user: game.user });
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    merchants
+  };
+}
+
+function buildGmAudioPageContext() {
+  const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
+  if (game.user?.isGM && rawCatalog.items.some((item) => !isAudioLibraryDurationResolved(item))) {
+    queueAudioLibraryMetadataWarmup({ catalog: rawCatalog, delayMs: 120 });
+  }
+  pruneSelectedAudioLibraryTrackSelectionIds(rawCatalog.items.map((item) => item.id));
+  const catalog = getAudioLibraryCatalog();
+  pruneSelectedAudioMixTrackSelectionIds(catalog.items.map((item) => item.id));
+  const hiddenTrackIds = getHiddenAudioLibraryTrackIds();
+  const hiddenTrackIdSet = new Set(hiddenTrackIds);
+  const hiddenMatches = rawCatalog.items
+    .filter((item) => hiddenTrackIdSet.has(String(item?.id ?? "").trim()))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const hiddenTracks = hiddenMatches.slice(0, 24).map((item) => buildAudioLibraryTrackDisplay(item));
+  const hasSelectedTrack = catalog.items.some(
+    (item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()
+  );
+  if (!hasSelectedTrack) {
+    audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
+  }
+  const results = buildAudioLibraryResults(catalog);
+  const selectedTrack = getSelectedAudioLibraryTrack(catalog, results);
+  const previewVolume = getAudioPreviewVolumeSetting();
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    audio: {
+      draft: getAudioLibraryDraftState(),
+      draftHint: buildAudioLibraryPathHelpText(audioLibraryUiState.draft.rootPath),
+      viewLibrary: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.LIBRARY,
+      viewMix: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.MIX,
+      filters: normalizeAudioLibraryFilters(audioLibraryUiState.filters),
+      filterOptions: buildAudioLibraryFilterOptions(catalog),
+      summary: buildAudioLibrarySummary(catalog, { hiddenCount: hiddenMatches.length }),
+      results,
+      mix: buildAudioMixContext(catalog),
+      preview: {
+        defaultVolume: previewVolume,
+        defaultVolumePercent: Math.round(previewVolume * 100)
+      },
+      selectedTrack,
+      hidden: {
+        count: hiddenMatches.length,
+        tracks: hiddenTracks,
+        hasTracks: hiddenMatches.length > 0
+      },
+      hasCatalog: catalog.items.length > 0,
+      hasError: Boolean(audioLibraryUiState.error),
+      error: audioLibraryUiState.error
+    }
+  };
+}
+
+function buildGmLootPageContext() {
+  const operations = getStandaloneOpsContext();
+  const lootSources = operations?.lootSources ?? {};
+  const lootSettingsTab = getActiveLootSettingsTab();
+  lootSources.settingsTab = lootSettingsTab;
+  lootSources.settingsTabSources = lootSettingsTab === LOOT_SETTINGS_TABS.SOURCES;
+  lootSources.settingsTabTables = lootSettingsTab === LOOT_SETTINGS_TABS.TABLES;
+  lootSources.settingsTabFilters = lootSettingsTab === LOOT_SETTINGS_TABS.FILTERS;
+  const preview = lootSources.preview ?? {
+    hasResult: false,
+    generatedAtLabel: "-",
+    generatedBy: "-",
+    currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0, formula: "-" },
+    stats: {
+      candidateCount: 0,
+      itemCountGenerated: 0,
+      itemCountTarget: 0,
+      tableRollCount: 0,
+      finalItemsValueGp: 0,
+      finalCurrencyValueGp: 0,
+      finalCombinedValueGp: 0,
+      itemDeltaGp: 0,
+      deltaGp: 0
+    },
+    items: [],
+    tableRolls: [],
+    warnings: []
+  };
+  const lootClaims = operations?.lootClaims ?? {
+    publishedAtLabel: "-",
+    publishedBy: "-",
+    itemCount: 0,
+    claimsLogCount: 0,
+    currencyRemaining: { pp: 0, gp: 0, sp: 0, cp: 0 },
+    currencyClaimedCount: 0,
+    hasItems: false,
+    items: []
+  };
+  const sourceSummary = lootSources.summary ?? {
+    enabledItemPacks: 0,
+    totalItemPacks: 0,
+    enabledTables: 0,
+    totalTables: 0,
+    enabledItemTypes: 0,
+    totalItemTypes: 0,
+    updatedAtLabel: "-",
+    updatedBy: "-"
+  };
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    operations,
+    sourceSummary,
+    preview,
+    lootClaims,
+    hasPreviewResult: Boolean(preview?.hasResult),
+    hasPreviewItems: Array.isArray(preview?.items) && preview.items.length > 0,
+    hasPreviewWarnings: Array.isArray(preview?.warnings) && preview.warnings.length > 0,
+    hasClaimsItems: Boolean(lootClaims?.hasItems),
+    hasContestedItems: Number(lootClaims?.contestedItemCount ?? 0) > 0
+  };
+}
+
+function buildGmFactionsPageContext() {
+  const operations = getStandaloneOpsContext();
+  const ledger = getOperationsLedger();
+  const reputationState = ensureReputationState(ledger);
+  const reputationFilters = getReputationFilterState();
+  const reputation = buildReputationContext(reputationState, reputationFilters, {
+    scope: REPUTATION_VIEW_SCOPES.GM
+  });
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    operations: {
+      ...operations,
+      reputation
+    }
+  };
+}
+
+function buildGmLootClaimsBoardContext() {
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    lootClaims: buildLootClaimsContext(game.user),
+    isGM: Boolean(canAccessAllPlayerOps()),
+    canManageClaims: Boolean(canAccessAllPlayerOps())
+  };
+}
+
+function openGmFactionsPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view faction controls.");
+    return null;
+  }
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmFactionsPageApp(getResponsiveWindowOptions("gm-factions"));
+  app.render(renderOptions);
+  return app;
+}
+
+function openGmEnvironmentPage(renderOptions = { force: true }) {
+  openGmDowntimePage(renderOptions);
+  ui.notifications?.info("Environment has been removed from Party Operations.");
+  return null;
+}
+
+function openGmDowntimePage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view downtime controls.");
+    return null;
+  }
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmDowntimePageApp(getResponsiveWindowOptions("gm-downtime"));
+  app.render(renderOptions);
+  return app;
+}
+
+function openGmMerchantsPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view merchant controls.");
+    return null;
+  }
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmMerchantsPageApp(getResponsiveWindowOptions("gm-merchants"));
+  app.render(renderOptions);
+  return app;
+}
+
+function openGmAudioPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view audio controls.");
+    return null;
+  }
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmAudioPageApp(getResponsiveWindowOptions("gm-audio"));
+  app.render(renderOptions);
+  return app;
+}
+
+function openGmLootPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view loot controls.");
+    return null;
+  }
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
+  app.render(renderOptions);
+  return app;
+}
+
+function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
+  const key = String(panelKey ?? "")
+    .trim()
+    .toLowerCase();
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view GM panels.");
+    return null;
+  }
+
+  let app = null;
+  if (key === "faction") {
+    setActiveGmQuickPanel("none");
+    app = openGmFactionsPage({ ...renderOptions, suppressHistory });
+  } else if (key === "environment") {
+    app = openGmDowntimePage({ ...renderOptions, suppressHistory });
+  } else if (key === "downtime") {
+    app = openGmDowntimePage({ ...renderOptions, suppressHistory });
+  } else if (key === "merchants") {
+    app = openGmMerchantsPage({ ...renderOptions, suppressHistory });
+  } else if (key === "audio") {
+    app = openGmAudioPage({ ...renderOptions, suppressHistory });
+  } else if (key === "loot") {
+    app = openGmLootPage({ ...renderOptions, suppressHistory });
+  }
+  queueManagedAudioMixPlaybackResync();
+  return app;
+}
+
+function openGmLootClaimsBoard(renderOptions = { force: true }) {
+  const runId = normalizeLootClaimRunId(renderOptions?.runId);
+  if (runId) setLootClaimRunSelection(runId);
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmLootClaimsBoardApp(getResponsiveWindowOptions("gm-loot-claims-board"));
+  app.render(renderOptions);
+  return app;
+}
+
+function getEnabledTabsForList(tabList) {
+  if (!(tabList instanceof HTMLElement)) return [];
+  return Array.from(tabList.querySelectorAll('[role="tab"]')).filter((tab) => {
+    if (!(tab instanceof HTMLElement)) return false;
+    if (tab.getAttribute("aria-disabled") === "true") return false;
+    if ("disabled" in tab && tab.disabled) return false;
+    return true;
+  });
+}
+
+function getActiveTabForList(tabList, tabs = null) {
+  const resolvedTabs = Array.isArray(tabs) ? tabs : getEnabledTabsForList(tabList);
+  if (!resolvedTabs.length) return null;
+  return (
+    resolvedTabs.find((tab) => tab.getAttribute("aria-selected") === "true") ??
+    resolvedTabs.find((tab) => tab.classList?.contains("is-active")) ??
+    resolvedTabs[0] ??
+    null
+  );
+}
+
+function syncTabListRovingTabIndex(tabList) {
+  const tabs = getEnabledTabsForList(tabList);
+  const activeTab = getActiveTabForList(tabList, tabs);
+  for (const tab of tabs) {
+    tab.setAttribute("tabindex", tab === activeTab ? "0" : "-1");
+  }
+}
+
+function bindTabListKeyboardNavigation(root) {
+  if (!(root instanceof HTMLElement)) return;
+
+  const syncAllTabLists = () => {
+    for (const tabList of root.querySelectorAll('[role="tablist"]')) {
+      syncTabListRovingTabIndex(tabList);
+    }
+  };
+
+  syncAllTabLists();
+
+  if (root.dataset.poBoundTablistKeyboard === "1") return;
+  root.dataset.poBoundTablistKeyboard = "1";
+
+  root.addEventListener("keydown", (event) => {
+    const tab = event.target?.closest?.('[role="tab"]');
+    if (!(tab instanceof HTMLElement)) return;
+    const tabList = tab.closest?.('[role="tablist"]');
+    if (!(tabList instanceof HTMLElement) || !root.contains(tabList)) return;
+
+    const tabs = getEnabledTabsForList(tabList);
+    if (!tabs.length) return;
+
+    const currentIndex = tabs.indexOf(tab);
+    if (currentIndex < 0) return;
+
+    const key = String(event.key ?? "");
+    const isPrev = key === "ArrowLeft" || key === "ArrowUp";
+    const isNext = key === "ArrowRight" || key === "ArrowDown";
+    const isBoundary = key === "Home" || key === "End";
+    const isActivate = key === "Enter" || key === " ";
+    if (!isPrev && !isNext && !isBoundary && !isActivate) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isActivate) {
+      tab.click();
+      syncTabListRovingTabIndex(tabList);
+      return;
+    }
+
+    let nextIndex = currentIndex;
+    if (isPrev) nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (isNext) nextIndex = (currentIndex + 1) % tabs.length;
+    else if (key === "Home") nextIndex = 0;
+    else if (key === "End") nextIndex = tabs.length - 1;
+
+    const nextTab = tabs[nextIndex] ?? tab;
+    if (!(nextTab instanceof HTMLElement)) return;
+    nextTab.focus();
+    if (nextTab !== tab) nextTab.click();
+    syncTabListRovingTabIndex(tabList);
+  });
+}
+
+const REST_WATCH_ACTION_CONTROL_SELECTOR = "select[data-action], input[data-action], textarea[data-action]";
+const REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR =
+  "select[name='downtimeActorId'], select[name='downtimeActionKey'], select[name='downtimeSubtypeKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']";
+const REST_WATCH_DOWNTIME_DRAFT_SELECTOR = `${REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR}, select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']`;
+
+function runRestWatchDelegatedHandlers(event, handlers = []) {
+  for (const handler of handlers) {
+    if (typeof handler !== "function") continue;
+    if (handler(event) === true) return true;
+  }
+  return false;
+}
+
+function bindRestWatchDelegatedListeners({
+  app,
+  boundDatasetKey,
+  debugScope,
+  onSwitchTabClick,
+  onAction,
+  changeHandlers = [],
+  inputHandlers = [],
+  dragStartHandler = null,
+  dragOverHandler = null,
+  dragLeaveHandler = null,
+  dropHandler = null
+} = {}) {
+  const root = app?.element;
+  if (!root || root.dataset?.[boundDatasetKey] === "1") return;
+  root.dataset[boundDatasetKey] = "1";
+
+  root.addEventListener("click", (event) => {
+    const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
+    if (tabSwitch) return onSwitchTabClick?.(event, tabSwitch);
+
+    const actionElement = event.target?.closest("[data-action]");
+    if (isFormActionElement(actionElement)) return;
+    const action = actionElement?.dataset?.action;
+    if (action) {
+      logUiDebug(debugScope, "click action", {
+        action,
+        target: summarizeClickTarget(event.target)
+      });
+    }
+    if (action) void onAction?.(event);
+  });
+
+  if (isModuleDebugEnabled()) {
+    root.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        if (target.closest('[data-action="switch-tab"]')) return;
+        const computed = getComputedStyle(target);
+        const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
+        const suspicious =
+          (computed.position === "fixed" || computed.position === "absolute") &&
+          Number.isFinite(zIndexValue) &&
+          zIndexValue >= 900;
+        if (!suspicious) return;
+        logUiDebug(debugScope, "capture-click suspicious overlay", {
+          target: summarizeClickTarget(target),
+          zIndex: computed.zIndex,
+          position: computed.position,
+          pointerEvents: computed.pointerEvents
+        });
+      },
+      true
+    );
+  }
+
+  root.addEventListener("change", (event) => {
+    runRestWatchDelegatedHandlers(event, changeHandlers);
+  });
+
+  root.addEventListener("input", (event) => {
+    runRestWatchDelegatedHandlers(event, inputHandlers);
+  });
+
+  root.addEventListener("dblclick", (event) => {
+    const portrait = event.target?.closest(".po-portrait");
+    if (portrait) openActorSheetFromElement(portrait);
+  });
+
+  if (typeof dragStartHandler === "function") {
+    root.addEventListener("dragstart", (event) => {
+      dragStartHandler(event);
+    });
+  }
+  if (typeof dragOverHandler === "function") {
+    root.addEventListener("dragover", (event) => {
+      dragOverHandler(event);
+    });
+  }
+  if (typeof dragLeaveHandler === "function") {
+    root.addEventListener("dragleave", (event) => {
+      dragLeaveHandler(event);
+    });
+  }
+  if (typeof dropHandler === "function") {
+    root.addEventListener("drop", async (event) => {
+      await dropHandler(event);
+    });
+  }
+}
+
+function updateRestWatchActivityUi(root) {
+  if (!root) return;
+  root.querySelectorAll(".po-exhaustion-controls").forEach((container) => {
+    const current = Number(container.dataset.exhaustion ?? 0);
+    container.querySelectorAll(".po-exh-btn").forEach((button) => {
+      const level = Number(button.dataset.level ?? 0);
+      button.classList.toggle("is-active", level === current);
+    });
+  });
+}
+
+function finalizeRestWatchRender(app, scope) {
+  updateRestWatchActivityUi(app?.element);
+  renderDowntimeSubmissionMaterialDropLists(app?.element);
+  diagnoseRenderedMainTabs(app?.element, scope);
+  restorePendingWindowState(app);
+  restorePendingUiState(app);
+  restorePendingScrollState(app);
+}
+
+class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  constructor(options = {}) {
+    super(options);
+    this._setPageInstance(this);
+  }
+
+  _setPageInstance(_instance) {}
+
+  _getBoundDatasetKey() {
+    return "";
+  }
+
+  _getActionHandlers(_event = null) {
+    return {};
+  }
+
+  _shouldHandleChangeAction(_action, _actionElement, _event) {
+    return true;
+  }
+
+  _shouldHandleInputAction(_action, _actionElement, _event) {
+    return false;
+  }
+
+  _bindAdditionalListeners(_root) {}
+
+  async _onPostRender(_context, _options) {}
+
+  _getActionErrorScope() {
+    return "stateful-page";
+  }
+
+  _getActionErrorMessage() {
+    return "Page action failed. Check console for details.";
+  }
+
+  _renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    renderAppWithPreservedState(this, renderOptions);
+  }
+
+  async _dispatchActionEvent(event) {
+    if (event?.type === "click") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const actionElement = event?.target?.closest?.("[data-action]");
+    const action = String(actionElement?.dataset?.action ?? "").trim();
+    if (!action) return;
+    if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, actionElement, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+
+    const actionHandlers = this._getActionHandlers(event);
+    const handler = actionHandlers?.[action];
+    if (typeof handler !== "function") return;
+
+    try {
+      await handler(actionElement, event);
+    } catch (error) {
+      logUiFailure(this._getActionErrorScope(), `action failed: ${action}`, error, {
+        target: summarizeClickTarget(event?.target)
+      });
+      ui.notifications?.warn(this._getActionErrorMessage());
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action,
+          eventType: String(event?.type ?? "")
+        });
+      }
+    }
+  }
+
+  async close(options = {}) {
+    this._setPageInstance(null);
+    return super.close(options);
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
+    if (this.element) {
+      const datasetKey = this._getBoundDatasetKey();
+      if (datasetKey && !this.element.dataset[datasetKey]) {
+        this.element.dataset[datasetKey] = "1";
+        this.element.addEventListener("click", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          if (isFormActionElement(actionElement)) return;
+          if (!actionElement) return;
+          void this._dispatchActionEvent(event);
+        });
+        this.element.addEventListener("change", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          const action = String(actionElement?.dataset?.action ?? "").trim();
+          if (!action) return;
+          if (!this._shouldHandleChangeAction(action, actionElement, event)) return;
+          void this._dispatchActionEvent(event);
+        });
+        this.element.addEventListener("input", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          const action = String(actionElement?.dataset?.action ?? "").trim();
+          if (!action) return;
+          if (!this._shouldHandleInputAction(action, actionElement, event)) return;
+          void this._dispatchActionEvent(event);
+        });
+        this._bindAdditionalListeners(this.element);
+      }
+    }
+    await this._onPostRender(context, options);
+    restorePendingWindowState(this);
+    restorePendingUiState(this);
+    restorePendingScrollState(this);
+  }
+}
+
+export const GmFactionsPageApp = createGmFactionsPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE, instance);
+  },
+  buildContext: buildGmFactionsPageContext,
+  openMainTab,
+  setReputationFilterState,
+  showReputationBrief: () => showReputationBrief({ scope: REPUTATION_VIEW_SCOPES.GM }),
+  setReputationScore,
+  adjustReputationScore,
+  setReputationNote,
+  logReputationNote,
+  loadReputationNoteLog,
+  useReputationNoteLog,
+  postReputationNoteLog,
+  clearReputationNote,
+  removeReputationNoteLog,
+  setReputationLabel,
+  setReputationDetail,
+  setReputationOperationsVisibility,
+  setReputationOperationsField,
+  setReputationPlayerImpactField,
+  addReputationPlayerImpact,
+  removeReputationPlayerImpact,
+  setReputationBuilderField,
+  setReputationBuilderImpactField,
+  addReputationBuilderImpact,
+  removeReputationBuilderImpact,
+  clearReputationBuilder,
+  addReputationFaction,
+  removeReputationFaction,
+  openGmPanelByKey
+});
+
+export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE, instance);
+  },
+  buildContext: buildGmEnvironmentPageContext,
+  openMainTab,
+  setOperationalEnvironmentSyncNonParty,
+  setOperationalEnvironmentPreset,
+  setOperationalEnvironmentDc,
+  setOperationalEnvironmentSuccessive,
+  setOperationalEnvironmentNote,
+  selectOperationalEnvironmentConfigurePreset,
+  createOperationalEnvironmentPreset,
+  duplicateOperationalEnvironmentPreset,
+  restoreOperationalEnvironmentPresetDefaults,
+  deleteOperationalEnvironmentPreset,
+  setOperationalEnvironmentPresetField,
+  addOperationalEnvironmentPresetEffectChange,
+  removeOperationalEnvironmentPresetEffectChange,
+  setOperationalEnvironmentPresetEffectChange,
+  selectOperationalEnvironmentConfigureAction,
+  createOperationalEnvironmentAction,
+  deleteOperationalEnvironmentAction,
+  setOperationalEnvironmentActionField,
+  toggleOperationalEnvironmentActor,
+  resetOperationalEnvironmentSuccessiveDefaults,
+  addOperationalEnvironmentLog,
+  editOperationalEnvironmentLog,
+  removeOperationalEnvironmentLog,
+  clearOperationalEnvironmentEffects,
+  requestOperationalEnvironmentChecks,
+  showOperationalEnvironmentBrief,
+  gmQuickLogCurrentWeather,
+  gmQuickSaveWeatherPreset,
+  gmQuickDeleteWeatherPreset,
+  gmQuickSubmitWeather,
+  gmQuickSelectWeatherPreset,
+  gmQuickUpdateWeatherDraftField,
+  loadWeatherLogToQuickPanel,
+  removeWeatherLogById,
+  openGmPanelByKey
+});
+
+export const GmDowntimePageApp = createGmDowntimePageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE, instance);
+  },
+  buildContext: buildGmDowntimePageContext,
+  openMainTab,
+  setGmDowntimeViewState,
+  publishDowntimeHoursToPlayers,
+  setDowntimeHoursGranted,
+  setDowntimeTuningField,
+  renderDowntimeSubmissionMaterialDropList,
+  removeDowntimeSubmissionMaterialDropFromUi,
+  addDowntimeSubmissionMaterialDropFromDropEvent,
+  applyDowntimeResolverBaseToUi,
+  preResolveSelectedDowntimeEntry,
+  resolveSelectedDowntimeEntry,
+  autoResolveAndDeliverSelectedDowntimeEntry,
+  autoResolveAllPendingDowntimeEntries,
+  editDowntimeResult,
+  editDowntimeQueueEntry,
+  submitDowntimeAction,
+  clearDowntimeEntry,
+  clearDowntimeResults,
+  unarchiveDowntimeLogEntry,
+  clearDowntimeLogEntry,
+  postDowntimeLogOutcome,
+  collectDowntimeResult,
+  syncDowntimeUiDraftFromElement,
+  removeDowntimeResolverItemDropFromUi,
+  addDowntimeResolverCraftingItemDropFromDropEvent,
+  addDowntimeResolverItemRewardFromDropEvent,
+  renderDowntimeResolverItemDropList,
+  openGmPanelByKey
+});
+
+export const GmMerchantsPageApp = createGmMerchantsPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE, instance);
+  },
+  buildContext: buildGmMerchantsPageContext,
+  openMainTab,
+  cacheMerchantEditorDraftFromElement,
+  cacheMerchantEditorDraftChangeFromElement,
+  setMerchantGmViewTab,
+  setMerchantGmViewTabFromElement,
+  normalizeMerchantEditorFilter,
+  getMerchantEditorSourceFilter,
+  setMerchantEditorSourceFilter,
+  resetMerchantEditorSelection,
+  createStarterMerchants,
+  randomizeMerchantNameFromElement,
+  randomizeMerchantRaceFromElement,
+  saveMerchantCityCatalogFromElement,
+  updateMerchantCatalogLocationFromElement,
+  removeMerchantCatalogLocationFromElement,
+  assignMerchantCityFromElement,
+  assignMerchantCatalogLocationMerchantFromElement,
+  removeMerchantCatalogLocationMerchantFromElement,
+  setMerchantEditorSelectionFromElement,
+  saveMerchantFromElement,
+  deleteMerchantFromElement,
+  refreshMerchantStockFromElement,
+  refreshAllMerchantStocksFromElement,
+  setMerchantGmCollectionFilterFromElement,
+  resetMerchantGmCollectionFilterFromElement,
+  selectAllMerchantTagsFromElement,
+  deselectAllMerchantTagsFromElement,
+  setMerchantShopRestrictionFromElement,
+  setMerchantShopPlayerLocationFromElement,
+  setMerchantShopPlayerAllowedFromElement,
+  setMerchantShopPlayersAllFromElement,
+  setMerchantShopPlayersNoneFromElement,
+  setMerchantAvailableNowFromElement,
+  setMerchantShopTradableFromElement,
+  setMerchantShopTradableAllFromElement,
+  setMerchantShopTradableNoneFromElement,
+  ringMerchantShopBellFromElement,
+  closeMerchantShopsFromElement,
+  setMerchantAccessModeFromElement,
+  setMerchantAssignmentFromElement,
+  setMerchantAssignmentAllEnabledFromElement,
+  setMerchantAssignmentAllDisabledFromElement,
+  openMerchantActorFromElement,
+  setMerchantCityCatalogDraftValue,
+  openGmPanelByKey
+});
+
+export const GmAudioPageApp = createGmAudioPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE, instance);
+  },
+  buildContext: buildGmAudioPageContext,
+  openMainTab,
+  setAudioLibraryView,
+  setAudioLibraryDraftField,
+  openAudioLibraryRootPicker,
+  uploadLocalAudioFolderToLibrary: async () => {
+    try {
+      clearAudioLibraryError();
+      await uploadLocalAudioFolderToLibrary();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio library upload failed: ${message}`);
+    }
+  },
+  scanConfiguredAudioLibrary: async () => {
+    try {
+      clearAudioLibraryError();
+      await scanAudioLibraryCatalog();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio library scan failed: ${message}`);
+    }
+  },
+  clearAudioLibraryCatalog,
+  setAudioLibraryFilterField,
+  selectAudioLibraryTrack,
+  toggleAudioLibraryTrackSelection,
+  selectVisibleAudioLibraryTracks,
+  clearAudioLibraryTrackSelections,
+  setAudioMixTrackBrowserView,
+  changeAudioMixTrackBrowserPage,
+  toggleAudioMixTrackSelection,
+  selectVisibleAudioMixTracks,
+  clearAudioMixTrackSelections,
+  selectAudioMixPreset,
+  createAudioMixPresetFromSelection: async () => {
+    try {
+      clearAudioLibraryError();
+      return await createAudioMixPresetFromSelection();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio preset creation failed: ${message}`);
+      return null;
+    }
+  },
+  promptAndUpdateSelectedAudioMixPresetField,
+  setSelectedAudioMixPresetTextField,
+  setSelectedAudioMixPresetOption,
+  deleteSelectedAudioMixPreset,
+  addTrackToSelectedAudioMixPreset,
+  addSelectedLibraryTrackToAudioMixPreset,
+  addSelectedAudioMixTracksToPreset,
+  clearSelectedAudioMixPresetTrackList,
+  hideAudioLibraryTrack,
+  hideSelectedAudioLibraryTracks,
+  getAudioPreviewVolumeSetting,
+  setAudioPreviewVolumeSetting,
+  getManagedAudioMixPlaybackMonitorSnapshot,
+  queueSelectedTrackNext,
+  moveTrackToIndexInSelectedAudioMixPreset,
+  moveTrackToTopInSelectedAudioMixPreset,
+  moveTrackWithinSelectedAudioMixPreset,
+  removeTrackFromSelectedAudioMixPreset,
+  restoreAllHiddenAudioLibraryTracks,
+  restoreHiddenAudioLibraryTrack,
+  playSelectedAudioMixPreset: async () => {
+    try {
+      clearAudioLibraryError();
+      await playAudioMixPresetById(getSelectedAudioMixPreset().id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  playSelectedAudioMixCandidate: async (actionElement) => {
+    try {
+      clearAudioLibraryError();
+      await playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  toggleAudioMixPlayback: async () => {
+    try {
+      clearAudioLibraryError();
+      await toggleAudioMixPlayback();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  playNextAudioMixTrack: async () => {
+    try {
+      clearAudioLibraryError();
+      await playNextAudioMixTrack();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  restartCurrentAudioMixTrack: async () => {
+    try {
+      clearAudioLibraryError();
+      await restartCurrentAudioMixTrack();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  stopAudioMixPlayback: async () => {
+    try {
+      clearAudioLibraryError();
+      await stopAudioMixPlayback();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio stop failed: ${message}`);
+    }
+  },
+  getManagedAudioMixPlaybackMonitorSnapshot,
+  syncManagedAudioMixPlaybackForCurrentUser,
+  openGmPanelByKey
+});
+
+export const GmLootPageApp = createGmLootPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE, instance);
+  },
+  buildContext: buildGmLootPageContext,
+  openMainTab,
+  openGmLootClaimsBoard,
+  getLootClaimRunIdFromElement,
+  setActiveLootRegistryTab,
+  setActiveLootSettingsTab,
+  setLootPackSourcesUiState,
+  toggleLootPackSource,
+  setLootPackWeight,
+  toggleLootTableSource,
+  setLootTableType,
+  toggleLootItemType,
+  setLootRarityFloor,
+  setLootRarityCeiling,
+  setLootManifestPack,
+  importLootManifestCompendiumToWorld,
+  clearLootManifestImportedWorldItems,
+  setLootKeywordIncludeMode,
+  setLootKeywordIncludeTags,
+  setLootKeywordExcludeTags,
+  resetLootSourceConfig,
+  setLootPreviewField,
+  rollLootPreview,
+  generateLootPreviewItemFromSnapshot,
+  addLootPreviewItemByPicker,
+  editLootPreviewItem,
+  removeLootPreviewItem,
+  adjustLootPreviewCurrency,
+  clearLootPreviewResult,
+  publishLootPreviewToClaims,
+  clearLootClaimsPool,
+  openLootItemFromElement,
+  addLootPreviewItemFromDropEvent,
+  openGmPanelByKey
+});
+
+export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "party-operations-gm-loot-claims-board",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Live Loot Claims" },
+    position: getResponsiveWindowPosition("gm-loot-claims-board"),
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/gm-loot-claims-board.hbs" }
+  };
+
+  constructor(options = {}) {
+    super(options);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
+  }
+
+  async _prepareContext() {
+    return buildGmLootClaimsBoardContext();
+  }
+
+  async close(options = {}) {
+    clearPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
+    return super.close(options);
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    renderAppWithPreservedState(this, renderOptions);
+  }
+
+  async #onAction(event) {
+    const actionElement = event?.target?.closest?.("[data-action]");
+    const action = String(actionElement?.dataset?.action ?? "").trim();
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, actionElement, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+    try {
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (!action) return;
+      if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+
+      try {
+        if (action === "gm-loot-claims-board-back") {
+          this.close();
+          if (canAccessGmPage()) openMainTab("gm", { force: true });
+          else openOperationsLootClaimsTabForPlayer({ force: true });
+          return;
+        }
+        if (action === "gm-loot-claims-board-refresh") {
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-claim-run") {
+          if (setLootClaimRunSelectionFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          return;
+        }
+        if (action === "claim-loot-item") {
+          await submitPlayerHubAction(PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT, {
+            element: actionElement,
+            claimVariant: PLAYER_HUB_CLAIM_VARIANTS.ITEM
+          });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "open-loot-item") {
+          await openLootItemFromElement(actionElement);
+          return;
+        }
+        if (action === "set-loot-major-item") {
+          await setLootItemMajorFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "claim-loot-currency") {
+          await submitPlayerHubAction(PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT, {
+            element: actionElement,
+            claimVariant: PLAYER_HUB_CLAIM_VARIANTS.CURRENCY
+          });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "split-loot-currency") {
+          await splitLootCurrencyForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "claim-all-loot-items") {
+          await claimAllLootItemsForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-claims-live-sort") {
+          if (setLootClaimsLiveSortFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          return;
+        }
+        if (action === "set-loot-claims-live-search") {
+          if (setLootClaimsLiveSearchFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          return;
+        }
+        if (action === "claim-all-loot") {
+          await claimAllLootForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "auto-assign-by-vouch") {
+          await autoAssignItemsByVouchForGm(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "auto-split-items") {
+          await autoSplitItemsEvenlyForGm(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "undo-loot-claim") {
+          await undoLootClaimFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "unlock-loot-claim-run") {
+          await unlockLootClaimRunFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "archive-loot-claim-run") {
+          const runId = getLootClaimRunIdFromElement(actionElement);
+          await clearLootClaimsPool(runId);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-claim-actor") {
+          if (setLootClaimActorSelectionFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        }
+      } catch (error) {
+        logUiFailure("gm-loot-claims-board", `action failed: ${action}`, error, {
+          target: summarizeClickTarget(event?.target)
+        });
+        ui.notifications?.warn("Loot claims action failed. Check console for details.");
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action,
+          eventType: String(event?.type ?? "")
+        });
+      }
+    }
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
+    if (this.element && !this.element.dataset.poBoundGmLootClaimsBoard) {
+      this.element.dataset.poBoundGmLootClaimsBoard = "1";
+      this.element.addEventListener("click", (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        if (isFormActionElement(actionElement)) return;
+        if (!actionElement) return;
+        this.#onAction(event);
+      });
+      this.element.addEventListener("change", (event) => {
+        if (!event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) return;
+        this.#onAction(event);
+      });
+    }
+    bindItemCardIconOpeners(this.element, {
+      datasetKey: "poBoundLootClaimItemCardOpeners"
+    });
+    restorePendingWindowState(this);
+    restorePendingUiState(this);
+    restorePendingScrollState(this);
+  }
+}
+
+export const RestWatchPlayerApp = createRestWatchPlayerAppClass({
+  HandlebarsApplicationMixin,
+  ApplicationV2,
+  foundry,
+  getResponsiveWindowPosition,
+  getRestWatchState,
+  buildWatchSlotsView,
+  buildMiniVisualizationContext,
+  buildMiniVizUiContext,
+  getPlayerHubModeSetting,
+  PLAYER_HUB_MODES,
+  getPlayerHubTab,
+  buildLootClaimsContext,
+  buildOperationsJournalContext,
+  getOperationsLedger,
+  ensureDowntimeState,
+  buildDowntimeContext,
+  buildPlayerMarchQuickContext,
+  getCurrentModuleVersion,
+  logUiDebug,
+  PO_TEMPLATE_MAP,
+  MODULE_ID,
+  setPartyOpsAppInstance,
+  APP_INSTANCE_KEYS,
+  ensurePartyOperationsClass,
+  bindCanvasKeyboardSuppression,
+  bindTabListKeyboardNavigation,
+  bindRestWatchDelegatedListeners,
+  REST_WATCH_ACTION_CONTROL_SELECTOR,
+  REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR,
+  syncDowntimeUiDraftFromElement,
+  scheduleOperationsJournalFilterUpdate,
+  addDowntimeSubmissionMaterialDropFromDropEvent,
+  finalizeRestWatchRender,
+  updateRestWatchActivityUi,
+  getAppRootElement,
+  renderAppWithPreservedState,
+  normalizeMainTabId,
+  getRequestedPanelIdFromElement,
+  summarizeClickTarget,
+  openMainTab,
+  shouldPreserveCanvasForUiEvent,
+  captureCanvasViewState,
+  handleOperationsJournalAction,
+  getPlayerHubActionRequestFromUiAction,
+  submitPlayerHubAction,
+  emitSocketRefresh,
+  setPlayerHubTab,
+  setMiniVizCollapsed,
+  isMiniVizCollapsed,
+  updateActivity,
+  clearSlotEntry,
+  openRestWatchSharedNoteEditorFromElement,
+  pingActorFromElement,
+  editDowntimeQueueEntry,
+  setLootClaimRunSelectionFromElement,
+  removeDowntimeSubmissionMaterialDropFromUi,
+  setLootClaimsArchiveSort,
+  setLootClaimActorSelectionFromElement,
+  setLootClaimsLiveSortFromElement,
+  setLootClaimsLiveSearchFromElement,
+  splitLootCurrencyForPlayer,
+  undoLootClaimFromElement,
+  unlockLootClaimRunFromElement,
+  openGmLootClaimsBoard,
+  getLootClaimRunIdFromElement,
+  openLootItemFromElement,
+  queueCanvasViewRestore,
+  isRestWatchLockedForUser,
+  canAccessAllPlayerOps,
+  notifyUiWarnThrottled,
+  getActiveActorForUser,
+  buildPlayerActorSelectorContext,
+  switchActiveCharacter,
+  saveRestWatchEntryNoteByContext,
+  isModuleDebugEnabled,
+  game
+});
+
+export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "marching-order-app",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Marching Order" },
+    position: getResponsiveWindowPosition("marching-order"),
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/marching-order.hbs" }
+  };
+
+  async _prepareContext() {
+    const isGM = canAccessAllPlayerOps();
+    const state = getMarchingOrderState();
+    const formationSnapshot = getMarchingFormationSnapshot(state);
+    const ranks = buildRanksView(state, isGM);
+    const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
+    const lockBannerTooltip = state.locked
+      ? isGM
+        ? "Players cannot edit while locked."
+        : "Edits are disabled while the GM lock is active."
+      : "";
+    const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
+    const miniVizUi = buildMiniVizUiContext();
+    const lightToggles = buildLightToggles(state, ranks, isGM);
+    const formationBoard = buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks);
+    const spacingGrid = buildMarchSpacingGridContext(state, formationBoard);
+    const laneCounts = Object.fromEntries(
+      getMarchBoardRankIds().map((rankId) => [rankId, ranks.find((rank) => rank.id === rankId)?.entries?.length ?? 0])
+    );
+    const totalAssigned = Object.values(laneCounts).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    const lightSources = lightToggles.filter((entry) => entry.hasLight).length;
+    const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
+    const overview = buildMarchOverviewContext({
+      totalAssigned,
+      allActorCount: formationBoard.restWatchRosterCount,
+      laneCounts,
+      formationLabel: "March Board",
+      formationStateLabel: "Active",
+      lightSources,
+      lockState,
+      unassignedCount: Number(formationBoard?.unassignedRestActors?.length ?? 0),
+      warningCount: 0,
+      leadershipCheckDue: false
+    });
+
+    return {
+      isGM,
+      showGmPageTab: canAccessGmPage(),
+      locked: state.locked,
+      lockBannerText,
+      lockBannerTooltip,
+      lockBannerClass: isGM ? "is-gm" : "",
+      showPopout: false,
+      lastUpdatedAt: state.lastUpdatedAt ?? "-",
+      lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      moduleVersion: getCurrentModuleVersion(),
+      activeTab: "march",
+      usageCollapsed: false,
+      usageToggleLabel: "Collapse",
+      usageToggleIcon: "fa-chevron-up",
+      ranks,
+      formationBoard,
+      spacingGrid,
+      gmNotes: state.gmNotes ?? "",
+      lightToggles,
+      gmSections: {
+        formationsCollapsed: false,
+        formationsToggleLabel: "Collapse",
+        formationsToggleIcon: "fa-chevron-up",
+        lightCollapsed: false,
+        lightToggleLabel: "Collapse",
+        lightToggleIcon: "fa-chevron-up",
+        exportCollapsed: false,
+        exportToggleLabel: "Collapse",
+        exportToggleIcon: "fa-chevron-up",
+        snapshotCollapsed: false,
+        snapshotToggleLabel: "Collapse",
+        snapshotToggleIcon: "fa-chevron-up",
+        clearCollapsed: false,
+        clearToggleLabel: "Collapse",
+        clearToggleIcon: "fa-chevron-up",
+        gmNotesCollapsed: false,
+        gmNotesToggleLabel: "Collapse",
+        gmNotesToggleIcon: "fa-chevron-up"
+      },
+      miniViz,
+      ...miniVizUi,
+      overview
+    };
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER, this);
+    if (DEBUG_LOG) console.log("MarchingOrderApp: _onRender called");
+    ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
+    bindTabListKeyboardNavigation(this.element);
+
+    if (this.element && !this.element.dataset.poBoundMarch) {
+      this.element.dataset.poBoundMarch = "1";
+
+      // Use event delegation on the app element
+      this.element.addEventListener("click", (event) => {
+        const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
+        if (tabSwitch) return this.#onSwitchTabClick(event, tabSwitch);
+
+        const actionElement = event.target?.closest("[data-action]");
+        if (isFormActionElement(actionElement)) return;
+        const action = actionElement?.dataset?.action;
+        if (action) {
+          logUiDebug("marching-order", "click action", {
+            action,
+            target: summarizeClickTarget(event.target)
+          });
+        }
+        if (action) this.#onAction(event);
+      });
+
+      if (isModuleDebugEnabled()) {
+        this.element.addEventListener(
+          "click",
+          (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) return;
+            if (target.closest('[data-action="switch-tab"]')) return;
+            const computed = getComputedStyle(target);
+            const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
+            const suspicious =
+              (computed.position === "fixed" || computed.position === "absolute") &&
+              Number.isFinite(zIndexValue) &&
+              zIndexValue >= 900;
+            if (!suspicious) return;
+            logUiDebug("marching-order", "capture-click suspicious overlay", {
+              target: summarizeClickTarget(target),
+              zIndex: computed.zIndex,
+              position: computed.position,
+              pointerEvents: computed.pointerEvents
+            });
+          },
+          true
+        );
+      }
+
+      this.element.addEventListener("change", (event) => {
+        if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
+          this.#onAction(event);
+        }
+      });
+
+      this.element.addEventListener("dblclick", (event) => {
+        const portrait = event.target?.closest(".po-portrait");
+        if (portrait) openActorSheetFromElement(portrait);
+      });
+    }
+
+    setupMarchingDragAndDropFeature(this.element, {
+      getMarchingOrderState,
+      canAccessAllPlayerOps,
+      canDragEntry,
+      isLockedForUser,
+      notifyUiWarnThrottled,
+      updateMarchingOrderState,
+      refreshSingleAppPreservingView,
+      getAppInstance,
+      appInstanceKeys: APP_INSTANCE_KEYS,
+      isActualGM: game.user?.isGM
+    });
+    refreshTabAccessibility(this.element);
+    diagnoseRenderedMainTabs(this.element, "marching-order");
+    if (isModuleDebugEnabled()) {
+      const activeTab = "march";
+      const activeButton = this.element?.querySelector?.(
+        `.po-tabs-main [data-action="switch-tab"][data-tab="${activeTab}"]`
+      );
+      const panelExists = Boolean(this.element?.querySelector?.("#po-march-overview"));
+      logUiDebug("marching-order", "after render active tab", {
+        activeTab,
+        activePanel: "marching-order",
+        activeButtonFound: Boolean(activeButton),
+        panelTarget: "#po-march-overview",
+        panelExists
+      });
+    }
+    restorePendingWindowState(this);
+    restorePendingUiState(this);
+    restorePendingScrollState(this);
+
+    if (DEBUG_LOG) console.log("MarchingOrderApp: event delegation attached", this.element);
+  }
+
+  #onTabClick(tabElement, html, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const tabName = normalizeMainTabId(getRequestedPanelIdFromElement(tabElement), "rest-watch");
+    logUiDebug("marching-order", "main tab click", {
+      tabName,
+      target: summarizeClickTarget(event?.target ?? tabElement)
+    });
+    openMainTab(tabName, { force: true });
+  }
+
+  setActiveTab(tabId) {
+    const requested = String(tabId ?? "")
+      .trim()
+      .toLowerCase();
+    if (!PO_SWITCH_TAB_IDS.has(requested)) {
+      logUiDebug("marching-order", "setActiveTab ignored unknown tab", { tabId: requested });
+      return;
+    }
+    const normalizedSwitchTab = normalizeSwitchTabId(requested, "march");
+    if (normalizedSwitchTab === "march") return;
+    openMainTab(normalizeMainTabId(normalizedSwitchTab, "rest-watch"), { force: true });
+  }
+
+  #onSwitchTabClick(event, tabButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const tabId = String(tabButton?.dataset?.tab ?? "")
+      .trim()
+      .toLowerCase();
+    logUiDebug("marching-order", "switch-tab click", {
+      tabId,
+      target: summarizeClickTarget(event.target)
+    });
+    this.setActiveTab(tabId);
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    renderAppWithPreservedState(this, renderOptions);
+  }
+
+  async #onAction(event) {
+    const element = event.target?.closest("[data-action]");
+    const action = element?.dataset?.action;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+    try {
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
+
+      switch (action) {
+        case "refresh":
+          emitSocketRefresh();
+          break;
+        case "open-march-help":
+          openMarchingOrderHelpDialog();
+          break;
+        case "switch-tab":
+          this.#onSwitchTabClick(event, element);
+          break;
+        case "main-tab":
+        case "set-panel":
+          this.#onTabClick(element, this.element);
+          break;
+        case "popout":
+          this.render({ force: true, popOut: true });
+          break;
+        case "toggle-mini-viz":
+          setMiniVizCollapsed(!isMiniVizCollapsed());
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        case "toggle-section": {
+          const sectionId = element?.dataset?.sectionId;
+          if (!sectionId) break;
+          setMarchSectionCollapsed(sectionId, !isMarchSectionCollapsed(sectionId));
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        }
+        case "assign-rank":
+          await assignActorToRank(element);
+          break;
+        case "join-rank":
+          await joinRank(element);
+          break;
+        case "remove-from-rank":
+          await removeActorFromRanks(element);
+          break;
+        case "toggle-light":
+          await toggleLight(element);
+          break;
+        case "set-light-range":
+          await setLightRange(element);
+          break;
+        case "copy-text":
+          await copyMarchingText(false);
+          break;
+        case "copy-md":
+          await copyMarchingText(true);
+          break;
+        case "commit-plan":
+          await commitMarchingOrderState();
+          break;
+        case "clear-all":
+          await clearMarchingAll();
+          break;
+        case "ping":
+          await pingActorFromElement(element);
+          break;
+        case "formation-set":
+          await applyMarchingFormation({ type: element?.dataset?.formationId });
+          break;
+        case "sync-rest-watch":
+          await syncMarchingOrderFromRestWatch();
+          break;
+        default:
+          break;
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
+        });
+      }
+    }
+  }
+
+  async close(options = {}) {
+    if (isModuleDebugEnabled()) {
+      console.trace(`[${MODULE_ID}] MarchingOrderApp.close`, {
+        options
+      });
+    }
+    return super.close(options);
+  }
+}
+
+function buildEmptyWatchSlots(isGM) {
+  return [1, 2, 3, 4].map((index) => ({
+    id: `watch-${index}`,
+    label: `Watch ${index}`,
+    timeRange: "",
+    actor: null,
+    notes: "",
+    canAssign: isGM,
+    canAssignMe: !isGM,
+    canClear: false,
+    canEditNotes: isGM
+  }));
+}
+
+function getMarchBoardRankIds() {
+  return MARCH_BOARD_RANKS.map((rank) => rank.id);
+}
+
+function getMarchBoardRankLabel(rankId, fallback = "Unassigned") {
+  return MARCH_BOARD_RANKS.find((rank) => rank.id === rankId)?.shortLabel ?? fallback;
+}
+
+function buildEmptyRanks(isGM) {
+  return MARCH_BOARD_RANKS.map((rank) => ({
+    id: rank.id,
+    label: `${rank.shortLabel} Rank`,
+    entries: [],
+    capacity: null,
+    canJoin: false
+  }));
+}
+
+function buildStoredWatchSlots() {
+  return [1, 2, 3, 4].map((index) => ({
+    id: `watch-${index}`,
+    timeRange: "",
+    visibleEntryCount: 1,
+    entries: [] // each entry: { actorId, notes }
+  }));
+}
+
+function getRestWatchSlotNumber(slotIdInput, fallbackIndex = null) {
+  const slotId = String(slotIdInput ?? "")
+    .trim()
+    .toLowerCase();
+  const match = slotId.match(/^watch-(\d+)$/);
+  if (match) {
+    const slotNumber = Number(match[1]);
+    if (Number.isFinite(slotNumber) && slotNumber > 0) return Math.floor(slotNumber);
+  }
+  if (Number.isInteger(fallbackIndex) && fallbackIndex >= 0) return fallbackIndex + 1;
+  return null;
+}
+
+function getRestWatchSlotLabel(slotIdInput, fallbackIndex = null) {
+  const slotNumber = getRestWatchSlotNumber(slotIdInput, fallbackIndex);
+  return slotNumber ? `Watch ${slotNumber}` : "Watch";
+}
+
+function normalizeRestWatchEntryPosition(positionInput) {
+  const position = Number.parseInt(positionInput, 10);
+  if (!Number.isInteger(position) || position < 0 || position >= REST_WATCH_MAX_ENTRIES) return null;
+  return position;
+}
+
+function buildRestWatchFixedEntryRows(entriesInput = []) {
+  const fixedRows = Array.from({ length: REST_WATCH_MAX_ENTRIES }, () => null);
+  const pending = [];
+
+  for (const entry of Array.isArray(entriesInput) ? entriesInput : []) {
+    const actorId = String(entry?.actorId ?? "").trim();
+    if (!actorId) continue;
+    const normalizedEntry = {
+      actorId,
+      notes: String(entry?.notes ?? "")
+    };
+    const position = normalizeRestWatchEntryPosition(entry?.position);
+    if (position === null || fixedRows[position]) {
+      pending.push(normalizedEntry);
+      continue;
+    }
+    fixedRows[position] = normalizedEntry;
+  }
+
+  for (const entry of pending) {
+    const nextOpenIndex = fixedRows.findIndex((row) => !row);
+    if (nextOpenIndex === -1) break;
+    fixedRows[nextOpenIndex] = entry;
+  }
+
+  return fixedRows;
+}
+
+function serializeRestWatchFixedEntryRows(fixedRows = []) {
+  return fixedRows
+    .map((entry, position) => {
+      const actorId = String(entry?.actorId ?? "").trim();
+      if (!actorId) return null;
+      return {
+        actorId,
+        notes: String(entry?.notes ?? ""),
+        position
+      };
+    })
+    .filter(Boolean);
+}
+
+function sanitizeRestWatchEntries(slot) {
+  const rawEntries = Array.isArray(slot?.entries) ? slot.entries : [];
+  const seenActorIds = new Set();
+  const entries = rawEntries
+    .map((entry) => {
+      const actorId = String(entry?.actorId ?? "").trim();
+      if (!actorId) return null;
+      if (seenActorIds.has(actorId)) return null;
+      const actor = game.actors.get(actorId);
+      if (!isEligiblePartyCharacterActor(actor)) return null;
+      seenActorIds.add(actorId);
+      return {
+        actorId,
+        notes: String(entry?.notes ?? ""),
+        position: normalizeRestWatchEntryPosition(entry?.position)
+      };
+    })
+    .filter(Boolean);
+  if (entries.length > 0) {
+    return serializeRestWatchFixedEntryRows(buildRestWatchFixedEntryRows(entries));
+  }
+  const legacyActorId = String(slot?.actorId ?? "").trim();
+  if (!legacyActorId) return [];
+  return [
+    {
+      actorId: legacyActorId,
+      notes: String(slot?.notes ?? ""),
+      position: 0
+    }
+  ];
+}
+
+function isEligiblePartyCharacterActor(actor) {
+  if (!actor) return false;
+  if (String(actor?.type ?? "") !== "character") return false;
+  if (!actor?.hasPlayerOwner) return false;
+
+  const currentHp = getCurrentHitPoints(actor);
+  if (currentHp !== null && currentHp <= 0) return false;
+
+  const statuses = Array.from(actor?.statuses ?? []).map((value) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+  );
+  if (statuses.includes("dead") || statuses.includes("defeated")) return false;
+
+  return true;
+}
+
+function normalizeRestWatchVisibleEntryCount(slot, entries = sanitizeRestWatchEntries(slot)) {
+  const requested = Number.parseInt(slot?.visibleEntryCount, 10);
+  const highestUsedIndex = (Array.isArray(entries) ? entries : []).reduce((highest, entry) => {
+    const position = normalizeRestWatchEntryPosition(entry?.position);
+    return position === null ? highest : Math.max(highest, position);
+  }, -1);
+  const minimumVisible = Math.max(1, highestUsedIndex + 1);
+  if (!Number.isInteger(requested)) return minimumVisible;
+  return Math.max(minimumVisible, Math.min(REST_WATCH_MAX_ENTRIES, requested));
+}
+
+function normalizeRestWatchSlots(slotsInput) {
+  const canonicalSlots = buildStoredWatchSlots();
+  const expectedIds = new Set(canonicalSlots.map((slot) => slot.id));
+  const slotsById = new Map();
+  const fallbackSlots = [];
+  const slots = Array.isArray(slotsInput) ? slotsInput : [];
+
+  for (const slot of slots) {
+    if (!slot || typeof slot !== "object") continue;
+    const slotId = String(slot?.id ?? "").trim();
+    const normalizedSlot = {
+      id: slotId,
+      timeRange: String(slot?.timeRange ?? ""),
+      entries: sanitizeRestWatchEntries(slot)
+    };
+    normalizedSlot.visibleEntryCount = normalizeRestWatchVisibleEntryCount(slot, normalizedSlot.entries);
+    if (expectedIds.has(slotId) && !slotsById.has(slotId)) {
+      slotsById.set(slotId, normalizedSlot);
+      continue;
+    }
+    fallbackSlots.push(normalizedSlot);
+  }
+
+  return canonicalSlots.map((slot) => {
+    const exactMatch = slotsById.get(slot.id);
+    if (exactMatch) {
+      return {
+        id: slot.id,
+        timeRange: exactMatch.timeRange,
+        visibleEntryCount: exactMatch.visibleEntryCount,
+        entries: exactMatch.entries
+      };
+    }
+    const fallback = fallbackSlots.shift();
+    if (fallback) {
+      return {
+        id: slot.id,
+        timeRange: fallback.timeRange,
+        visibleEntryCount: fallback.visibleEntryCount,
+        entries: fallback.entries
+      };
+    }
+    return slot;
+  });
+}
+

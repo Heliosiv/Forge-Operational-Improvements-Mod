@@ -1,0 +1,1969 @@
+# Bootstrap, Imports, Shared Constants
+
+Source: legacy/party-operations-monolith.js:1-1960
+Feature IDs: runtime-shell, settings, navigation, sockets, hooks
+Target Modules: scripts/runtime, scripts/core, scripts/hooks
+
+Original import graph, shared constants, app registries, template preload, and UI helpers.
+
+----- legacy source begins -----
+import { createGmFactionsPageApp } from "./features/factions-ui.js";
+import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
+import { createGmDowntimePageApp } from "./features/downtime-ui.js";
+import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
+import { createGmAudioPageApp } from "./features/audio-ui.js";
+import { RestWatchSharedNoteApp } from "./apps/rest-watch-shared-note-app.js";
+import { createRestWatchPlayerAppClass } from "./apps/rest-watch-player-app.js";
+import { createAudioMixPresetManager } from "./features/audio-preset-manager.js";
+import { createAudioLibraryCatalogSignatureTools } from "./features/audio-library-catalog-signature.js";
+import { createAudioLibraryUiDraftActions } from "./features/audio-library-ui-draft-actions.js";
+import { createAudioLibraryUiPickerUploadActions } from "./features/audio-library-ui-picker-upload-actions.js";
+import { createAudioLibraryScanCacheStore } from "./features/audio-library-scan-cache.js";
+import { createAudioLibraryUiFilterActions } from "./features/audio-library-ui-filter-actions.js";
+import { createAudioLibraryUiSelectionActions } from "./features/audio-library-ui-selection-actions.js";
+import { createSyncEffectsSessionState } from "./features/sync-effects-session-state.js";
+import { createDowntimeUiDraftStorage } from "./features/downtime-ui-draft-storage.js";
+import { createGmQuickWeatherDraftStorage } from "./features/gm-quick-weather-draft.js";
+import { createLootPreviewDraftStorage } from "./features/loot-preview-draft-storage.js";
+import { createNoteDraftCache } from "./features/note-draft-cache.js";
+import { createReputationDraftStorage } from "./features/reputation-draft-storage.js";
+import { createWeatherPresetHelpers } from "./features/weather-preset-helpers.js";
+import { createAudioStore } from "./features/audio-store.js";
+import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
+import { flushExpiredRecentRolls, recordHordeRollItems } from "./features/loot-recent-rolls-cache.js";
+import { createGmLootPageApp } from "./features/loot-ui.js";
+import { createLootUiState } from "./features/loot-ui-state.js";
+import { createNavigationUiState } from "./features/navigation-ui-state.js";
+import { createOperationsJournalFeature } from "./features/operations-journal.js";
+import { createOperationsJournalSettings } from "./features/operations-journal-settings.js";
+import { createOperationsJournalService } from "./features/operations-journal-service.js";
+import {
+  applyMarchRequest,
+  MARCH_BOARD_RANKS,
+  buildMarchOverviewContext,
+  createMarchFeatureModule,
+  normalizeSocketMarchRequest,
+  setupMarchingDragAndDrop as setupMarchingDragAndDropFeature
+} from "./features/march-feature.js";
+import {
+  MARCH_DOCTRINE_STATES,
+  MARCH_DOCTRINE_TRIGGERS,
+  MARCH_DOCTRINE_RECOVERY_PATHS,
+  buildDefaultMarchDoctrineTracker,
+  buildDoctrineCheckPayload,
+  buildMarchFormationChoices,
+  clearDoctrineTriggerPending,
+  ensureMarchDoctrineTracker,
+  evaluateMarchingFormationState,
+  getMarchFormationCategoryLabel,
+  getMarchFormationDefinitions,
+  getMarchDoctrineTriggerLabel,
+  getMarchFormationDefinition,
+  getMarchFormationPassiveEffectDetails,
+  markDoctrineTriggerPending,
+  normalizeMarchingFormationId
+} from "./features/march-doctrine.js";
+import {
+  applyPlayerActivityUpdateRequest as applyPlayerActivityUpdateRequestFeature,
+  applyPlayerDowntimeClearRequest as applyPlayerDowntimeClearRequestFeature,
+  applyPlayerDowntimeQueueEditRequest as applyPlayerDowntimeQueueEditRequestFeature,
+  applyPlayerDowntimeCollectRequest as applyPlayerDowntimeCollectRequestFeature,
+  applyPlayerDowntimeSubmitRequest as applyPlayerDowntimeSubmitRequestFeature,
+  applyPlayerFolderOwnershipWriteRequest as applyPlayerFolderOwnershipWriteRequestFeature,
+  applyPlayerOperationsLedgerWriteRequest as applyPlayerOperationsLedgerWriteRequestFeature,
+  applyPlayerSettingWriteRequest as applyPlayerSettingWriteRequestFeature,
+  applyPlayerSopNoteRequest as applyPlayerSopNoteRequestFeature
+} from "./features/operations-player-handlers.js";
+import {
+  applyRestRequest,
+  createRestFeatureModule,
+  normalizeSocketRestRequest,
+  setupRestWatchDragAndDrop as setupRestWatchDragAndDropFeature
+} from "./features/rest-feature.js";
+import { attachModuleApi } from "./core/api-registry.js";
+import { createOpenAppRefresher } from "./core/app-refresh.js";
+import {
+  buildPartyOperationsApi as buildPartyOperationsApiSurface,
+  registerPartyOperationsApi as registerPartyOperationsApiSurface
+} from "./core/module-api.js";
+import { createPlayerRequestHandlers } from "./core/player-request-handlers.js";
+import {
+  MODULE_ID,
+  PARTY_OPS_MODULE_ID as PRIMARY_MODULE_ID,
+  PARTY_OPS_PREMIUM_MODULE_ID as PREMIUM_MODULE_ID,
+  SOCKET_CHANNEL
+} from "./core/constants.js";
+import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
+import { createLogger } from "./core/logger.js";
+import { buildUuidJournalLink, escapeHtml as poEscapeHtml, installFoundryEscapeHtmlShim } from "./core/html-utils.js";
+import { createModulePerfTracker, getPartyOpsPerfState, summarizeCurrentPartyOpsPerfState } from "./core/perf.js";
+import { createFeatureRegistrar } from "./core/feature-registry.js";
+import {
+  canSubmitPublishedDowntime,
+  clampDowntimeHours,
+  normalizeDowntimeActionKey,
+  normalizeDowntimePublication,
+  resolveDowntimeVisibleHours
+} from "./core/downtime-policy.js";
+import {
+  applyDowntimeRewardEffectsToLedger,
+  consumeDowntimeRewardEffectsForCraftingCost,
+  normalizeDowntimeRewardEffectsLedger,
+  normalizeDowntimeRewardEffectsRecord,
+  summarizeDowntimeRewardEffectsRecord
+} from "./core/downtime-effects-ledger.js";
+import {
+  addCalendarDays as addCalendarDaysBridge,
+  formatCalendarDateTimeLabel as formatCalendarDateTimeLabelBridge,
+  getCalendarClockContext as getCalendarClockContextBridge,
+  getCalendarDayKey as getCalendarDayKeyBridge,
+  getCalendarDueCount as getCalendarDueCountBridge,
+  getCurrentWorldTimestamp as getCurrentWorldTimestampBridge,
+  getElapsedCalendarDays as getElapsedCalendarDaysBridge,
+  getSimpleCalendarApi as getSimpleCalendarApiBridge,
+  getSimpleCalendarApiCandidates as getSimpleCalendarApiCandidatesBridge,
+  isSimpleCalendarActive as isSimpleCalendarActiveBridge
+} from "./core/calendar-bridge.js";
+import { registerPartyOpsDataSettings } from "./core/settings-data.js";
+import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
+import { createGatherHistoryView } from "./core/gather-history-view.js";
+import { createGatherSettingsAccess } from "./core/gather-settings.js";
+import { createGmDowntimeViewAccess } from "./core/gm-downtime-view.js";
+import { createIntegrationAccess } from "./core/integration-access.js";
+import { createLauncherStateAccess } from "./core/launcher-state.js";
+import { createPlayerHubActions } from "./core/player-hub-actions.js";
+import { createPartyOperationsSettingsAccess } from "./core/settings-access.js";
+import { createPartyOperationsSettingsBootstrap } from "./core/settings-bootstrap.js";
+import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
+import { createPartyOperationsConfigAccess } from "./core/config-access.js";
+import { SETTINGS } from "./core/settings-keys.js";
+import {
+  buildPartyOperationsInitConfig as buildPartyOperationsInitConfigSurface,
+  buildPartyOperationsReadyConfig as buildPartyOperationsReadyConfigSurface,
+  createPartyOperationsHookRegistrar,
+  installPartyOperationsAppBehaviors as installPartyOperationsAppBehaviorsSurface,
+  setupPartyOperationsUi
+} from "./bootstrap/config.js";
+import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
+import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
+import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
+import { createPartyOperationsSocketHandler } from "./core/socket-route-deps.js";
+import { createPartyOperationsSocketHandlerConfig } from "./core/socket-handler-config.js";
+import { createRenderPreservationTools } from "./core/render-preservation.js";
+import {
+  SOCKET_MARCH_OPS,
+  SOCKET_MARCH_RANKS,
+  SOCKET_NOTE_MAX_LENGTH,
+  SOCKET_REST_OPS
+} from "./core/socket-constants.js";
+import { clampRestWatchRichNoteText, clampSocketText, normalizeRestNoteSaveSource } from "./core/socket-text-utils.js";
+import { normalizeSocketActivityType, sanitizeSocketIdentifier } from "./core/socket-validation.js";
+import {
+  getSocketRequesterFromMessage as getSocketRequester,
+  resolveSocketRequester as resolveRequester
+} from "./core/socket-requester.js";
+import { createPlayerUiOverrideTools } from "./core/player-ui-overrides.js";
+import { createPlayerPermissionDebugTools } from "./core/player-permission-debug.js";
+import { getRenderableElementRoot } from "./core/renderable-element-root.js";
+import { parseFolderOwnershipBatchLevelsFromSubmitData } from "./core/folder-ownership-utils.js";
+import { readSessionStorageJson, writeSessionStorageJson } from "./core/session-storage-json.js";
+import {
+  canAccessAllPlayerOps,
+  hasActiveGmClient,
+  isActiveGmUserId,
+  isWritableModuleSettingKey
+} from "./core/socket-write-policy.js";
+import { createAppWindowPositionManager } from "./core/window-position-manager.js";
+import {
+  preloadPartyOperationsPartialTemplates as preloadPartyOperationsPartialTemplatesSurface,
+  validatePartyOperationsTemplates as validatePartyOperationsTemplatesSurface
+} from "./core/template-loader.js";
+import {
+  PARTY_OPS_APP_INSTANCE_KEYS as APP_INSTANCE_KEYS,
+  PARTY_OPS_REFRESH_INSTANCE_KEYS,
+  clearPartyOpsAppInstance,
+  getPartyOpsAppInstance,
+  getPartyOpsAppInstances,
+  setPartyOpsAppInstance
+} from "./core/app-instance-registry.js";
+import {
+  LAUNCHER_PLACEMENTS,
+  LAUNCHER_RECOVERY_DELAYS_MS,
+  PARTY_OPS_REFRESHABLE_WINDOW_IDS,
+  PLAYER_HUB_ACTION_TYPES,
+  PLAYER_HUB_CLAIM_VARIANTS,
+  PLAYER_HUB_MODES,
+  PO_TEMPLATE_MAP,
+  REFRESH_SCOPE_KEYS,
+  REFRESH_SCOPE_TO_WINDOW_IDS
+} from "./core/window-config.js";
+import {
+  getAppWindowId,
+  getRefreshScopesForSettingKey,
+  getRefreshTargetWindowIds,
+  normalizeRefreshScopeList
+} from "./core/refresh-scopes.js";
+import {
+  AUTO_UPKEEP_CHAT_ACTIONS,
+  AUTO_UPKEEP_PROMPT_STATES,
+  GATHER_DEFAULTS,
+  GATHER_ENVIRONMENT_KEYS,
+  GATHER_ENVIRONMENT_LABELS,
+  GATHER_QUICK_PRESETS,
+  GATHER_TRAVEL_CHOICES
+} from "./core/gather-constants.js";
+import {
+  MERCHANT_SOURCE_TYPES as DOMAIN_MERCHANT_SOURCE_TYPES,
+  MERCHANT_SCARCITY_LEVELS as DOMAIN_MERCHANT_SCARCITY_LEVELS,
+  MERCHANT_SCARCITY_PROFILES as DOMAIN_MERCHANT_SCARCITY_PROFILES,
+  MERCHANT_ALLOWED_ITEM_TYPES as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES,
+  MERCHANT_ALLOWED_ITEM_TYPE_LIST as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST,
+  MERCHANT_EDITOR_CANDIDATE_LIMIT as DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT,
+  MERCHANT_PREVIEW_ITEM_LIMIT as DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT,
+  MERCHANT_ACCESS_LOG_LIMIT as DOMAIN_MERCHANT_ACCESS_LOG_LIMIT,
+  MERCHANT_ACCESS_LOG_THROTTLE_MS as DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS,
+  MERCHANT_DEFAULT_VALUE_STRICTNESS as DOMAIN_MERCHANT_DEFAULT_VALUE_STRICTNESS,
+  MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
+  MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
+  MERCHANT_ARCHETYPE_DEFINITIONS as DOMAIN_MERCHANT_ARCHETYPE_DEFINITIONS,
+  clampMerchantValueStrictness as clampMerchantValueStrictnessDomain,
+  normalizeMerchantBarterModifier as normalizeMerchantBarterModifierDomain,
+  normalizeMerchantAutoRefreshConfig as normalizeMerchantAutoRefreshConfigDomain,
+  normalizeMerchantTagList as normalizeMerchantTagListDomain,
+  normalizeMerchantKeywordList as normalizeMerchantKeywordListDomain,
+  normalizeMerchantSourcePackIds as normalizeMerchantSourcePackIdsDomain,
+  normalizeMerchantAllowedItemTypes as normalizeMerchantAllowedItemTypesDomain,
+  normalizeMerchantCuratedItemUuids as normalizeMerchantCuratedItemUuidsDomain,
+  parseMerchantUuidListInput as parseMerchantUuidListInputDomain,
+  formatMerchantUuidListInput as formatMerchantUuidListInputDomain,
+  normalizeMerchantSourceType as normalizeMerchantSourceTypeDomain,
+  normalizeMerchantScarcity as normalizeMerchantScarcityDomain,
+  getMerchantScarcityProfile as getMerchantScarcityProfileDomain,
+  resolveMerchantValueTolerance as resolveMerchantValueToleranceDomain,
+  normalizeMerchantRace as normalizeMerchantRaceDomain,
+  normalizeMerchantRarity as normalizeMerchantRarityDomain,
+  getMerchantRarityBucket as getMerchantRarityBucketDomain,
+  normalizeMerchantRarityWeights as normalizeMerchantRarityWeightsDomain,
+  normalizeMerchantRarityPriceMultipliers as normalizeMerchantRarityPriceMultipliersDomain,
+  normalizeMerchantCityList as normalizeMerchantCityListDomain,
+  parseMerchantCityListInput as parseMerchantCityListInputDomain,
+  formatMerchantCityListInput as formatMerchantCityListInputDomain,
+  getMerchantRaceKey as getMerchantRaceKeyDomain,
+  getMerchantEditorRaceOptions as getMerchantEditorRaceOptionsDomain,
+  pickRandomMerchantRace as pickRandomMerchantRaceDomain,
+  pickRandomMerchantTitle as pickRandomMerchantTitleDomain,
+  pickRandomMerchantNamePart as pickRandomMerchantNamePartDomain,
+  generateRandomMerchantName as generateRandomMerchantNameDomain,
+  generateRandomMerchantNameUnbound as generateRandomMerchantNameUnboundDomain,
+  buildMerchantOfferTagOptions as buildMerchantOfferTagOptionsDomain,
+  resolveMerchantAllowedTypesFromOfferTags as resolveMerchantAllowedTypesFromOfferTagsDomain,
+  getMerchantEditorSourceTypeOptions as getMerchantEditorSourceTypeOptionsDomain,
+  normalizeMerchantFolderAlias as normalizeMerchantFolderAliasDomain,
+  findMerchantFolderByAliases as findMerchantFolderByAliasesDomain,
+  buildStarterMerchantPatch as buildStarterMerchantPatchDomain,
+  buildMerchantDefinitionPatchFromEditorForm as buildMerchantDefinitionPatchFromEditorFormDomain,
+  buildMerchantCityOptions as buildMerchantCityOptionsDomain,
+  formatMerchantCp as formatMerchantCpDomain,
+  getMerchantItemUnitPriceCp as getMerchantItemUnitPriceCpDomain,
+  getMerchantSourceRefOptionsForEditor as getMerchantSourceRefOptionsForEditorDomain,
+  getMerchantTargetStockCount as getMerchantTargetStockCountDomain,
+  shuffleMerchantRows as shuffleMerchantRowsDomain,
+  selectMerchantStockRows as selectMerchantStockRowsDomain,
+  buildMerchantStockCandidateRows as buildMerchantStockCandidateRowsDomain,
+  getMerchantRarityPriceMultiplier,
+  getMerchantStockPressureMultiplier,
+  normalizeMerchantType,
+  normalizeMerchantDisposition,
+  normalizeMerchantFaction,
+  normalizeMerchantLocation,
+  normalizeMerchantArchetype as normalizeMerchantArchetypeDomain,
+  getMerchantArchetypeDefinition as getMerchantArchetypeDefinitionDomain,
+  getMerchantArchetypeOptions as getMerchantArchetypeOptionsDomain,
+  normalizeMerchantTaxFeePercent,
+  computeMerchantEffectiveBuyMultiplier,
+  computeMerchantEffectiveSellMultiplier,
+  getMerchantTypeOptions as getMerchantTypeOptionsDomain,
+  getMerchantDispositionOptions as getMerchantDispositionOptionsDomain,
+  computeMerchantPartialRestockPlan,
+  normalizeFoundryAssetImagePath,
+  MERCHANT_HAGGLE_CAP_PERCENT,
+  MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE,
+  MERCHANT_TYPE_OPTIONS,
+  MERCHANT_DISPOSITION_OPTIONS,
+  MERCHANT_RARITY_PRICE_MULTIPLIERS,
+  MERCHANT_STOCK_PRESSURE
+} from "./features/merchant-domain.js";
+import { createMerchantUiState } from "./features/merchant-ui-state.js";
+import {
+  buildVariableTreasureRollPools,
+  estimateVariableTreasureOutcome,
+  rollVariableTreasureOutcome
+} from "./features/loot-variable-treasure.js";
+import { aggregateLootEntriesForStacks } from "./features/loot-entry-stacking.js";
+import { buildLootCohesiveBundle } from "./features/loot-selection-cohesion.js";
+import { getLootSelectionIntelligenceWeight } from "./features/loot-selection-intelligence.js";
+import { getLootPracticalHoardScore, isLootPracticalHoardCandidate } from "./features/loot-practicality.js";
+import {
+  LOOT_PREVIEW_SORT_OPTIONS,
+  normalizeLootPreviewSort,
+  sortLootPreviewItems
+} from "./features/loot-preview-display.js";
+import { createLauncherUiController } from "./features/launcher-ui.js";
+import { createMainTabRegistry } from "./features/main-tab-registry.js";
+import { createMainTabNavigator } from "./features/main-tab-navigation.js";
+import {
+  DOWNTIME_AREA_DISCOVERY_OPTIONS as PHASE1_DISCOVERY_OPTIONS,
+  DOWNTIME_AREA_ECONOMY_OPTIONS as PHASE1_ECONOMY_OPTIONS,
+  DOWNTIME_AREA_RISK_OPTIONS as PHASE1_RISK_OPTIONS,
+  DOWNTIME_PHASE1_ACTIONS
+} from "./features/downtime-phase1-data.js";
+import {
+  DOWNTIME_PHASE1_ACTOR_FLAG_KEYS,
+  actorHasToolProficiency,
+  actorKnowsProfession,
+  buildDowntimeEntryActionSummary,
+  buildNextCraftingProjects,
+  buildPhase1SubmitOptions,
+  formatPhase1AreaSettingsLabel,
+  getActorAbilityMod,
+  getActorProficiencyBonus,
+  getCraftableById,
+  getDowntimePhase1ActionDefinition,
+  getPhase1ActionSubtypeDefinition,
+  getProfessionById,
+  normalizeBrowsingAbility,
+  normalizeDowntimeResultTier,
+  normalizePhase1ActionData,
+  normalizePhase1AreaSettings,
+  normalizePhase1MaterialDrops,
+  resolvePhase1DowntimeEntry
+} from "./features/downtime-phase1-service.js";
+const DEBUG_LOG = false;
+if (DEBUG_LOG) console.log("party-operations: script loaded");
+
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const bootstrapLogger = createLogger("bootstrap");
+const perfTracker = createModulePerfTracker("party-operations-runtime");
+const registerFeatureModules = createFeatureRegistrar({
+  features: [createRestFeatureModule(), createMarchFeatureModule()]
+});
+
+const getAppInstance = (key) => getPartyOpsAppInstance(key);
+
+installFoundryEscapeHtmlShim(foundry);
+export { SETTINGS };
+
+const pendingScrollRestore = new WeakMap();
+const pendingUiRestore = new WeakMap();
+const pendingWindowRestore = new WeakMap();
+const sopNoteDebounceTimers = new WeakMap();
+const restWatchNoteDebounceTimers = new WeakMap();
+let restWatchSharedNoteApp = null;
+const SHARED_ACTOR_NOTE_FLAGS = Object.freeze({
+  REST_WATCH: "sharedRestWatchNotes",
+  MARCHING: "sharedMarchingNote"
+});
+const marchingNoteDebounceTimers = new WeakMap();
+const suppressedSettingRefreshKeys = new Map();
+const pendingGatherCheckRequests = new Map();
+const pendingGatherYieldRequests = new Map();
+const MONKS_REQUEST_RESULT_TIMEOUT_MS = 8000;
+const GATHER_CHECK_RESULT_TIMEOUT_MS = 20000;
+const GATHER_YIELD_RESULT_TIMEOUT_MS = 15000;
+let automaticUpkeepTickInFlight = false;
+let merchantAutoRefreshTickInFlight = false;
+let integrationSyncTimeoutId = null;
+let integrationSyncInFlight = false;
+let integrationSyncQueued = false;
+let integrationSyncQueuedReason = "";
+const integrationSyncWaiters = [];
+let sopPendingSyncInFlight = false;
+let sopPendingSyncScheduled = false;
+const activeEffectDeleteLocks = new Set();
+let lootManifestFolderSyncPromise = null;
+let lootManifestFolderSyncDisabledReason = "";
+let lootManifestFolderSyncDisabledNotified = false;
+let lootManifestMonksCompatNotified = false;
+const pendingInventoryRefreshByActor = new Map();
+const autoInventoryPackIndexCache = new Map();
+const merchantUiAccessThrottleByKey = new Map();
+const merchantBarterResolutionByKey = new Map();
+const lootSourceItemsCache = new Map();
+const lootCandidateBuildCache = new Map();
+const activeLootClaimRequestKeys = new Set();
+const LOOT_SOURCE_ITEMS_CACHE_TTL_MS = 30000;
+const LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES = 64;
+const LOOT_CANDIDATE_BUILD_CACHE_TTL_MS = 15000;
+const LOOT_CANDIDATE_BUILD_CACHE_MAX_ENTRIES = 24;
+const audioLibraryMetadataWarmupState = {
+  queued: false,
+  inFlight: false,
+  timerId: null,
+  catalogKey: ""
+};
+let managedAudioMixResyncTimerId = null;
+
+const {
+  clampWindowPositionToViewport,
+  getResponsiveWindowOptions,
+  getResponsiveWindowPosition,
+  installRememberedWindowPositionBehavior,
+  normalizeWindowProfileId,
+  persistWindowStateFromApp,
+  queuePersistRememberedWindowState
+} = createAppWindowPositionManager({
+  moduleId: MODULE_ID,
+  appWindowPositionsSettingKey: SETTINGS.APP_WINDOW_POSITIONS,
+  normalizeWindowStateLike,
+  areWindowStatesEquivalent,
+  captureWindowState,
+  gameInstance: game,
+  foundryInstance: foundry,
+  globalObject: globalThis
+});
+
+function normalizePreservedRenderOptions(renderOptions = null) {
+  return normalizePreservedRenderOptionsBridge(renderOptions);
+}
+
+const {
+  normalizePreservedRenderOptions: normalizePreservedRenderOptionsBridge,
+  captureCanvasViewState,
+  queueCanvasViewRestore,
+  shouldPreserveCanvasForUiEvent,
+  renderAppWithPreservedState
+} = createRenderPreservationTools({
+  foundryRef: foundry,
+  globalObject: globalThis,
+  requestAnimationFrameFn: requestAnimationFrame,
+  setTimeoutFn: (...args) => window.setTimeout(...args),
+  pendingUiRestore,
+  pendingScrollRestore,
+  pendingWindowRestore,
+  captureUiState,
+  captureScrollState,
+  captureWindowState
+});
+
+const {
+  mainTabIds: PO_MAIN_TAB_IDS,
+  switchTabIds: PO_SWITCH_TAB_IDS,
+  getTemplateForMainTab,
+  normalizeMainTabId,
+  normalizeSwitchTabId,
+  getSwitchTabIdFromMainTabId,
+  getMainTabIdFromAction
+} = createMainTabRegistry({
+  templateMap: PO_TEMPLATE_MAP
+});
+
+function logUiDebug(scope, message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  if (details === null) {
+    console.debug(`[${MODULE_ID}][${scope}] ${message}`);
+    return;
+  }
+  console.debug(`[${MODULE_ID}][${scope}] ${message}`, details);
+}
+
+function logUiFailure(scope, message, error, details = null) {
+  const payload = details && typeof details === "object" ? { ...details } : {};
+  payload.error = String(error?.message ?? error ?? "Unknown error");
+  console.error(`[${MODULE_ID}][${scope}] ${message}`, payload, error);
+}
+
+function summarizeClickTarget(target) {
+  const element = target instanceof Element ? target : null;
+  if (!element) return "unknown";
+  const tag = String(element.tagName ?? "").toLowerCase();
+  const action = element.closest?.("[data-action]")?.dataset?.action ?? "";
+  const panel = element.closest?.("[data-panel]")?.dataset?.panel ?? "";
+  const tab = element.closest?.("[data-tab]")?.dataset?.tab ?? "";
+  const id = element.id ? `#${element.id}` : "";
+  const classes =
+    typeof element.className === "string"
+      ? element.className.trim().split(/\s+/).filter(Boolean).slice(0, 3).join(".")
+      : "";
+  const classSuffix = classes ? `.${classes}` : "";
+  return `${tag}${id}${classSuffix}${action ? ` [action=${action}]` : ""}${panel ? ` [panel=${panel}]` : ""}${tab ? ` [tab=${tab}]` : ""}`;
+}
+
+function getRequestedPanelIdFromElement(element) {
+  if (!element) return "rest-watch";
+  const panel = String(element?.dataset?.panel ?? "").trim();
+  if (panel) return panel;
+  const tab = String(element?.dataset?.tab ?? "").trim();
+  if (tab) return tab;
+  return "rest-watch";
+}
+
+function diagnoseRenderedMainTabs(root, scope = "ui") {
+  if (!root || !isModuleDebugEnabled()) return;
+  const renderedTabs = Array.from(
+    root.querySelectorAll(".po-tabs-main .po-tab[data-panel], .po-tabs-main .po-tab[data-tab]")
+  )
+    .map((node) => normalizeMainTabId(node?.dataset?.panel ?? node?.dataset?.tab, "rest-watch"))
+    .filter(Boolean);
+  const expected = Array.from(PO_MAIN_TAB_IDS).filter((id) => id !== "gm" || canAccessGmPage());
+  const missing = expected.filter((id) => !renderedTabs.includes(id));
+  const unknown = renderedTabs.filter((id) => !PO_MAIN_TAB_IDS.has(id));
+  logUiDebug(scope, "rendered main-tab diagnostics", { expected, renderedTabs, missing, unknown });
+}
+
+async function validatePartyOperationsTemplates() {
+  return validatePartyOperationsTemplatesSurface({
+    templateMap: PO_TEMPLATE_MAP,
+    getTemplateFn: getTemplate,
+    logUiDebug,
+    logError: console.error,
+    moduleId: MODULE_ID
+  });
+}
+
+async function preloadPartyOperationsPartialTemplates() {
+  return preloadPartyOperationsPartialTemplatesSurface({
+    loadTemplatesFn: loadTemplates
+  });
+}
+
+const INTEGRATION_MODES = {
+  AUTO: "auto",
+  OFF: "off",
+  FLAGS: "flags",
+  DAE: "dae"
+};
+
+const LOOT_SCARCITY_LEVELS = {
+  ABUNDANT: "abundant",
+  NORMAL: "normal",
+  SCARCE: "scarce"
+};
+
+function getEconomyPriceMultiplier() {
+  try {
+    const pct = Number(game.settings.get(MODULE_ID, SETTINGS.ECONOMY_PRICE_MULTIPLIER) ?? 100) || 100;
+    return Math.max(0.01, pct / 100);
+  } catch {
+    return 1;
+  }
+}
+
+const LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES = Object.freeze({
+  STANDARD: "standard",
+  BOOSTED: "boosted",
+  HIGH: "high",
+  GUARANTEED: "guaranteed"
+});
+
+const PARTY_OPS_LOOT_RARITIES = ["common", "uncommon", "rare", "veryRare", "legendary"];
+const DEFAULT_PARTY_OPS_CONFIG = Object.freeze({
+  debugEnabled: false,
+  lootScarcity: LOOT_SCARCITY_LEVELS.NORMAL,
+  rarityWeights: {
+    common: 50,
+    uncommon: 30,
+    rare: 12,
+    veryRare: 6,
+    legendary: 2
+  },
+  crGoldMultiplier: 1
+});
+
+const INVENTORY_HOOK_MODES = {
+  OFF: "off",
+  REFRESH: "refresh",
+  SYNC: "sync"
+};
+
+let partyOpsConfigNormalizationInProgress = false;
+
+const CONFIG_SCHEMA = Object.freeze({
+  launcherPlacement: [LAUNCHER_PLACEMENTS.FLOATING, LAUNCHER_PLACEMENTS.SIDEBAR, LAUNCHER_PLACEMENTS.BOTH],
+  integrationMode: [INTEGRATION_MODES.AUTO, INTEGRATION_MODES.OFF, INTEGRATION_MODES.FLAGS, INTEGRATION_MODES.DAE],
+  inventoryHookMode: [INVENTORY_HOOK_MODES.OFF, INVENTORY_HOOK_MODES.REFRESH, INVENTORY_HOOK_MODES.SYNC]
+});
+
+const NON_PARTY_SYNC_SCOPES = {
+  SCENE: "scene",
+  WORLD_NON_PARTY: "world-non-party",
+  WORLD_ALL: "world-all"
+};
+
+const INTEGRATION_EFFECT_ORIGIN = `module.${MODULE_ID}`;
+const INTEGRATION_EFFECT_NAME = "Managed Effect";
+const INJURY_EFFECT_ORIGIN = `module.${MODULE_ID}.injury`;
+const INJURY_EFFECT_NAME_PREFIX = "Injury:";
+const ENVIRONMENT_EFFECT_ORIGIN = `module.${MODULE_ID}.environment`;
+const ENVIRONMENT_EFFECT_NAME_PREFIX = "Environment:";
+
+const SCROLL_STATE_MAIN_SELECTOR = ".window-content";
+const SCROLL_STATE_BODY_SELECTOR = ".po-body";
+const SCROLL_STATE_PRESERVE_SELECTOR = "[data-po-scroll-preserve]";
+
+const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
+const STEWARD_POOL_KEYS = ["food", "water", "torches"];
+const STEWARD_POOL_MODES = Object.freeze({
+  NONE: "none",
+  FINITE: "finite",
+  INFINITE: "infinite"
+});
+const STEWARD_POOL_LABELS = Object.freeze({
+  food: "Food Rations",
+  water: "Water Rations",
+  torches: "Torches"
+});
+const STEWARD_POOL_LEGACY_FIELD_BY_KEY = Object.freeze({
+  food: "partyFoodRations",
+  water: "partyWaterRations",
+  torches: "torches"
+});
+const DEFAULT_MARCH_LIGHT_BRIGHT = 20;
+const DEFAULT_MARCH_LIGHT_DIM = 40;
+const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
+const SOP_NOTE_EMPTY_LABEL = "No notes recorded yet.";
+const LOOT_WORLD_ITEMS_SOURCE_ID = "__world_items__";
+const LOOT_WORLD_ITEMS_SOURCE_LABEL = "Imported World Items";
+const LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX = "world-folder:";
+const LOOT_MANIFEST_PACK_NAME = "party-operations-loot-manifest";
+const LOOT_MANIFEST_PACK_LABEL = "Party Operations Built Items";
+const LOOT_DEFAULT_ITEM_TYPES = ["weapon", "equipment", "consumable", "loot"];
+const LOOT_ITEM_TYPE_LABELS = {
+  weapon: "Weapons",
+  equipment: "Equipment",
+  consumable: "Consumables",
+  loot: "Treasure/Loot",
+  tool: "Tools",
+  backpack: "Containers",
+  armor: "Armor",
+  ammunition: "Ammunition",
+  trinket: "Trinkets",
+  spell: "Spell Items",
+  feat: "Feat-like Items",
+  class: "Class Features",
+  race: "Race Features"
+};
+const LOOT_MANIFEST_FOLDER_LABELS = Object.freeze({
+  weapon: "Weapons",
+  equipment: "Equipment",
+  consumable: "Consumables",
+  loot: "Treasure",
+  tool: "Tools",
+  backpack: "Containers",
+  armor: "Armor",
+  ammunition: "Ammunition",
+  trinket: "Trinkets",
+  spell: "Spells",
+  feat: "Features",
+  class: "Class Features",
+  race: "Racial Features",
+  other: "Other"
+});
+const LOOT_MANIFEST_FOLDER_TYPE_PRIORITY = Object.freeze([
+  "weapon",
+  "equipment",
+  "consumable",
+  "loot",
+  "tool",
+  "backpack",
+  "armor",
+  "ammunition",
+  "trinket",
+  "spell",
+  "feat",
+  "class",
+  "race",
+  "other"
+]);
+const LOOT_TABLE_TYPE_OPTIONS = [
+  { value: "currency", label: "Currency" },
+  { value: "gems", label: "Gems" },
+  { value: "art", label: "Art Objects" },
+  { value: "equipment", label: "Equipment" },
+  { value: "consumables", label: "Consumables" },
+  { value: "special", label: "Special Drops" }
+];
+const LOOT_RARITY_OPTIONS = [
+  { value: "", label: "No Floor/Ceiling" },
+  { value: "common", label: "Common" },
+  { value: "uncommon", label: "Uncommon" },
+  { value: "rare", label: "Rare" },
+  { value: "very-rare", label: "Very Rare" },
+  { value: "legendary", label: "Legendary" }
+];
+const LOOT_KEYWORD_INCLUDE_MODES = Object.freeze({
+  ALL: "all",
+  ANY: "any"
+});
+const LOOT_SOURCE_CLASSES = Object.freeze({
+  GENERATED: "generated",
+  CURATED: "curated",
+  MANUAL: "manual",
+  TABLE: "table"
+});
+const LOOT_SOURCE_POLICIES = Object.freeze({
+  NORMAL: "normal",
+  BONUS: "bonus",
+  ANCHOR: "anchor",
+  OUTSIDE_BUDGET: "outside-budget"
+});
+const LOOT_PREVIEW_MODE_OPTIONS = [
+  { value: "horde", label: "Horde Loot" },
+  { value: "defeated", label: "Defeated Enemy Loot" },
+  { value: "encounter", label: "Encounter Assignment Loot" }
+];
+const LOOT_PREVIEW_ROLL_MODE_OPTIONS = [
+  { value: "per-creature", label: "Per Creature" },
+  { value: "aggregate", label: "Aggregate Fast Mode" }
+];
+const LOOT_PREVIEW_PROFILE_OPTIONS = [
+  { value: "poor", label: "Poorly Equipped" },
+  { value: "standard", label: "Standard Equipment" },
+  { value: "well", label: "Well Equipped" }
+];
+const LOOT_PREVIEW_CHALLENGE_OPTIONS = [
+  { value: "low", label: "Low (CR 0-4)" },
+  { value: "mid", label: "Mid (CR 5-10)" },
+  { value: "high", label: "High (CR 11-16)" },
+  { value: "epic", label: "Epic (CR 17+)" }
+];
+const LOOT_PREVIEW_SCALE_OPTIONS = [
+  { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
+  { value: "major", label: "Major" }
+];
+const LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR = 100;
+const LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS = 180;
+const LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT = 80;
+const LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT = 100000;
+const LOOT_PREVIEW_MAX_TOTAL_TARGET_VALUE_GP_LIMIT = 1000000;
+const LOOT_VARIABLE_TREASURE_ICONS = Object.freeze({
+  gem: "icons/commodities/gems/gem-faceted-green.webp",
+  art: "icons/commodities/treasure/token-runed-sun-gold.webp"
+});
+const LOOT_PREVIEW_STRICTNESS_BANDS = Object.freeze([
+  Object.freeze({ key: "very-strict", label: "Very Strict", min: 240, ratio: 0.05 }),
+  Object.freeze({ key: "strict", label: "Strict", min: 180, ratio: 0.1 }),
+  Object.freeze({ key: "normal", label: "Normal", min: 120, ratio: 0.2 }),
+  Object.freeze({ key: "loose", label: "Loose", min: 0, ratio: 0.35 })
+]);
+const AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR = 100;
+const AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR = 100;
+const AUTO_INV_DEFAULT_CURRENCY_SCALAR = 100;
+const AUTO_INV_DEFAULT_QUALITY_SHIFT = 0;
+const UNLINKED_TOKEN_AUTO_LOOT_ITEM_TYPES = new Set([
+  "weapon",
+  "equipment",
+  "consumable",
+  "loot",
+  "tool",
+  "armor",
+  "ammunition",
+  "trinket",
+  "backpack"
+]);
+const UNLINKED_TOKEN_AUTO_LOOT_TYPE_WEIGHTS = Object.freeze({
+  default: {
+    weapon: 1.1,
+    equipment: 1.1,
+    consumable: 1,
+    loot: 1,
+    tool: 0.9,
+    armor: 1,
+    ammunition: 0.9,
+    trinket: 0.9,
+    backpack: 0.7
+  },
+  humanoid: {
+    weapon: 1.9,
+    equipment: 1.5,
+    consumable: 1.1,
+    loot: 0.85,
+    tool: 1.15,
+    armor: 1.55,
+    ammunition: 1.35,
+    trinket: 0.8,
+    backpack: 0.95
+  },
+  beast: {
+    weapon: 0.12,
+    equipment: 0.22,
+    consumable: 1.5,
+    loot: 1.2,
+    tool: 0.08,
+    armor: 0.06,
+    ammunition: 0.08,
+    trinket: 0.55,
+    backpack: 0.08
+  },
+  monstrosity: {
+    weapon: 0.8,
+    equipment: 0.7,
+    consumable: 0.85,
+    loot: 1.4,
+    tool: 0.45,
+    armor: 0.45,
+    ammunition: 0.35,
+    trinket: 1.1,
+    backpack: 0.35
+  },
+  undead: {
+    weapon: 1.25,
+    equipment: 0.95,
+    consumable: 0.18,
+    loot: 1.35,
+    tool: 0.25,
+    armor: 1.05,
+    ammunition: 0.55,
+    trinket: 1.25,
+    backpack: 0.18
+  },
+  fiend: {
+    weapon: 1.45,
+    equipment: 1.2,
+    consumable: 0.55,
+    loot: 1.8,
+    tool: 0.55,
+    armor: 1.25,
+    ammunition: 0.85,
+    trinket: 1.45,
+    backpack: 0.3
+  },
+  celestial: {
+    weapon: 1.3,
+    equipment: 1.1,
+    consumable: 0.75,
+    loot: 1.55,
+    tool: 0.65,
+    armor: 1.15,
+    ammunition: 0.75,
+    trinket: 1.35,
+    backpack: 0.35
+  },
+  construct: {
+    weapon: 1.35,
+    equipment: 1.2,
+    consumable: 0.12,
+    loot: 1.05,
+    tool: 0.95,
+    armor: 1.5,
+    ammunition: 0.65,
+    trinket: 1.1,
+    backpack: 0.2
+  },
+  dragon: {
+    weapon: 0.55,
+    equipment: 0.6,
+    consumable: 0.45,
+    loot: 2.1,
+    tool: 0.35,
+    armor: 0.4,
+    ammunition: 0.25,
+    trinket: 1.8,
+    backpack: 0.2
+  },
+  aberration: {
+    weapon: 0.72,
+    equipment: 0.65,
+    consumable: 0.52,
+    loot: 1.55,
+    tool: 0.4,
+    armor: 0.38,
+    ammunition: 0.28,
+    trinket: 1.5,
+    backpack: 0.2
+  },
+  elemental: {
+    weapon: 0.65,
+    equipment: 0.52,
+    consumable: 0.2,
+    loot: 1.3,
+    tool: 0.2,
+    armor: 0.32,
+    ammunition: 0.18,
+    trinket: 1.1,
+    backpack: 0.1
+  },
+  fey: {
+    weapon: 1.15,
+    equipment: 1.15,
+    consumable: 1.2,
+    loot: 1.25,
+    tool: 0.9,
+    armor: 0.9,
+    ammunition: 0.95,
+    trinket: 1.5,
+    backpack: 0.4
+  },
+  giant: {
+    weapon: 1.5,
+    equipment: 1.25,
+    consumable: 0.8,
+    loot: 1.05,
+    tool: 0.7,
+    armor: 1.2,
+    ammunition: 0.7,
+    trinket: 0.75,
+    backpack: 0.45
+  },
+  ooze: {
+    weapon: 0.06,
+    equipment: 0.1,
+    consumable: 0.1,
+    loot: 1.1,
+    tool: 0.05,
+    armor: 0.05,
+    ammunition: 0.05,
+    trinket: 0.8,
+    backpack: 0.05
+  },
+  plant: {
+    weapon: 0.32,
+    equipment: 0.32,
+    consumable: 1.15,
+    loot: 1.2,
+    tool: 0.15,
+    armor: 0.12,
+    ammunition: 0.1,
+    trinket: 0.92,
+    backpack: 0.08
+  },
+  swarm: {
+    weapon: 0.08,
+    equipment: 0.12,
+    consumable: 1.05,
+    loot: 1.1,
+    tool: 0.05,
+    armor: 0.05,
+    ammunition: 0.05,
+    trinket: 0.7,
+    backpack: 0.05
+  }
+});
+const UNLINKED_TOKEN_AUTO_INV_CURATED = Object.freeze({
+  weapon: Object.freeze({
+    "cr-0-1": Object.freeze([
+      { name: "Club", weight: 12 },
+      { name: "Dagger", weight: 22 },
+      { name: "Spear", weight: 14 },
+      { name: "Mace", weight: 10 },
+      { name: "Shortsword", weight: 6 },
+      { name: "Quarterstaff", weight: 8 }
+    ]),
+    "cr-2-4": Object.freeze([
+      { name: "Dagger", weight: 14 },
+      { name: "Spear", weight: 10 },
+      { name: "Shortsword", weight: 14 },
+      { name: "Longsword", weight: 10 },
+      { name: "Handaxe", weight: 9 },
+      { name: "Scimitar", weight: 8 },
+      { name: "Light Crossbow", weight: 8 }
+    ]),
+    "cr-5-8": Object.freeze([
+      { name: "Longsword", weight: 14 },
+      { name: "Battleaxe", weight: 10 },
+      { name: "Warhammer", weight: 9 },
+      { name: "Scimitar", weight: 8 },
+      { name: "Rapier", weight: 8 },
+      { name: "Longbow", weight: 7 },
+      { name: "Heavy Crossbow", weight: 6 }
+    ]),
+    "cr-9-12": Object.freeze([
+      { name: "Longsword", weight: 10 },
+      { name: "Greatsword", weight: 8 },
+      { name: "Glaive", weight: 7 },
+      { name: "Rapier", weight: 7 },
+      { name: "Longbow", weight: 7 },
+      { name: "Heavy Crossbow", weight: 6 }
+    ]),
+    "cr-13+": Object.freeze([
+      { name: "Longsword", weight: 9 },
+      { name: "Greatsword", weight: 8 },
+      { name: "Halberd", weight: 7 },
+      { name: "Glaive", weight: 7 },
+      { name: "Longbow", weight: 6 }
+    ])
+  }),
+  armor: Object.freeze({
+    "cr-0-1": Object.freeze([
+      { name: "Leather Armor", weight: 16 },
+      { name: "Padded Armor", weight: 9 }
+    ]),
+    "cr-2-4": Object.freeze([
+      { name: "Leather Armor", weight: 8 },
+      { name: "Chain Shirt", weight: 13 },
+      { name: "Scale Mail", weight: 7 }
+    ]),
+    "cr-5-8": Object.freeze([
+      { name: "Chain Shirt", weight: 6 },
+      { name: "Scale Mail", weight: 8 },
+      { name: "Chain Mail", weight: 10 },
+      { name: "Breastplate", weight: 6 }
+    ]),
+    "cr-9-12": Object.freeze([
+      { name: "Chain Mail", weight: 10 },
+      { name: "Breastplate", weight: 8 },
+      { name: "Half Plate Armor", weight: 7 },
+      { name: "Splint Armor", weight: 5 }
+    ]),
+    "cr-13+": Object.freeze([
+      { name: "Chain Mail", weight: 6 },
+      { name: "Half Plate Armor", weight: 8 },
+      { name: "Splint Armor", weight: 6 },
+      { name: "Plate Armor", weight: 2 }
+    ])
+  }),
+  gear: Object.freeze([
+    { name: "Rations", weight: 18 },
+    { name: "Waterskin", weight: 16 },
+    { name: "Torch", weight: 18 },
+    { name: "Rope, Hempen (50 feet)", weight: 9 },
+    { name: "Lantern, Hooded", weight: 6 },
+    { name: "Bedroll", weight: 6 }
+  ]),
+  utilityConsumables: Object.freeze([
+    { name: "Antitoxin", weight: 7 },
+    { name: "Alchemist's Fire", weight: 5 },
+    { name: "Acid (vial)", weight: 4 }
+  ]),
+  healingByBand: Object.freeze({
+    "cr-0-1": Object.freeze([{ name: "Potion of Healing", weight: 100 }]),
+    "cr-2-4": Object.freeze([{ name: "Potion of Healing", weight: 100 }]),
+    "cr-5-8": Object.freeze([
+      { name: "Potion of Healing", weight: 86 },
+      { name: "Potion of Greater Healing", weight: 14 }
+    ]),
+    "cr-9-12": Object.freeze([
+      { name: "Potion of Greater Healing", weight: 78 },
+      { name: "Potion of Superior Healing", weight: 22 }
+    ]),
+    "cr-13+": Object.freeze([
+      { name: "Potion of Greater Healing", weight: 48 },
+      { name: "Potion of Superior Healing", weight: 42 },
+      { name: "Potion of Supreme Healing", weight: 10 }
+    ])
+  })
+});
+const UNLINKED_TOKEN_AUTO_INV_HEALING_CHANCE_BY_BAND = Object.freeze({
+  "cr-0-1": 0.05,
+  "cr-2-4": 0.1,
+  "cr-5-8": 0.2,
+  "cr-9-12": 0.3,
+  "cr-13+": 0.4
+});
+const UNLINKED_TOKEN_AUTO_INV_BAND_ORDER = Object.freeze(["cr-0-1", "cr-2-4", "cr-5-8", "cr-9-12", "cr-13+"]);
+const JOURNAL_VISIBILITY_MODES = {
+  PUBLIC: "public",
+  REDACTED: "redacted",
+  GM_PRIVATE: "gm-private"
+};
+const SESSION_SUMMARY_RANGE_OPTIONS = {
+  "last-24h": "Last 24 Hours",
+  today: "Today",
+  "last-7d": "Last 7 Days"
+};
+const JOURNAL_SORT_OPTIONS = [
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "title", label: "Title" },
+  { value: "folder", label: "Folder" }
+];
+const OPERATIONS_JOURNAL_ROOT_NAME = "Party Operations Logs";
+const OPERATIONS_JOURNAL_ROOT_NAME_LEGACY = ["GM Folder"];
+const OPERATIONS_JOURNAL_CATEGORIES = {
+  downtime: "Downtime",
+  reputation: "Reputation",
+  environment: "Environment",
+  "loot-claims": "Loot Claims",
+  session: "Session"
+};
+
+function getCurrentModuleVersion() {
+  const module = game.modules?.get(MODULE_ID);
+  return String(module?.version ?? module?.data?.version ?? "dev");
+}
+const DOWNTIME_ACTION_OPTIONS = DOWNTIME_PHASE1_ACTIONS;
+const DOWNTIME_TUNING_ECONOMY_OPTIONS = PHASE1_ECONOMY_OPTIONS;
+const DOWNTIME_TUNING_RISK_OPTIONS = PHASE1_RISK_OPTIONS;
+const DOWNTIME_TUNING_DISCOVERY_OPTIONS = PHASE1_DISCOVERY_OPTIONS;
+const DOWNTIME_SOCIAL_CONTRACT_OPTIONS = [
+  {
+    key: "",
+    label: "None",
+    summary: "No persistent social contract is attached to this result.",
+    limitations: ""
+  },
+  {
+    key: "potion-broker",
+    label: "Potion Broker",
+    summary: "City alchemy contact willing to buy and sell common potions.",
+    limitations: "Only while in that city; common potions only; up to 2 transactions between downtime collections."
+  },
+  {
+    key: "black-market-fence",
+    label: "Black-Market Fence",
+    summary: "Underworld buyer for discreet goods and contraband.",
+    limitations: "No obvious military relics; fees and legal risk increase each use in the same district."
+  },
+  {
+    key: "guild-supplier",
+    label: "Guild Supplier",
+    summary: "Trade guild quartermaster gives controlled access to materials.",
+    limitations: "Requires a known guild hall; mundane supplies only; cannot bypass scarcity bans."
+  },
+  {
+    key: "info-broker",
+    label: "Information Broker",
+    summary: "Reliable intermediary who can turn coin into targeted leads.",
+    limitations: "One actionable lead purchase per downtime cycle; may trigger attention in high-heat regions."
+  },
+  {
+    key: "noble-patron",
+    label: "Noble Patron Channel",
+    summary: "Court connection grants occasional introductions and permits.",
+    limitations: "Political favors can be called in return; benefits are local to patron influence."
+  }
+];
+const DOWNTIME_ENTRY_SORT_OPTIONS = [
+  { value: "pending", label: "Pending First" },
+  { value: "completed", label: "Completed First" },
+  { value: "actor-asc", label: "Actor A-Z" },
+  { value: "actor-desc", label: "Actor Z-A" },
+  { value: "updated-desc", label: "Updated Newest" },
+  { value: "updated-asc", label: "Updated Oldest" }
+];
+const DOWNTIME_LOG_SORT_OPTIONS = [
+  { value: "resolved-desc", label: "Resolved Newest" },
+  { value: "resolved-asc", label: "Resolved Oldest" },
+  { value: "actor-asc", label: "Actor A-Z" },
+  { value: "actor-desc", label: "Actor Z-A" },
+  { value: "action-asc", label: "Action A-Z" }
+];
+const LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS = [
+  { value: "archived-desc", label: "Archived Newest" },
+  { value: "archived-asc", label: "Archived Oldest" },
+  { value: "published-desc", label: "Published Newest" },
+  { value: "published-asc", label: "Published Oldest" },
+  { value: "items-desc", label: "Most Items" },
+  { value: "items-asc", label: "Fewest Items" }
+];
+const LOOT_CLAIMS_LIVE_SORT_OPTIONS = [
+  { value: "value-desc", label: "Value High-Low" },
+  { value: "value-asc", label: "Value Low-High" },
+  { value: "weight-desc", label: "Weight High-Low" },
+  { value: "weight-asc", label: "Weight Low-High" },
+  { value: "quantity-desc", label: "Quantity High-Low" },
+  { value: "quantity-asc", label: "Quantity Low-High" },
+  { value: "name-asc", label: "Name A-Z" },
+  { value: "name-desc", label: "Name Z-A" }
+];
+const {
+  getActiveGmPanelTab,
+  setActiveGmPanelTab,
+  getActiveRestMainTab,
+  setActiveRestMainTab,
+  getActiveOperationsPage,
+  setActiveOperationsPage,
+  normalizePlayerHubTab,
+  getPlayerHubTab,
+  setPlayerHubTab,
+  getActiveGmQuickPanel,
+  setActiveGmQuickPanel,
+  getActiveGmOperationsTab,
+  setActiveGmOperationsTab,
+  normalizeGmOperationsTab,
+  getActiveOperationsPlanningTab,
+  setActiveOperationsPlanningTab,
+  isMiniVizCollapsed,
+  setMiniVizCollapsed,
+  getMarchSectionState,
+  setMarchSectionState,
+  isMarchSectionCollapsed,
+  setMarchSectionCollapsed
+} = createNavigationUiState({
+  normalizeMainTabId,
+  canAccessAllPlayerOps,
+  canAccessGmPage
+});
+const {
+  LOOT_SETTINGS_TABS,
+  normalizeLootPackSourcesFilter,
+  getLootPackSourcesUiState,
+  setLootPackSourcesUiState,
+  normalizeLootClaimActorId,
+  normalizeLootClaimRunId,
+  getLootClaimActorSelection,
+  getLootClaimRunSelection,
+  getLootClaimsArchiveSort,
+  getLootClaimsLiveSort,
+  getLootClaimsLiveSearch,
+  setLootClaimActorSelection,
+  setLootClaimRunSelection,
+  setLootClaimsArchiveSort,
+  setLootClaimsLiveSort,
+  setLootClaimsLiveSearch,
+  setLootClaimActorSelectionFromElement,
+  setLootClaimRunSelectionFromElement,
+  setLootClaimsLiveSortFromElement,
+  setLootClaimsLiveSearchFromElement,
+  normalizeLootRegistryTab,
+  getActiveLootRegistryTab,
+  setActiveLootRegistryTab,
+  getActiveLootSettingsTab,
+  setActiveLootSettingsTab
+} = createLootUiState({
+  lootClaimsArchiveSortOptions: LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS,
+  lootClaimsLiveSortOptions: LOOT_CLAIMS_LIVE_SORT_OPTIONS
+});
+const {
+  getJournalVisibilityMode,
+  getJournalFilterDebounceMs,
+  getSessionSummaryRangeSetting,
+  getSessionSummaryWindowBounds
+} = createOperationsJournalSettings({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+  gameRef: game
+});
+const {
+  getJournalFolderParentId,
+  findOperationsJournalRootFolder,
+  ensureOperationsJournalFolderTree,
+  journalFolderIsUnderRoot,
+  createOperationsJournalEntry,
+  openJournalEntryFromElement
+} = createOperationsJournalService({
+  moduleId: MODULE_ID,
+  journalFolderCacheSettingKey: SETTINGS.JOURNAL_FOLDER_CACHE,
+  journalRootName: OPERATIONS_JOURNAL_ROOT_NAME,
+  journalRootLegacyNames: OPERATIONS_JOURNAL_ROOT_NAME_LEGACY,
+  journalCategories: OPERATIONS_JOURNAL_CATEGORIES,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  canAccessAllPlayerOps,
+  getJournalVisibilityMode,
+  setModuleSettingWithLocalRefreshSuppressed,
+  gameRef: game,
+  foundryRef: foundry,
+  uiRef: ui,
+  constRef: CONST,
+  FolderClass: Folder,
+  JournalEntryClass: JournalEntry
+});
+const {
+  getOperationsJournalViewState,
+  setOperationsJournalViewState,
+  buildJournalSortOptions,
+  buildJournalCategoryOptions,
+  scheduleOperationsJournalFilterUpdate,
+  handleOperationsJournalAction,
+  buildOperationsJournalContext
+} = createOperationsJournalFeature({
+  journalSortOptions: JOURNAL_SORT_OPTIONS,
+  journalCategories: OPERATIONS_JOURNAL_CATEGORIES,
+  operationsJournalRootName: OPERATIONS_JOURNAL_ROOT_NAME,
+  getJournalFilterDebounceMs,
+  getJournalFolderParentId,
+  findOperationsJournalRootFolder,
+  journalFolderIsUnderRoot,
+  canViewJournalEntry: (entry, user = game.user) => {
+    if (typeof entry?.testUserPermission !== "function") return true;
+    return Boolean(entry.testUserPermission(user, "OBSERVER"));
+  },
+  openJournalEntryFromElement
+});
+const GATHER_HISTORY_SORT_OPTIONS = [
+  { value: "newest", label: "Newest First" },
+  { value: "oldest", label: "Oldest First" },
+  { value: "actor-asc", label: "Actor A-Z" },
+  { value: "actor-desc", label: "Actor Z-A" },
+  { value: "rations-desc", label: "Rations High-Low" },
+  { value: "rations-asc", label: "Rations Low-High" }
+];
+const GATHER_HISTORY_RESULT_FILTER_OPTIONS = [
+  { value: "all", label: "All Results" },
+  { value: "success", label: "Success" },
+  { value: "fail", label: "Fail" }
+];
+const GATHER_HISTORY_RESOURCE_FILTER_OPTIONS = [
+  { value: "all", label: "All Types" },
+  { value: "food", label: "Food" },
+  { value: "water", label: "Water" }
+];
+const DOWNTIME_RESOLVE_DEFAULT_HINT = "Set payouts and notes, then resolve.";
+const DOWNTIME_SELECT_PENDING_WARNING = "Select a pending downtime entry.";
+const DOWNTIME_STALE_PENDING_WARNING = "Selected downtime entry is no longer pending.";
+const DOWNTIME_GM_ONLY_PRERESOLVE_WARNING = "Only the GM can pre-resolve downtime.";
+const DOWNTIME_GM_ONLY_RESOLVE_WARNING = "Only the GM can resolve downtime.";
+const DOWNTIME_ITEM_REWARD_DROP_LIMIT = 10;
+const MERCHANT_SOURCE_TYPES = DOMAIN_MERCHANT_SOURCE_TYPES;
+const MERCHANT_SCARCITY_LEVELS = DOMAIN_MERCHANT_SCARCITY_LEVELS;
+const MERCHANT_SCARCITY_PROFILES = DOMAIN_MERCHANT_SCARCITY_PROFILES;
+const MERCHANT_ALLOWED_ITEM_TYPES = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES;
+const MERCHANT_ALLOWED_ITEM_TYPE_LIST = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST;
+const MERCHANT_EDITOR_CANDIDATE_LIMIT = DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT;
+const MERCHANT_PREVIEW_ITEM_LIMIT = DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT;
+const MERCHANT_ACCESS_LOG_LIMIT = DOMAIN_MERCHANT_ACCESS_LOG_LIMIT;
+const MERCHANT_ACCESS_LOG_THROTTLE_MS = DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS;
+const MERCHANT_DEFAULT_VALUE_STRICTNESS = DOMAIN_MERCHANT_DEFAULT_VALUE_STRICTNESS;
+const MERCHANT_DEFAULTS = DOMAIN_MERCHANT_DEFAULTS;
+const MERCHANT_STARTER_BLUEPRINTS = DOMAIN_MERCHANT_STARTER_BLUEPRINTS;
+const MERCHANT_ACCESS_MODES = Object.freeze({
+  ALL: "all",
+  ASSIGNED: "assigned"
+});
+const MERCHANT_SHOP_BELL_SOUND_SRC = "sounds/notify.wav";
+const MERCHANT_GM_FILTER_ACCESS_VALUES = Object.freeze({
+  ALL: "all",
+  PUBLIC: "public",
+  ASSIGNED: "assigned"
+});
+const MERCHANT_GM_FILTER_STOCK_VALUES = Object.freeze({
+  ALL: "all",
+  STOCKED: "stocked",
+  EMPTY: "empty"
+});
+const {
+  MERCHANT_GM_VIEW_TABS,
+  hasSelectedMerchantSettlementPreference,
+  getSelectedMerchantActorId,
+  setSelectedMerchantActorId,
+  setSelectedMerchantActorFromElement,
+  getSelectedMerchantSettlement,
+  setSelectedMerchantSettlement,
+  setSelectedMerchantSettlementFromElement,
+  getSelectedMerchantTabId,
+  setSelectedMerchantTabId,
+  setSelectedMerchantTabIdFromElement,
+  getMerchantEditorSelection,
+  getMerchantEditorPersistedId,
+  setMerchantEditorSelection,
+  normalizeMerchantEditorSelectionKey,
+  getMerchantEditorDraftState,
+  setMerchantEditorDraftState,
+  clearMerchantEditorDraftState,
+  getMerchantCityCatalogDraftValue,
+  setMerchantCityCatalogDraftValue,
+  clearMerchantCityCatalogDraftValue,
+  getMerchantGmViewTab,
+  setMerchantGmViewTab,
+  setMerchantGmViewTabFromElement,
+  normalizeMerchantEditorFilter,
+  getMerchantEditorSourceFilter,
+  setMerchantEditorSourceFilter,
+  getMerchantEditorPackFilter,
+  setMerchantEditorPackFilter,
+  getMerchantEditorItemFilter,
+  setMerchantEditorItemFilter,
+  normalizeMerchantGmCollectionSearch,
+  normalizeMerchantGmCollectionCity,
+  normalizeMerchantGmCollectionAccess,
+  normalizeMerchantGmCollectionStock,
+  getMerchantGmCollectionFilterState,
+  setMerchantGmCollectionFilterState,
+  resetMerchantGmCollectionFilterState,
+  hasActiveMerchantGmCollectionFilter,
+  setMerchantGmCollectionFilterStateFromElement,
+  syncStoredMerchantSettlementPreference,
+  syncMerchantGmCollectionFilterLocation
+} = createMerchantUiState({
+  moduleId: MODULE_ID,
+  merchantGmFilterAccessValues: MERCHANT_GM_FILTER_ACCESS_VALUES,
+  merchantGmFilterStockValues: MERCHANT_GM_FILTER_STOCK_VALUES,
+  normalizeMerchantSettlementSelection,
+  getMerchantDefinitionDraftSource,
+  getCurrentSettlement: () => getOperationsLedger()?.merchants?.currentSettlement ?? ""
+});
+const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
+  str: "Strength",
+  dex: "Dexterity",
+  con: "Constitution",
+  int: "Intelligence",
+  wis: "Wisdom",
+  cha: "Charisma"
+});
+const NON_GM_READONLY_ACTIONS = new Set([
+  "toggle-sop",
+  "set-resource",
+  "gather-resource-check",
+  "run-gather-preset",
+  "clear-gather-history",
+  "remove-gather-history-entry",
+  "approve-gather-request",
+  "decline-gather-request",
+  "set-recon-field",
+  "run-recon-check",
+  "set-reputation-score",
+  "adjust-reputation-score",
+  "set-reputation-note",
+  "log-reputation-note",
+  "load-reputation-note-log",
+  "use-reputation-note-log",
+  "post-reputation-note-log",
+  "set-reputation-label",
+  "set-reputation-detail",
+  "set-reputation-player-impact",
+  "add-reputation-faction",
+  "add-reputation-player-impact",
+  "remove-reputation-player-impact",
+  "set-reputation-builder-field",
+  "set-reputation-builder-impact",
+  "add-reputation-builder-impact",
+  "remove-reputation-builder-impact",
+  "clear-reputation-builder",
+  "remove-reputation-faction",
+  "set-injury-config",
+  "upsert-injury",
+  "roll-injury-table",
+  "set-injury-result",
+  "stabilize-injury",
+  "clear-injury",
+  "apply-recovery-cycle",
+  "publish-downtime-hours",
+  "set-downtime-hours",
+  "set-downtime-tuning",
+  "set-downtime-resolve-target",
+  "prefill-downtime-resolution",
+  "pre-resolve-selected-downtime-entry",
+  "resolve-selected-downtime-entry",
+  "edit-downtime-result",
+  "unarchive-downtime-log",
+  "clear-downtime-log",
+  "clear-downtime-results",
+  "merchant-settlement",
+  "merchant-save-city-catalog",
+  "merchant-assign-city",
+  "merchant-new",
+  "merchant-create-starters",
+  "merchant-randomize-name",
+  "merchant-randomize-race",
+  "merchant-edit",
+  "merchant-save",
+  "merchant-delete",
+  "merchant-refresh-stock",
+  "merchant-refresh-all-stock",
+  "merchant-assign-by-contract-key",
+  "merchant-assign-toggle",
+  "merchant-assign-all",
+  "merchant-assign-none",
+  "merchant-set-access-mode",
+  "merchant-editor-draft-change",
+  "toggle-merchant-pack-source",
+  "toggle-merchant-allowed-type",
+  "merchant-add-curated-item",
+  "merchant-remove-curated-item",
+  "merchant-clear-curated-items",
+  "merchant-open-actor",
+  "merchant-toggle-shop-tradable",
+  "merchant-make-available-now",
+  "merchant-shop-tradable-all",
+  "merchant-shop-tradable-none",
+  "toggle-loot-pack-source",
+  "set-loot-pack-weight",
+  "toggle-loot-table-source",
+  "set-loot-table-type",
+  "toggle-loot-item-type",
+  "set-loot-rarity-floor",
+  "set-loot-rarity-ceiling",
+  "reset-loot-source-config",
+  "set-loot-preview-field",
+  "roll-loot-preview",
+  "generate-loot-preview-item",
+  "add-loot-preview-item",
+  "remove-loot-preview-item",
+  "adjust-loot-preview-currency",
+  "clear-loot-preview",
+  "publish-loot-claims",
+  "clear-loot-claims",
+  "set-environment-preset",
+  "set-environment-dc",
+  "set-environment-note",
+  "set-environment-successive",
+  "select-environment-config-preset",
+  "create-environment-preset",
+  "duplicate-environment-preset",
+  "restore-environment-preset-defaults",
+  "delete-environment-preset",
+  "set-environment-preset-field",
+  "add-environment-preset-effect-change",
+  "remove-environment-preset-effect-change",
+  "set-environment-preset-effect-change",
+  "select-environment-config-action",
+  "create-environment-action",
+  "delete-environment-action",
+  "set-environment-action-field",
+  "reset-environment-successive-defaults",
+  "toggle-environment-actor",
+  "add-environment-log",
+  "edit-environment-log",
+  "remove-environment-log",
+  "request-environment-checks",
+  "gm-quick-add-faction",
+  "gm-quick-open-downtime",
+  "gm-quick-set-staged-field",
+  "gm-quick-submit-faction",
+  "gm-quick-log-weather",
+  "gm-quick-session-autopilot",
+  "gm-quick-undo-autopilot",
+  "gm-quick-submit-weather",
+  "gm-quick-weather-select",
+  "gm-quick-weather-set",
+  "gm-quick-weather-save-preset",
+  "gm-quick-weather-delete-preset"
+]);
+const UPKEEP_DUSK_MINUTES = 20 * 60;
+const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
+const environmentMovePromptByActor = new Map();
+const environmentMoveOriginByToken = new Map();
+const REST_WATCH_MAX_ENTRIES = 5;
+const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
+const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
+const restWatchSelectOptionsCache = new Map();
+let restWatchActorOptionsCache = { key: "", options: [] };
+const downtimeSubmitOptionsCache = new Map();
+
+const ENVIRONMENT_ACTIONS = [
+  {
+    key: "move",
+    label: "Move",
+    description: "Cross ground, reposition, or push through hazardous terrain."
+  },
+  {
+    key: "climb",
+    label: "Climb",
+    description: "Ascend, descend, or traverse surfaces where footing matters."
+  },
+  {
+    key: "dash",
+    label: "Dash",
+    description: "Sprint or force a fast advance through the environment."
+  },
+  {
+    key: "scout",
+    label: "Scout",
+    description: "Survey, spot threats, or read terrain and visibility."
+  },
+  {
+    key: "forage",
+    label: "Forage",
+    description: "Search, gather, or work carefully within the environment."
+  },
+  {
+    key: "endure",
+    label: "Endure Exposure",
+    description: "Hold up against weather, pressure, heat, cold, or corruption."
+  },
+  {
+    key: "operate",
+    label: "Operate",
+    description: "Manipulate equipment, rituals, or other environmental interactions."
+  }
+];
+
+const ENVIRONMENT_CHECK_TRIGGERS = [
+  { value: "move", label: "On Movement" },
+  { value: "manual", label: "Manual Push" }
+];
+
+const ENVIRONMENT_PRESETS = [
+  {
+    key: "none",
+    label: "None",
+    description: "No active environmental penalty.",
+    icon: "icons/svg/sun.svg",
+    actionKey: "move",
+    movementCheck: false,
+    checkType: "skill",
+    checkKey: "",
+    checkLabel: "",
+    effectChanges: []
+  },
+  {
+    key: "slippery-surface",
+    label: "Slippery Surface",
+    description: "Ice, wet stone, blood-slick floors, or algae force balance control.",
+    icon: "icons/svg/falling.svg",
+    actionKey: "move",
+    movementCheck: true,
+    checkTrigger: "move",
+    checkType: "skill",
+    checkKey: "acr",
+    checkLabel: "Acrobatics",
+    defaultDc: 13,
+    failStatusId: "prone",
+    failBy5SlideFeet: 5,
+    effectChanges: [{ key: "system.attributes.movement.walk", value: "-10" }]
+  },
+  {
+    key: "unstable-footing",
+    label: "Unstable Footing",
+    description: "Loose gravel, rubble, corpses, and shifting sand punish hard movement.",
+    icon: "icons/svg/hazard.svg",
+    actionKey: "move",
+    movementCheck: true,
+    checkTrigger: "move",
+    checkType: "save",
+    checkKey: "dex",
+    checkLabel: "Dexterity Save",
+    defaultDc: 13,
+    failSpeedZeroTurns: 1,
+    failBy5StatusId: "prone",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "extreme-cold",
+    label: "Extreme Cold",
+    description: "Freezing exposure tests endurance and shelter discipline.",
+    icon: "icons/svg/snowflake.svg",
+    actionKey: "endure",
+    movementCheck: true,
+    checkTrigger: "manual",
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    defaultDc: 15,
+    failExhaustion: 1,
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "extreme-heat",
+    label: "Extreme Heat",
+    description: "Heat stress drains stamina and worsens resource pressure.",
+    icon: "icons/svg/fire.svg",
+    actionKey: "endure",
+    movementCheck: true,
+    checkTrigger: "manual",
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    defaultDc: 14,
+    failExhaustion: 1,
+    failBy5DamageFormula: "1d6",
+    failBy5DamageType: "fire",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "heavy-obscurement",
+    label: "Heavy Obscurement",
+    description: "Thick fog, smoke, or magical darkness blinds line-of-sight engagement.",
+    icon: "icons/svg/blind.svg",
+    actionKey: "scout",
+    movementCheck: false,
+    checkType: "skill",
+    checkKey: "prc",
+    checkLabel: "Perception",
+    alwaysStatusId: "blinded",
+    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-5" }]
+  },
+  {
+    key: "necrotic-saturation",
+    label: "Necrotic Saturation",
+    description: "Blighted ritual zones erode flesh and vitality.",
+    icon: "icons/svg/skull.svg",
+    actionKey: "endure",
+    movementCheck: true,
+    checkTrigger: "manual",
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    defaultDc: 14,
+    failDamageFormula: "1d6",
+    failDamageType: "necrotic",
+    failBy5MaxHpReductionFormula: "1d6",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "high-wind",
+    label: "High Wind",
+    description: "Gale force winds disrupt ranged pressure and force balance saves.",
+    icon: "icons/svg/windmill.svg",
+    actionKey: "move",
+    movementCheck: true,
+    checkTrigger: "move",
+    checkType: "save",
+    checkKey: "str",
+    checkLabel: "Strength Save",
+    defaultDc: 13,
+    failSlideFeet: 5,
+    effectChanges: [
+      { key: "system.skills.prc.bonuses.check", value: "-1" },
+      { key: "system.bonuses.rwak.attack", value: "-2" }
+    ]
+  },
+  {
+    key: "shifting-ground",
+    label: "Shifting Ground",
+    description: "Quicksand or moving stone catches and restrains movement.",
+    icon: "icons/svg/swirl.svg",
+    actionKey: "move",
+    movementCheck: true,
+    checkTrigger: "move",
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    defaultDc: 14,
+    failStatusId: "restrained",
+    effectChanges: [{ key: "system.attributes.movement.walk", value: "-10" }]
+  },
+  {
+    key: "psychic-pressure-field",
+    label: "Psychic Pressure Field",
+    description: "Fractured timeline pressure and sigil echoes fracture resolve.",
+    icon: "icons/svg/terror.svg",
+    actionKey: "endure",
+    movementCheck: true,
+    checkTrigger: "manual",
+    checkType: "save",
+    checkKey: "wis",
+    checkLabel: "Wisdom Save",
+    defaultDc: 15,
+    failStatusId: "frightened",
+    failBy5StatusId: "incapacitated",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "corrosive-atmosphere",
+    label: "Corrosive Atmosphere",
+    description: "Acid mist and caustic vapors burn flesh and degrade gear.",
+    icon: "icons/svg/acid.svg",
+    actionKey: "endure",
+    movementCheck: true,
+    checkTrigger: "manual",
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    defaultDc: 13,
+    failDamageFormula: "1d4",
+    failDamageType: "acid",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  }
+];
+
+function isFormActionElement(element) {
+  if (!element?.tagName) return false;
+  const tag = String(element.tagName).toUpperCase();
+  return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+}
+
+function getAppRootElement(appOrElement) {
+  if (!appOrElement) return null;
+  const candidate = appOrElement?.element ?? appOrElement;
+  if (candidate?.querySelector) return candidate;
+  if (candidate?.[0]?.querySelector) return candidate[0];
+  return null;
+}
+
+function isEditableTypingElement(element) {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element instanceof HTMLTextAreaElement) {
+    return !element.disabled && !element.readOnly;
+  }
+  if (element instanceof HTMLInputElement) {
+    if (element.disabled || element.readOnly) return false;
+    const type = String(element.type ?? "text")
+      .trim()
+      .toLowerCase();
+    const typingTypes = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
+    return typingTypes.has(type);
+  }
+  if (element instanceof HTMLSelectElement) return false;
+  return element.isContentEditable;
+}
+
+function appHasFocusedTypingInput(appOrElement) {
+  const root = getAppRootElement(appOrElement);
+  const active = document?.activeElement;
+  if (!root || !(active instanceof HTMLElement)) return false;
+  if (!root.contains(active)) return false;
+  return isEditableTypingElement(active);
+}
+
+const throttledUiNoticeCache = new Map();
+
+function shouldEmitThrottledUiNotice(cacheKey, ttlMs) {
+  const key = String(cacheKey ?? "").trim() || "notice";
+  const ttl = Math.max(50, Number(ttlMs ?? 1200) || 1200);
+  const now = Date.now();
+  const last = Number(throttledUiNoticeCache.get(key) ?? 0);
+  if (now - last < ttl) return false;
+  throttledUiNoticeCache.set(key, now);
+  return true;
+}
+
+function notifyUiWarnThrottled(message, options = {}) {
+  const text = String(message ?? "").trim();
+  if (!text) return;
+  const key = String(options.key ?? text);
+  const ttlMs = Number(options.ttlMs ?? 1200);
+  if (!shouldEmitThrottledUiNotice(`warn:${key}`, ttlMs)) return;
+  if (
+    text.includes("GM permissions are required") ||
+    text.includes("Only the GM can") ||
+    text.includes("change blocked")
+  ) {
+    logPlayerPermissionDebug("ui-warning", text, {
+      key,
+      ttlMs
+    });
+  }
+  ui.notifications?.warn(text);
+}
+
+function notifyUiInfoThrottled(message, options = {}) {
+  const text = String(message ?? "").trim();
+  if (!text) return;
+  const key = String(options.key ?? text);
+  const ttlMs = Number(options.ttlMs ?? 1200);
+  if (!shouldEmitThrottledUiNotice(`info:${key}`, ttlMs)) return;
+  ui.notifications?.info(text);
+}
+
+function refreshTabAccessibility(root) {
+  if (!root?.querySelectorAll) return;
+  const tablists = Array.from(root.querySelectorAll("[role='tablist']"));
+  for (const tablist of tablists) {
+    const tabs = Array.from(tablist.querySelectorAll(".po-tab"));
+    if (tabs.length === 0) continue;
+
+    const activeTab = tabs.find((tab) => tab.classList.contains("is-active")) ?? tabs[0];
+    for (const tab of tabs) {
+      const isActive = tab === activeTab;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+      tab.setAttribute("tabindex", isActive ? "0" : "-1");
+    }
+
+    if (tablist.dataset.poTabA11yBound === "1") continue;
+    tablist.dataset.poTabA11yBound = "1";
+    tablist.addEventListener("keydown", (event) => {
+      const key = String(event.key ?? "");
+      if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(key)) return;
+      const currentTabs = Array.from(tablist.querySelectorAll(".po-tab"));
+      if (currentTabs.length === 0) return;
+      const current = event.target?.closest?.(".po-tab");
+      const currentIndex = Math.max(0, currentTabs.indexOf(current));
+      let targetIndex = currentIndex;
+      if (key === "ArrowRight") targetIndex = (currentIndex + 1) % currentTabs.length;
+      if (key === "ArrowLeft") targetIndex = (currentIndex - 1 + currentTabs.length) % currentTabs.length;
+      if (key === "Home") targetIndex = 0;
+      if (key === "End") targetIndex = currentTabs.length - 1;
+      const target = currentTabs[targetIndex];
+      if (!target) return;
+      event.preventDefault();
+      target.focus();
+      target.click();
+    });
+  }
+}
+
+function syncNotesDisclosureState(root) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll(".po-watch-entry").forEach((entry, index) => {
+    const notes = entry.querySelector(".po-notes");
+    const toggleButton = entry.querySelector("[data-action='toggle-notes']");
+    if (!notes || !toggleButton) return;
+    if (!notes.id) notes.id = `po-notes-auto-${index}-${foundry.utils.randomID()}`;
+    const expanded = notes.classList.contains("is-active");
+    toggleButton.setAttribute("aria-controls", notes.id);
+    toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
+    notes.setAttribute("aria-hidden", expanded ? "false" : "true");
+  });
+}
+
+const {
+  getPlayerUiLocalOverrideStorageKey,
+  readPlayerUiLocalSettingOverrides,
+  writePlayerUiLocalSettingOverrides,
+  getPlayerUiLocalSettingOverride,
+  setPlayerUiLocalSettingOverride,
+  canUsePlayerUiLocalOverride,
+  getModuleSettingWithPlayerUiOverride
+} = createPlayerUiOverrideTools({
+  gameRef: game,
+  moduleId: MODULE_ID,
+  readSessionStorageJson,
+  writeSessionStorageJson,
+  deepClone: foundry.utils.deepClone,
+  canAccessAllPlayerOps,
+  hasActiveGmClient
+});
+
+const {
+  getPlayerPermissionDebugStorageKey,
+  logPlayerPermissionDebug,
+  getPlayerPermissionDebugEntries,
+  clearPlayerPermissionDebugEntries
+} = createPlayerPermissionDebugTools({
+  gameRef: game,
+  moduleId: MODULE_ID,
+  readSessionStorageJson,
+  writeSessionStorageJson,
+  deepClone: foundry.utils.deepClone,
+  globalObject: globalThis,
+  customEventCtor: CustomEvent,
+  warnLogger: console.warn
+});
+
+function bindFolderOwnershipProxySubmit(app, html) {
+  if (game.user?.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
+  const document = app?.document ?? null;
+  if (!document || String(document?.documentName ?? "").trim() !== "Folder") return;
+  if (String(document?.type ?? "").trim() !== "JournalEntry") return;
+  const folderId = String(document?.id ?? "").trim();
+  if (!folderId) return;
+  const rootFolder = findOperationsJournalRootFolder?.() ?? null;
+  const rootFolderId = String(rootFolder?.id ?? "").trim();
+  if (!rootFolderId) return;
+  const isOperationsJournalFolder =
+    folderId === rootFolderId || Boolean(journalFolderIsUnderRoot?.(folderId, rootFolderId));
+  if (!isOperationsJournalFolder) return;
+  const root = getRenderableElementRoot(html);
+  const form = root?.querySelector?.("form");
+  if (!(form instanceof HTMLFormElement)) return;
+  if (form.dataset.poOwnershipProxyBound === "1") return;
+  form.dataset.poOwnershipProxyBound = "1";
+
+  form.addEventListener("submit", async (event) => {
+    if (game.user?.isGM || !canAccessAllPlayerOps()) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    let submitData = {};
+    try {
+      if (typeof app?._getSubmitData === "function") {
+        submitData = app._getSubmitData() ?? {};
+      } else {
+        const raw = new FormData(form);
+        submitData = Object.fromEntries(raw.entries());
+      }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed reading folder ownership submit data`, error);
+      ui.notifications?.warn("Unable to read folder permission changes.");
+      return;
+    }
+
+    const levels = parseFolderOwnershipBatchLevelsFromSubmitData(submitData, {
+      constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS
+    });
+    if (Object.keys(levels).length <= 0) {
+      ui.notifications?.info("No ownership changes selected.");
+      return;
+    }
+
+    try {
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:folder-ownership-write",
+        userId: game.user.id,
+        folderId,
+        levels
+      });
+      ui.notifications?.info("Applying folder permissions through active GM...");
+      app.close();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed sending folder ownership proxy request`, error);
+      ui.notifications?.warn("Failed to send folder permission update request.");
+    }
+  });
+}
+

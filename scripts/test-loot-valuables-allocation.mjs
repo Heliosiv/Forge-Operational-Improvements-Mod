@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -21,23 +21,26 @@ const functionBlock = [
 const context = vm.createContext({
   deriveLootBucketTargetCount(pool = [], targetGp = 0, fallbackCount = 1, minimum = 0) {
     if (!Array.isArray(pool) || !pool.length || targetGp <= 0) return Math.max(0, Math.floor(Number(minimum) || 0));
-    return Math.max(Math.floor(Number(minimum) || 0), Math.min(Math.max(1, Math.floor(Number(fallbackCount) || 1)), pool.length));
+    return Math.max(
+      Math.floor(Number(minimum) || 0),
+      Math.min(Math.max(1, Math.floor(Number(fallbackCount) || 1)), pool.length)
+    );
   },
   result: {}
 });
 
-vm.runInContext(`${functionBlock}
+vm.runInContext(
+  `${functionBlock}
 result.getLootValuablesArtAllocationRatio = getLootValuablesArtAllocationRatio;
-result.buildLootValuablesLaneTargets = buildLootValuablesLaneTargets;`, context);
+result.buildLootValuablesLaneTargets = buildLootValuablesLaneTargets;`,
+  context
+);
 
-const {
-  getLootValuablesArtAllocationRatio,
-  buildLootValuablesLaneTargets
-} = context.result;
+const { getLootValuablesArtAllocationRatio, buildLootValuablesLaneTargets } = context.result;
 
 assert.ok(
-  getLootValuablesArtAllocationRatio({ mode: "horde", challenge: "mid", scale: "major", profile: "standard" })
-  > getLootValuablesArtAllocationRatio({ mode: "horde", challenge: "mid", scale: "small", profile: "poor" }),
+  getLootValuablesArtAllocationRatio({ mode: "horde", challenge: "mid", scale: "major", profile: "standard" }) >
+    getLootValuablesArtAllocationRatio({ mode: "horde", challenge: "mid", scale: "small", profile: "poor" }),
   "Larger, richer hordes should reserve more valuables budget for art objects."
 );
 
@@ -53,7 +56,11 @@ const valuablesTargets = buildLootValuablesLaneTargets(
   1
 );
 
-assert.equal(valuablesTargets.artCountTarget, 1, "Mixed horde valuables should reserve at least one art pick when art is available.");
+assert.equal(
+  valuablesTargets.artCountTarget,
+  1,
+  "Mixed horde valuables should reserve at least one art pick when art is available."
+);
 assert.equal(valuablesTargets.gemCountTarget, 0, "A single valuables pick should not also reserve a gem slot.");
 assert.ok(valuablesTargets.artBudgetTargetGp >= 25, "Art reservation should meet the cheapest available art object.");
 

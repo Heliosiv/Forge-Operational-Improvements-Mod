@@ -27,6 +27,7 @@
     "check:governance": "node scripts/validate-governance.mjs",
     "check:integration-access": "node scripts/test-integration-access.mjs",
     "check:launcher-state": "node scripts/test-launcher-state.mjs",
+    "check:legacy-source-map": "node scripts/test-legacy-source-map.mjs",
     "check:audio-launcher": "node scripts/test-audio-launcher-controls.mjs",
     "check:audio-catalog-compat": "node scripts/test-audio-catalog-compat.mjs",
     "check:audio-library-catalog-signature": "node scripts/test-audio-library-catalog-signature.mjs",

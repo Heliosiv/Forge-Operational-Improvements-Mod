@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import { readFileSync } from "node:fs";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource(["gather-resources", "downtime-operations-actions"]);
 const gmDowntimeTemplate = readFileSync(new URL("../templates/gm-downtime.hbs", import.meta.url), "utf8");
 const gmShellStyles = readFileSync(new URL("../styles/po-gm-shell.css", import.meta.url), "utf8");
 const restWatchTemplate = readFileSync(new URL("../templates/rest-watch.hbs", import.meta.url), "utf8");

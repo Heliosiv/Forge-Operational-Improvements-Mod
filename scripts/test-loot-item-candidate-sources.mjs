@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`async function ${functionName}(`);
@@ -24,9 +24,7 @@ const context = vm.createContext({
   LOOT_WORLD_ITEMS_SOURCE_ID: "__world_items__",
   game: {
     items: {
-      contents: [
-        { name: "World Torch", itemValueGp: 0.01, itemWeightLb: 1, folder: null }
-      ]
+      contents: [{ name: "World Torch", itemValueGp: 0.01, itemWeightLb: 1, folder: null }]
     },
     folders: {
       get: () => null
@@ -63,13 +61,17 @@ vm.runInContext(`${functionBlock}\nresult.buildLootItemCandidates = buildLootIte
 const { buildLootItemCandidates } = context.result;
 
 const warnings = [];
-const mixedCandidates = await buildLootItemCandidates({
-  packs: [
-    { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
-    { id: "pack.magic", label: "Magic Pack", enabled: true, weight: 2 }
-  ],
-  filters: {}
-}, {}, warnings);
+const mixedCandidates = await buildLootItemCandidates(
+  {
+    packs: [
+      { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
+      { id: "pack.magic", label: "Magic Pack", enabled: true, weight: 2 }
+    ],
+    filters: {}
+  },
+  {},
+  warnings
+);
 
 assert.equal(warnings.length, 0);
 assert.equal(mixedCandidates.length, 3, "Enabled world and compendium sources should both contribute candidates.");
@@ -89,15 +91,19 @@ assert.equal(
   "Compendium candidates should receive a compendium fallback UUID prefix."
 );
 
-const manifestCandidates = await buildLootItemCandidates({
-  packs: [
-    { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
-    { id: "pack.magic", label: "Magic Pack", enabled: true, weight: 2 }
-  ],
-  filters: {
-    manifestPackId: "pack.magic"
-  }
-}, {}, warnings);
+const manifestCandidates = await buildLootItemCandidates(
+  {
+    packs: [
+      { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
+      { id: "pack.magic", label: "Magic Pack", enabled: true, weight: 2 }
+    ],
+    filters: {
+      manifestPackId: "pack.magic"
+    }
+  },
+  {},
+  warnings
+);
 
 assert.equal(manifestCandidates.length, 2, "Selecting a compendium manifest pack should still produce candidates.");
 assert.equal(
@@ -106,15 +112,19 @@ assert.equal(
   "A direct manifest-pack selection should stay scoped to that pack."
 );
 
-const anyModeCandidates = await buildLootItemCandidates({
-  packs: [
-    { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
-    { id: "pack.magic", label: "Magic Pack", enabled: true, weight: 2 }
-  ],
-  filters: {
-    keywordIncludeMode: "any"
-  }
-}, {}, warnings);
+const anyModeCandidates = await buildLootItemCandidates(
+  {
+    packs: [
+      { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
+      { id: "pack.magic", label: "Magic Pack", enabled: true, weight: 2 }
+    ],
+    filters: {
+      keywordIncludeMode: "any"
+    }
+  },
+  {},
+  warnings
+);
 
 assert.ok(anyModeCandidates.length > 0, "Any-mode filtering should still permit candidate generation.");
 assert.equal(
@@ -124,15 +134,19 @@ assert.equal(
 );
 
 const disabledManifestWarnings = [];
-const disabledManifestCandidates = await buildLootItemCandidates({
-  packs: [
-    { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
-    { id: "pack.magic", label: "Magic Pack", enabled: false, weight: 2 }
-  ],
-  filters: {
-    manifestPackId: "pack.magic"
-  }
-}, {}, disabledManifestWarnings);
+const disabledManifestCandidates = await buildLootItemCandidates(
+  {
+    packs: [
+      { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
+      { id: "pack.magic", label: "Magic Pack", enabled: false, weight: 2 }
+    ],
+    filters: {
+      manifestPackId: "pack.magic"
+    }
+  },
+  {},
+  disabledManifestWarnings
+);
 
 assert.equal(
   disabledManifestCandidates.length,

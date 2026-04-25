@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(source, functionName, nextFunctionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -19,9 +19,14 @@ const context = vm.createContext({
   Number,
   String,
   isLootOutsideBudgetPolicy(entryOrPolicy = null) {
-    const policy = entryOrPolicy && typeof entryOrPolicy === "object"
-      ? String(entryOrPolicy?.sourcePolicy ?? "").trim().toLowerCase()
-      : String(entryOrPolicy ?? "").trim().toLowerCase();
+    const policy =
+      entryOrPolicy && typeof entryOrPolicy === "object"
+        ? String(entryOrPolicy?.sourcePolicy ?? "")
+            .trim()
+            .toLowerCase()
+        : String(entryOrPolicy ?? "")
+            .trim()
+            .toLowerCase();
     return policy === "outside-budget" || policy === "bonus";
   },
   isLootJackpotCandidate() {
@@ -54,21 +59,11 @@ const bonusPolicyWeight = getLootBudgetDrivenValueWeight(250, 0, 0, budgetContex
   sourcePolicy: "bonus"
 });
 
-assert.equal(
-  normalWeight,
-  0,
-  "Manual cap should still hard-stop over-cap picks for normal source policies."
-);
+assert.equal(normalWeight, 0, "Manual cap should still hard-stop over-cap picks for normal source policies.");
 
-assert.ok(
-  outsideBudgetWeight > 0,
-  "Outside-budget policies should retain a non-zero weight even above manual cap."
-);
+assert.ok(outsideBudgetWeight > 0, "Outside-budget policies should retain a non-zero weight even above manual cap.");
 
-assert.ok(
-  bonusPolicyWeight > 0,
-  "Bonus policies should retain a non-zero weight even above manual cap."
-);
+assert.ok(bonusPolicyWeight > 0, "Bonus policies should retain a non-zero weight even above manual cap.");
 
 const inCapWeight = getLootBudgetDrivenValueWeight(75, 0, 0, budgetContext, {
   sourcePolicy: "normal"

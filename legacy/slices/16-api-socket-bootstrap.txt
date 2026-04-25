@@ -1,0 +1,639 @@
+# API, Socket Handler, And Runtime Bootstrap
+
+Source: legacy/party-operations-monolith.js:51040-51669
+Feature IDs: runtime-shell, sockets, hooks, rest-watch
+Target Modules: scripts/runtime, scripts/core/socket-*, scripts/bootstrap
+
+Public API builder, world diagnostics, init/ready config builders, socket handler, refresh controller, and open-rest emitters.
+
+----- legacy source begins -----
+function buildPartyOperationsApi() {
+  return buildPartyOperationsApiSurface({
+    foundryRef: foundry,
+    gameRef: game,
+    globalRef: globalThis,
+    moduleId: MODULE_ID,
+    ensureLauncherUi,
+    openMainTab,
+    openGmMerchantsPage,
+    openGmAudioPage,
+    refreshOpenApps,
+    getOperationsLedger,
+    runGatherResourcesAction,
+    applyOperationalUpkeep,
+    getInjuryRecoveryState,
+    applyRecoveryCycle,
+    runSessionAutopilot,
+    undoLastSessionAutopilot,
+    syncAllInjuriesToSimpleCalendar,
+    scheduleIntegrationSync,
+    openPartyOperationsSettingsHub,
+    getModuleConfigSnapshot,
+    getPartyOpsConfigSetting,
+    savePartyOpsConfigSetting,
+    getInventoryHookModeSetting,
+    setInventoryHookMode,
+    getLauncherPlacement,
+    setLauncherPlacement,
+    getLootSourceConfig,
+    getCrBracket,
+    convertCurrencyToGpEquivalent,
+    rollIndividualTreasure,
+    rollHoardTreasure,
+    applyLootTweakers,
+    summarizeLoot,
+    generateBoardReadyLootBundle,
+    generateLootPreviewPayload,
+    generateLootFromPackIds,
+    getLootPreviewResult,
+    diagnoseWorldData,
+    resetFloatingLauncherPosition,
+    forceLauncherRecovery,
+    getLauncherStatusSnapshot,
+    getAudioLibraryCatalog,
+    scanAudioLibraryCatalog,
+    clearAudioLibraryCatalog,
+    hideAudioLibraryTrack,
+    restoreHiddenAudioLibraryTrack,
+    restoreAllHiddenAudioLibraryTracks,
+    getAllAudioMixPresets,
+    createAudioMixPresetFromSelection,
+    deleteSelectedAudioMixPreset,
+    addTrackToSelectedAudioMixPreset,
+    queueSelectedTrackNext,
+    moveTrackToIndexInSelectedAudioMixPreset,
+    moveTrackToTopInSelectedAudioMixPreset,
+    moveTrackWithinSelectedAudioMixPreset,
+    removeTrackFromSelectedAudioMixPreset,
+    playAudioMixPresetById,
+    getSelectedAudioMixPreset,
+    playNextAudioMixTrack,
+    restartCurrentAudioMixTrack,
+    stopAudioMixPlayback,
+    normalizeAudioLibraryKind,
+    normalizeAudioLibraryUsage,
+    normalizeAudioLibrarySearch,
+    getPlayerPermissionDebugEntries,
+    clearPlayerPermissionDebugEntries,
+    getPerfState: () => getPartyOpsPerfState(globalThis),
+    getPerfSummary: () => summarizeCurrentPartyOpsPerfState(globalThis)
+  });
+}
+
+function registerPartyOperationsApi() {
+  return registerPartyOperationsApiSurface({
+    attachModuleApi,
+    moduleId: MODULE_ID,
+    api: buildPartyOperationsApi(),
+    logger: bootstrapLogger
+  });
+}
+
+function getRollValidator() {
+  if (globalThis?.Roll?.validate) return globalThis.Roll;
+  if (foundry?.dice?.Roll?.validate) return foundry.dice.Roll;
+  return null;
+}
+
+function isValidRollFormula(formula) {
+  if (formula === null || formula === undefined) return true;
+  if (typeof formula !== "string") return false;
+  const value = formula.trim();
+  if (!value) return true;
+  const validator = getRollValidator();
+  if (validator?.validate) return Boolean(validator.validate(value));
+  try {
+    new Roll(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isValidAsyncScript(source) {
+  if (typeof source !== "string") return true;
+  const code = source.trim();
+  if (!code) return true;
+  try {
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    new AsyncFunction(code);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function diagnoseWorldData(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can diagnose world data.");
+    return null;
+  }
+
+  const repair = Boolean(options.repair);
+  const report = {
+    scanned: {
+      actors: game.actors.size,
+      items: game.items.size,
+      macros: game.macros.size
+    },
+    actors: [],
+    items: [],
+    activities: [],
+    macros: [],
+    repaired: {
+      actors: 0,
+      items: 0,
+      activities: 0
+    }
+  };
+
+  for (const actor of game.actors.contents) {
+    const formula = actor.system?.attributes?.hp?.formula;
+    if (typeof formula !== "string") continue;
+    if (isValidRollFormula(formula)) continue;
+    report.actors.push({
+      id: actor.id,
+      name: actor.name,
+      formula
+    });
+    if (repair) {
+      try {
+        await actor.update({ "system.attributes.hp.formula": "0" });
+        report.repaired.actors += 1;
+      } catch (error) {
+        console.warn(`${MODULE_ID}: failed to repair actor hp formula`, actor.id, error);
+      }
+    }
+  }
+
+  for (const item of game.items.contents) {
+    const durationValue = item.system?.duration?.value;
+    if (typeof durationValue === "string" && !isValidRollFormula(durationValue)) {
+      report.items.push({
+        id: item.id,
+        name: item.name,
+        durationValue
+      });
+      if (repair) {
+        try {
+          await item.update({ "system.duration.value": "" });
+          report.repaired.items += 1;
+        } catch (error) {
+          console.warn(`${MODULE_ID}: failed to repair item duration`, item.id, error);
+        }
+      }
+    }
+
+    const activityUpdates = {};
+    let activityRepairCount = 0;
+    for (const [activityId, activity] of Object.entries(item.system?.activities ?? {})) {
+      const parts = activity?.damage?.parts ?? [];
+      parts.forEach((part, index) => {
+        const formula = part?.custom?.formula;
+        if (typeof formula !== "string") return;
+        if (isValidRollFormula(formula)) return;
+        report.activities.push({
+          itemId: item.id,
+          itemName: item.name,
+          activityId,
+          partIndex: index,
+          formula
+        });
+        if (repair) {
+          activityUpdates[`system.activities.${activityId}.damage.parts.${index}.custom.formula`] = "";
+          activityRepairCount += 1;
+        }
+      });
+    }
+
+    if (repair && Object.keys(activityUpdates).length > 0) {
+      try {
+        await item.update(activityUpdates);
+        report.repaired.activities += activityRepairCount;
+      } catch (error) {
+        console.warn(`${MODULE_ID}: failed to repair item activities`, item.id, error);
+      }
+    }
+  }
+
+  for (const macro of game.macros.contents) {
+    if (isValidAsyncScript(macro.command)) continue;
+    report.macros.push({
+      id: macro.id,
+      name: macro.name,
+      type: macro.type,
+      commandPreview: String(macro.command ?? "").slice(0, 80)
+    });
+  }
+
+  const totalIssues = report.actors.length + report.items.length + report.activities.length + report.macros.length;
+  const totalRepaired = report.repaired.actors + report.repaired.items + report.repaired.activities;
+  if (repair) {
+    ui.notifications?.info(
+      `Party Operations repair finished. Issues: ${totalIssues}, repaired: ${totalRepaired}, macro scripts needing manual fix: ${report.macros.length}.`
+    );
+  } else {
+    ui.notifications?.info(`Party Operations diagnose finished. Issues found: ${totalIssues}.`);
+  }
+  if (DEBUG_LOG) console.log(`${MODULE_ID}: world data diagnose report`, report);
+  return report;
+}
+
+function setupPartyOperationsUI() {
+  return setupPartyOperationsUi({
+    openMainTab,
+    canAccessAllPlayerOps,
+    canAccessGmPage,
+    ensureLauncherUi,
+    hideManagedAudioMixPlaylistUi,
+    setTimeoutFn: window.setTimeout.bind(window),
+    documentRef: document
+  });
+}
+
+const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  autoUpkeepPromptStates: AUTO_UPKEEP_PROMPT_STATES,
+  notifyDailyInjuryReminders,
+  handleAutomaticOperationalUpkeepTick,
+  handleAutomaticMerchantAutoRefreshTick,
+  handleAutomaticUpkeepChatAction,
+  schedulePendingSopNoteSync,
+  applyAutoInventoryToUnlinkedToken,
+  environmentMoveOriginByToken,
+  maybePromptEnvironmentMovementCheck,
+  onMarchTokenMoved,
+  onMarchSceneEntry,
+  onMarchCombatRound,
+  onMarchCombatEnded,
+  hasInventoryDelta,
+  queueInventoryRefresh,
+  consumeSuppressedSettingRefresh,
+  refreshOpenApps,
+  getRefreshScopesForSettingKey,
+  scheduleIntegrationSync,
+  bindFolderOwnershipProxySubmit,
+  isManagedAudioMixPlaylist,
+  queueManagedAudioMixPlaybackResync,
+  gameRef: game,
+  foundryRef: foundry
+});
+
+export function installPartyOperationsAppBehaviors() {
+  return installPartyOperationsAppBehaviorsSurface({
+    installRememberedWindowPositionBehavior,
+    appClasses: [
+      BaseStatefulPageApp,
+      RestWatchApp,
+      OperationsShellApp,
+      MarchingOrderApp,
+      GmLootClaimsBoardApp,
+      RestWatchPlayerApp
+    ]
+  });
+}
+
+export function buildPartyOperationsInitConfig() {
+  return buildPartyOperationsInitConfigSurface({
+    registerPartyOperationsApi,
+    registerFeatureModules,
+    preloadPartyOperationsPartialTemplates,
+    registerPartyOpsSettings,
+    settings: SETTINGS,
+    getRefreshScopesForSettingKey,
+    refreshOpenApps,
+    registerPartyOpsDataSettings,
+    moduleId: MODULE_ID,
+    buildDefaultRestWatchState,
+    buildDefaultMarchingOrderState,
+    buildDefaultActivityState,
+    buildDefaultOperationsLedger,
+    buildDefaultInjuryRecoveryState,
+    buildDefaultLootSourceConfig,
+    buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioLibraryHiddenTrackStore,
+    buildDefaultAudioMixPresetStore,
+    syncAudioLibraryDraftFromSettings,
+    registerPartyOpsFeatureSettings,
+    areAdvancedSettingsEnabled,
+    autoInventoryPackIndexCache,
+    autoInventoryDefaults: {
+      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
+    },
+    gatherDefaults: GATHER_DEFAULTS,
+    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+    launcherPlacements: LAUNCHER_PLACEMENTS,
+    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+    inventoryHookModes: INVENTORY_HOOK_MODES,
+    ensureLauncherUi,
+    resetFloatingLauncherPosition,
+    refreshScopeKeys: REFRESH_SCOPE_KEYS,
+    openRestWatchUiForCurrentUser,
+    openMainTab,
+    logger: bootstrapLogger
+  });
+}
+
+export function onPartyOperationsInit() {
+  installPartyOperationsAppBehaviors();
+  runPartyOperationsInit(buildPartyOperationsInitConfig());
+}
+
+export function buildPartyOperationsReadyConfig() {
+  return buildPartyOperationsReadyConfigSurface({
+    registerPartyOperationsApi,
+    ensureSettingsRegistered: ensurePartyOpsSettingsRegistered,
+    validatePartyOperationsTemplates,
+    setupPartyOperationsUI,
+    ensureLauncherUi,
+    forceLauncherRecovery,
+    notifyDailyInjuryReminders,
+    syncManagedAudioMixPlaybackForCurrentUser,
+    game,
+    schedulePendingSopNoteSync,
+    scheduleIntegrationSync,
+    handleAutomaticMerchantAutoRefreshTick,
+    queueAudioLibraryMetadataWarmup,
+    ensureOperationsJournalFolderTree,
+    scheduleLootManifestCompendiumTypeFolderSync,
+    registerModuleSocketHandler,
+    socketChannel: SOCKET_CHANNEL,
+    socketHandler: handlePartyOperationsSocketMessage,
+    registerPartyOpsHooks,
+    setTimeoutFn: window.setTimeout.bind(window),
+    logger: bootstrapLogger,
+    moduleId: MODULE_ID
+  });
+}
+
+export function onPartyOperationsReady() {
+  runPartyOperationsReady(buildPartyOperationsReadyConfig());
+  // Rework v1: run merchant data migration on ready
+  void runMerchantDataMigration().catch((error) => {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: merchant data migration error`, error);
+    }
+  });
+  void syncAllMerchantActorOwnerships().catch((error) => {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: merchant actor ownership sync error`, error);
+    }
+  });
+}
+
+const {
+  applyPlayerMerchantBarterRequest,
+  applyPlayerMerchantTradeRequest,
+  applyPlayerLootClaimRequest,
+  applyPlayerLootCurrencyClaimRequest,
+  applyPlayerLootCurrencySplitRequest,
+  applyPlayerLootUndoClaimRequest
+} = createPlayerRequestHandlers({
+  resolveRequester,
+  sanitizeSocketIdentifier,
+  ensureMerchantsState,
+  getOperationsLedger,
+  resolveMerchantSettlementForUser,
+  clampSocketText,
+  resolveMerchantBarterForUser,
+  emitModuleSocket,
+  normalizeMerchantSettlementSelection,
+  socketChannel: SOCKET_CHANNEL,
+  getMerchantBarterResolutionKey,
+  getMerchantBarterResolutionEntryByKey,
+  applyMerchantTradeForUser,
+  clearMerchantBarterResolutionEntryByKey,
+  applyLootClaimForUser,
+  applyLootClaimUndoForUser,
+  postLootItemClaimToChat,
+  applyLootCurrencyClaimForUser,
+  applyLootCurrencySplitForUser,
+  postLootCurrencyClaimToChat,
+  uiRef: ui
+});
+
+const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler(
+  createPartyOperationsSocketHandlerConfig({
+    game,
+    gather: {
+      applyPlayerGatherRequest,
+      promptPlayerGatherRequest: promptPlayerGatherRequestDialog,
+      promptLocalGatherCheckRoll,
+      promptLocalGatherYieldRoll,
+      resolvePendingGatherCheckRequest,
+      resolvePendingGatherYieldRequest
+    },
+    shared: {
+      settings: SETTINGS,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      normalizeRefreshScopeList,
+      setLootClaimActorSelection,
+      normalizeLootClaimActorId,
+      setLootClaimRunSelection,
+      normalizeLootClaimRunId,
+      waitForLootClaimsPublished,
+      buildLootClaimsContext,
+      logUiDebug,
+      openOperationsLootClaimsTabForPlayer,
+      openRestWatchUiForCurrentUser,
+      refreshOpenApps,
+      schedulePendingSopNoteSync,
+      syncMerchantBarterStatusForOpenDialogs,
+      getSocketRequester,
+      emitModuleSocket,
+      socketChannel: SOCKET_CHANNEL,
+      sanitizeSocketIdentifier,
+      normalizeSocketActivityType,
+      getRestActivities,
+      setModuleSettingWithLocalRefreshSuppressed,
+      emitSocketRefresh
+    },
+    rest: {
+      normalizeSocketRestRequest,
+      ops: SOCKET_REST_OPS,
+      clampSocketText,
+      clampRestWatchRichNoteText,
+      socketNoteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+      normalizeRestNoteSaveSource,
+      applyRestRequest,
+      getRestWatchState,
+      resolveRequester,
+      canAccessAllPlayerOps,
+      canUserControlActor,
+      canUserOperatePartyActor,
+      stampUpdate,
+      scheduleIntegrationSync,
+      applyPlayerActivityUpdateRequestFeature
+    },
+    march: {
+      normalizeSocketMarchRequest,
+      ops: SOCKET_MARCH_OPS,
+      ranks: SOCKET_MARCH_RANKS,
+      applyMarchRequest,
+      getMarchingOrderState,
+      canUserOperatePartyActor,
+      isMarchingOrderPlayerLocked
+    },
+    settingsWrites: {
+      applyPlayerSettingWriteRequestFeature,
+      canAccessAllPlayerOps,
+      isWritableModuleSettingKey,
+      foundry,
+      moduleId: MODULE_ID,
+      suppressNextSettingRefresh,
+      getRefreshScopesForSettingKey,
+      logUiFailure,
+      applyPlayerFolderOwnershipWriteRequestFeature,
+      constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS,
+      ui
+    },
+    operations: {
+      applyPlayerSopNoteRequestFeature,
+      sopKeys: SOP_KEYS,
+      updateOperationsLedger,
+      setSharedSopNoteText,
+      applyPlayerOperationsLedgerWriteRequestFeature,
+      buildDefaultOperationsLedger
+    },
+    downtime: {
+      applyPlayerDowntimeSubmitRequestFeature,
+      getOperationsLedger,
+      ensureDowntimeState,
+      normalizeDowntimeSubmission,
+      applyDowntimeSubmissionForUser,
+      applyPlayerDowntimeClearRequestFeature,
+      applyPlayerDowntimeQueueEditRequestFeature,
+      canUserManageDowntimeActor,
+      applyPlayerDowntimeCollectRequestFeature,
+      applyDowntimeCollectionForUser,
+      getDowntimeCollectionSummary
+    },
+    commerce: {
+      applyPlayerMerchantBarterRequest,
+      applyPlayerMerchantTradeRequest,
+      applyPlayerLootClaimRequest,
+      applyPlayerLootCurrencyClaimRequest,
+      applyPlayerLootCurrencySplitRequest,
+      applyPlayerLootUndoClaimRequest
+    }
+  })
+);
+
+function toggleCardNotes(element) {
+  const entry = element?.closest(".po-watch-entry, .po-watch-assignment-inline, .po-watch-assignment-row");
+  const notes = entry?.querySelector(".po-notes");
+  if (!notes) return;
+  const isActive = notes.classList.toggle("is-active");
+  notes.setAttribute("aria-hidden", isActive ? "false" : "true");
+  if (element?.setAttribute) element.setAttribute("aria-expanded", isActive ? "true" : "false");
+  if (isActive) {
+    const input = notes.querySelector("textarea");
+    input?.focus?.({ preventScroll: true });
+  }
+}
+
+async function toggleCampfire(element) {
+  const state = getRestWatchState();
+  const slotId = String(element?.dataset?.slotId ?? "").trim();
+  if (!slotId) {
+    ui.notifications?.warn("Rest watch slot not found for campfire toggle.");
+    return;
+  }
+  const newValue = !getRestWatchSlotCampfireState(state, slotId);
+  const updated = game.user?.isGM
+    ? await updateRestWatchState((state) => {
+        const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+        state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, state?.campfire);
+        state.campfireBySlot[slotId] = newValue;
+      })
+    : await updateRestWatchState({ op: "setCampfire", slotId, active: newValue });
+  if (!updated) return;
+  const slotLabel = String(element?.dataset?.slotLabel ?? "").trim() || "watch";
+  const status = newValue ? `Campfire lit for ${slotLabel}` : `Campfire extinguished for ${slotLabel}`;
+  ui.notifications?.info(status);
+}
+
+async function toggleCampfireAll() {
+  const state = getRestWatchState();
+  const overview = buildRestWatchCampfireOverview(
+    buildWatchSlotsView(state, true, state.visibility ?? "names-passives")
+  );
+  const newValue = !overview.allLit;
+  const updated = game.user?.isGM
+    ? await updateRestWatchState((state) => {
+        const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+        state.campfire = newValue;
+        state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, newValue);
+        for (const slotId of slotIds) {
+          state.campfireBySlot[slotId] = newValue;
+        }
+      })
+    : await updateRestWatchState({ op: "setCampfireAll", slotId: "all", active: newValue });
+  if (!updated) return;
+  ui.notifications?.info(newValue ? "Campfire lit for all watches." : "Campfire extinguished for all watches.");
+}
+
+const refreshOpenAppsController = createOpenAppRefresher({
+  normalizeRefreshScopeList,
+  getRefreshTargetWindowIds,
+  refreshableWindowIds: PARTY_OPS_REFRESHABLE_WINDOW_IDS,
+  getKnownInstances: () => getPartyOpsAppInstances(PARTY_OPS_REFRESH_INSTANCE_KEYS),
+  getUiWindows: () => ui.windows,
+  getAppWindowId,
+  appHasFocusedTypingInput,
+  logUiDebug,
+  captureWindowState,
+  rememberWindowState: (app, windowState) => pendingWindowRestore.set(app, windowState),
+  renderAppWithPreservedState,
+  captureCanvasViewState,
+  refreshLauncherAudioUi,
+  queueCanvasViewRestore,
+  requestAnimationFrameFn: requestAnimationFrame
+});
+
+function refreshOpenApps(options = {}) {
+  return refreshOpenAppsController(options);
+}
+
+function openRestWatchPlayerApp(options = {}) {
+  if (canAccessAllPlayerOps()) {
+    const app = openMainTab("rest-watch", { force: true });
+    app?.bringToTop?.();
+    return app;
+  }
+  const requestedHubTab = normalizePlayerHubTab(options?.hubTab, "");
+  if (requestedHubTab) setPlayerHubTab(requestedHubTab);
+  const existing = Object.values(ui.windows).find((app) => app instanceof RestWatchPlayerApp);
+  if (existing) {
+    existing.render?.({ force: true, parts: ["main"] });
+    existing.bringToTop?.();
+    return existing;
+  }
+  const app = new RestWatchPlayerApp(getResponsiveWindowOptions("rest-watch-player"));
+  app.render({ force: true });
+  return app;
+}
+
+export function emitSocketRefresh(options = {}) {
+  const scopes = normalizeRefreshScopeList(options?.scopes ?? options?.scope);
+  const payload = {
+    type: "refresh",
+    userId: game.user.id
+  };
+  if (scopes.length > 0) payload.scopes = scopes;
+  emitModuleSocket(payload, { channel: SOCKET_CHANNEL });
+}
+
+function emitOpenRestPlayers() {
+  emitModuleSocket({ type: "players:openRest" }, { channel: SOCKET_CHANNEL });
+}
+
+Hooks.once("ready", () => {
+  if (!game.user?.isGM) return;
+  void purgeLegacyManagedEffects();
+});

@@ -1,0 +1,1924 @@
+# Integration, Environment, And Active Effects
+
+Source: legacy/party-operations-monolith.js:3274-5188
+Feature IDs: integration-effects, hooks, operations
+Target Modules: scripts/hooks/runtime-modules, scripts/features/environment-*
+
+Actor integration payloads, environment presets, DAE metadata, and managed effect sync.
+
+----- legacy source begins -----
+function isTrackableCharacter(actor) {
+  if (!actor) return false;
+  return actor.type === "character" || actor.hasPlayerOwner;
+}
+
+function collectIntegrationActorIds() {
+  const actorIds = new Set();
+
+  const restState = getRestWatchState();
+  for (const slot of restState.slots ?? []) {
+    for (const entry of slot.entries ?? []) {
+      if (entry?.actorId) actorIds.add(entry.actorId);
+    }
+    if (slot.actorId) actorIds.add(slot.actorId);
+  }
+
+  const marchState = getMarchingOrderState();
+  for (const actorId of getOrderedMarchingActors(marchState)) {
+    if (actorId) actorIds.add(actorId);
+  }
+
+  const ledger = getOperationsLedger();
+  for (const actorId of Object.values(ledger.roles ?? {})) {
+    if (actorId) actorIds.add(actorId);
+  }
+
+  const recovery = getInjuryRecoveryState();
+  for (const actorId of Object.keys(recovery.injuries ?? {})) {
+    if (actorId) actorIds.add(actorId);
+  }
+
+  for (const actor of getResourceSyncActors()) {
+    if (actor?.id) actorIds.add(actor.id);
+  }
+
+  return Array.from(actorIds)
+    .map((actorId) => game.actors.get(actorId))
+    .filter((actor) => isTrackableCharacter(actor));
+}
+
+function buildIntegrationGlobalContext() {
+  const restState = getRestWatchState();
+  const marchState = getMarchingOrderState();
+  const ledger = getOperationsLedger();
+  const injuryRecovery = getInjuryRecoveryState();
+  const operations = buildOperationsContext();
+  const formationSnapshot = getMarchingFormationSnapshot(marchState);
+  const rankByActorId = {};
+  for (const rank of getMarchBoardRankIds()) {
+    for (const actorId of marchState.ranks?.[rank] ?? []) {
+      if (actorId && !rankByActorId[actorId]) rankByActorId[actorId] = rank;
+    }
+  }
+  const watchSlotsByActorId = {};
+  for (const slot of restState.slots ?? []) {
+    for (const entry of slot.entries ?? []) {
+      if (!entry?.actorId) continue;
+      if (!watchSlotsByActorId[entry.actorId]) watchSlotsByActorId[entry.actorId] = [];
+      watchSlotsByActorId[entry.actorId].push(slot.id);
+    }
+    if (slot.actorId) {
+      if (!watchSlotsByActorId[slot.actorId]) watchSlotsByActorId[slot.actorId] = [];
+      watchSlotsByActorId[slot.actorId].push(slot.id);
+    }
+  }
+  const rolesByActorId = {};
+  for (const [roleKey, actorId] of Object.entries(ledger.roles ?? {})) {
+    if (!actorId) continue;
+    if (!rolesByActorId[actorId]) rolesByActorId[actorId] = [];
+    rolesByActorId[actorId].push(roleKey);
+  }
+
+  return {
+    restState,
+    marchState,
+    ledger,
+    injuryRecovery,
+    operations,
+    formationSnapshot,
+    rankByActorId,
+    watchSlotsByActorId,
+    rolesByActorId
+  };
+}
+
+function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
+  const isNonParty = Boolean(options?.nonParty);
+  const includeWorldGlobal = isNonParty ? options?.includeWorldGlobal !== false : false;
+  const forceEnvironmentApply = Boolean(options?.forceEnvironmentApply);
+  const injury = globalContext.injuryRecovery.injuries?.[actorId] ?? null;
+  const roleKeys = globalContext.rolesByActorId[actorId] ?? [];
+  const watchSlots = globalContext.watchSlotsByActorId[actorId] ?? [];
+  const reputationSummary = globalContext.operations.reputation?.summary ?? { hostileCount: 0, highStandingCount: 0 };
+  const baseSummary = globalContext.operations.baseOperations ?? {
+    maintenancePressure: 0,
+    readiness: false,
+    activeSites: 0
+  };
+  const environment = globalContext.operations.environment ?? {
+    presetKey: "none",
+    movementDc: 12,
+    appliedActorIds: [],
+    preset: null
+  };
+  const environmentPreset = environment.preset ?? getEnvironmentPresetByKey(environment.presetKey);
+  const environmentApplies =
+    forceEnvironmentApply ||
+    (Array.isArray(environment.appliedActorIds) && environment.appliedActorIds.includes(actorId));
+  const environmentCheck = getEnvironmentCheckMeta(environmentPreset);
+  const environmentCheckTrigger = getEnvironmentCheckTriggerMeta(environmentPreset);
+  const environmentAction = getEnvironmentActionMeta(environmentPreset);
+  const summaryEffects = globalContext.operations.summary?.effects ?? {};
+  const globalModifiers =
+    isNonParty && includeWorldGlobal
+      ? (summaryEffects.worldGlobalModifiers ?? {})
+      : (summaryEffects.globalModifiers ?? {});
+  const customDaeChanges = isNonParty
+    ? includeWorldGlobal
+      ? Array.isArray(summaryEffects.worldDaeChanges)
+        ? summaryEffects.worldDaeChanges
+        : []
+      : []
+    : Array.isArray(summaryEffects.customDaeChanges)
+      ? summaryEffects.customDaeChanges
+      : [];
+  const formationDaeChanges = Array.isArray(globalContext.formationSnapshot?.effectChangesByActorId?.[actorId])
+    ? globalContext.formationSnapshot.effectChangesByActorId[actorId]
+    : [];
+
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    operations: {
+      prepEdge: Boolean(globalContext.operations.summary?.effects?.prepEdge),
+      riskTier: globalContext.operations.summary?.effects?.riskTier ?? "moderate",
+      roleCoverage: Number(globalContext.operations.summary?.roleCoverage ?? 0),
+      roleTotal: Number(globalContext.operations.summary?.roleTotal ?? 0),
+      activeSops: Number(globalContext.operations.summary?.activeSops ?? 0),
+      sopTotal: Number(globalContext.operations.summary?.sopTotal ?? 0),
+      hostileFactions: Number(reputationSummary.hostileCount ?? 0),
+      highStandingFactions: Number(reputationSummary.highStandingCount ?? 0),
+      supplyPressure: Number(baseSummary.maintenancePressure ?? 0),
+      supplyReadiness: Boolean(baseSummary.readiness),
+      baseSites: Number(baseSummary.activeSites ?? 0),
+      baseMaintenancePressure: Number(baseSummary.maintenancePressure ?? 0),
+      baseReadiness: Boolean(baseSummary.readiness),
+      minorInitiativeBonus: Number(globalModifiers.initiative ?? 0),
+      minorAbilityCheckBonus: Number(globalModifiers.abilityChecks ?? 0),
+      minorPerceptionBonus: Number(globalModifiers.perceptionChecks ?? 0),
+      minorSavingThrowBonus: Number(globalModifiers.savingThrows ?? 0),
+      customDaeChanges: [...customDaeChanges, ...formationDaeChanges]
+    },
+    doctrine: {
+      formation: globalContext.formationSnapshot?.formation?.id ?? "loose",
+      formationLabel: globalContext.formationSnapshot?.formation?.label ?? "Loose Formation",
+      category: globalContext.formationSnapshot?.formation?.category ?? "loose",
+      valid: Boolean(globalContext.formationSnapshot?.validity?.isValid),
+      doctrineState: globalContext.formationSnapshot?.doctrine?.state ?? MARCH_DOCTRINE_STATES.STABLE,
+      formationState: globalContext.formationSnapshot?.formationState?.state ?? MARCH_DOCTRINE_STATES.STABLE,
+      cohesionCheckRequired: Boolean(globalContext.formationSnapshot?.doctrine?.cohesionCheckRequired),
+      effectSummaries: Array.isArray(globalContext.formationSnapshot?.effectSummaries)
+        ? globalContext.formationSnapshot.effectSummaries
+        : []
+    },
+    assignment: {
+      watch: {
+        assigned: watchSlots.length > 0,
+        slots: watchSlots
+      },
+      marchingRank: globalContext.rankByActorId[actorId] ?? "unassigned",
+      roles: roleKeys
+    },
+    injury: {
+      active: Boolean(injury),
+      name: String(injury?.injuryName ?? ""),
+      effect: String(injury?.effect ?? ""),
+      notes: String(injury?.notes ?? ""),
+      stabilized: Boolean(injury?.stabilized),
+      permanent: Boolean(injury?.permanent),
+      severity: Number(injury?.severity ?? 0),
+      recoveryDays: Number(injury?.recoveryDays ?? 0)
+    },
+    environment: {
+      active: Boolean(environmentApplies && environmentPreset && environmentPreset.key !== "none"),
+      presetKey: String(environmentPreset?.key ?? "none"),
+      label: String(environmentPreset?.label ?? "None"),
+      actionKey: environmentAction.actionKey,
+      actionLabel: environmentAction.actionLabel,
+      movementCheck: Boolean(environmentPreset?.movementCheck),
+      checkType: environmentCheck.checkType,
+      checkKey: environmentCheck.checkKey,
+      checkSkill: environmentCheck.checkType === "skill" ? environmentCheck.checkKey : "",
+      checkLabel: environmentCheck.checkLabel,
+      checkTrigger: environmentCheckTrigger.trigger,
+      checkTriggerLabel: environmentCheckTrigger.label,
+      movementDc: Math.max(1, Math.floor(Number(environment.movementDc ?? 12) || 12)),
+      appliesToActor: Boolean(environmentApplies)
+    },
+    resources: {
+      campfire: Boolean(globalContext.restState.campfire),
+      foodDays: Number(globalContext.ledger.resources?.food ?? 0),
+      waterDays: Number(globalContext.ledger.resources?.water ?? 0)
+    }
+  };
+}
+
+function getIntegrationEffect(actor) {
+  return actor.effects.find((effect) => {
+    if (effect.origin === INTEGRATION_EFFECT_ORIGIN) return true;
+    if (effect.name === INTEGRATION_EFFECT_NAME && effect.getFlag(MODULE_ID, "integration") === true) return true;
+    return false;
+  });
+}
+
+function getInjuryStatusEffect(actor) {
+  return actor.effects.find((effect) => {
+    if (effect.origin === INJURY_EFFECT_ORIGIN) return true;
+    if (effect.getFlag(MODULE_ID, "injuryStatus") === true) return true;
+    return String(effect.name ?? "").startsWith(`${INJURY_EFFECT_NAME_PREFIX} `);
+  });
+}
+
+function getEnvironmentStatusEffect(actor) {
+  return actor.effects.find((effect) => {
+    if (effect.origin === ENVIRONMENT_EFFECT_ORIGIN) return true;
+    if (effect.getFlag(MODULE_ID, "environmentStatus") === true) return true;
+    return String(effect.name ?? "").startsWith(`${ENVIRONMENT_EFFECT_NAME_PREFIX} `);
+  });
+}
+
+function slugifyEnvironmentIdentifier(value, fallbackPrefix = "environment") {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallbackPrefix;
+}
+
+function buildUniqueEnvironmentIdentifier(label, existingKeys = [], fallbackPrefix = "environment") {
+  const existing = new Set(
+    Array.from(existingKeys ?? [])
+      .map((entry) => String(entry ?? "").trim())
+      .filter(Boolean)
+  );
+  const base = slugifyEnvironmentIdentifier(label, fallbackPrefix);
+  if (!existing.has(base)) return base;
+  let index = 2;
+  while (existing.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
+}
+
+function normalizeEnvironmentActionDefinition(raw = {}, fallback = {}) {
+  const key = slugifyEnvironmentIdentifier(raw?.key ?? fallback?.key, "action");
+  const fallbackLabel = String(fallback?.label ?? key).trim();
+  const label = String(raw?.label ?? fallbackLabel).trim() || fallbackLabel || "Action";
+  return {
+    key,
+    label,
+    description: String(raw?.description ?? fallback?.description ?? "").trim()
+  };
+}
+
+function buildEnvironmentActionCatalog(environmentState = null) {
+  const defaults = ENVIRONMENT_ACTIONS.map((entry) => normalizeEnvironmentActionDefinition(entry));
+  const catalog = new Map(defaults.map((entry) => [entry.key, entry]));
+  const definitions =
+    environmentState?.actionDefinitions && typeof environmentState.actionDefinitions === "object"
+      ? environmentState.actionDefinitions
+      : {};
+
+  for (const [rawKey, rawDefinition] of Object.entries(definitions)) {
+    const key = slugifyEnvironmentIdentifier(rawKey, "action");
+    const fallback = catalog.get(key) ?? { key, label: key };
+    catalog.set(key, normalizeEnvironmentActionDefinition({ ...(rawDefinition ?? {}), key }, fallback));
+  }
+
+  const orderedKeys = [];
+  const pushed = new Set();
+  const pushKey = (rawKey) => {
+    const key = String(rawKey ?? "").trim();
+    if (!key || pushed.has(key) || !catalog.has(key)) return;
+    pushed.add(key);
+    orderedKeys.push(key);
+  };
+
+  const rawOrder = Array.isArray(environmentState?.actionOrder) ? environmentState.actionOrder : [];
+  rawOrder.forEach((rawKey) => pushKey(slugifyEnvironmentIdentifier(rawKey, "action")));
+  defaults.forEach((entry) => pushKey(entry.key));
+  Array.from(catalog.keys()).forEach((key) => pushKey(key));
+
+  return orderedKeys.map((key) => catalog.get(key)).filter(Boolean);
+}
+
+function getEnvironmentActionByKey(key, environmentState = null) {
+  const catalog = buildEnvironmentActionCatalog(environmentState);
+  const normalizedKey = slugifyEnvironmentIdentifier(key, "action");
+  return (
+    catalog.find((entry) => entry.key === normalizedKey) ??
+    catalog[0] ??
+    normalizeEnvironmentActionDefinition({ key: "move", label: "Move" })
+  );
+}
+
+function normalizeEnvironmentEffectChange(raw = {}, options = {}) {
+  const fallbackId = options?.fallbackId ?? foundry.utils.randomID();
+  return {
+    id: String(raw?.id ?? fallbackId).trim() || fallbackId,
+    key: String(raw?.key ?? "").trim(),
+    value: String(raw?.value ?? "").trim()
+  };
+}
+
+function normalizeEnvironmentPresetDefinition(raw = {}, fallback = {}, options = {}) {
+  const actionCatalog = Array.isArray(options?.actionCatalog)
+    ? options.actionCatalog
+    : buildEnvironmentActionCatalog(options?.environmentState ?? null);
+  const validActionKeys = new Set(actionCatalog.map((entry) => entry.key));
+  const resolvedKey = slugifyEnvironmentIdentifier(raw?.key ?? fallback?.key, "preset");
+  const resolvedActionKey = slugifyEnvironmentIdentifier(raw?.actionKey ?? fallback?.actionKey ?? "move", "action");
+  const actionKey = validActionKeys.has(resolvedActionKey) ? resolvedActionKey : (actionCatalog[0]?.key ?? "move");
+  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((value) => Number(value)));
+  const rawDaeMode = Math.floor(
+    Number(raw?.successiveFailDaeChangeMode ?? fallback?.successiveFailDaeChangeMode ?? CONST.ACTIVE_EFFECT_MODES.ADD)
+  );
+  const effectChangesRaw = Array.isArray(raw?.effectChanges)
+    ? raw.effectChanges
+    : Array.isArray(fallback?.effectChanges)
+      ? fallback.effectChanges
+      : [];
+  const effectChanges = effectChangesRaw.map((entry, index) =>
+    normalizeEnvironmentEffectChange(entry, { fallbackId: `${resolvedKey}-change-${index + 1}` })
+  );
+  const preset = {
+    key: resolvedKey,
+    label: String(raw?.label ?? fallback?.label ?? resolvedKey).trim() || "Environment Preset",
+    description: String(raw?.description ?? fallback?.description ?? "").trim(),
+    icon: String(raw?.icon ?? fallback?.icon ?? "icons/svg/hazard.svg").trim() || "icons/svg/hazard.svg",
+    actionKey,
+    movementCheck: Boolean(raw?.movementCheck ?? fallback?.movementCheck ?? false),
+    checkTrigger: normalizeEnvironmentCheckTrigger(raw?.checkTrigger ?? fallback?.checkTrigger ?? "move"),
+    checkType:
+      String(raw?.checkType ?? fallback?.checkType ?? "skill")
+        .trim()
+        .toLowerCase() === "save"
+        ? "save"
+        : "skill",
+    checkKey: String(raw?.checkKey ?? raw?.checkSkill ?? fallback?.checkKey ?? fallback?.checkSkill ?? "")
+      .trim()
+      .toLowerCase(),
+    checkLabel: String(raw?.checkLabel ?? fallback?.checkLabel ?? "").trim(),
+    defaultDc: Math.max(1, Math.min(30, Math.floor(Number(raw?.defaultDc ?? fallback?.defaultDc ?? 12) || 12))),
+    failStatusId: String(raw?.failStatusId ?? fallback?.failStatusId ?? "").trim(),
+    failSlideFeet: Math.max(
+      0,
+      Math.min(500, Math.floor(Number(raw?.failSlideFeet ?? fallback?.failSlideFeet ?? 0) || 0))
+    ),
+    failSpeedZeroTurns: Math.max(
+      0,
+      Math.min(10, Math.floor(Number(raw?.failSpeedZeroTurns ?? fallback?.failSpeedZeroTurns ?? 0) || 0))
+    ),
+    failDamageFormula: String(raw?.failDamageFormula ?? fallback?.failDamageFormula ?? "").trim(),
+    failDamageType: String(raw?.failDamageType ?? fallback?.failDamageType ?? "").trim(),
+    failExhaustion: Math.max(
+      0,
+      Math.min(6, Math.floor(Number(raw?.failExhaustion ?? fallback?.failExhaustion ?? 0) || 0))
+    ),
+    failBy5StatusId: String(raw?.failBy5StatusId ?? fallback?.failBy5StatusId ?? "").trim(),
+    failBy5SlideFeet: Math.max(
+      0,
+      Math.min(500, Math.floor(Number(raw?.failBy5SlideFeet ?? fallback?.failBy5SlideFeet ?? 0) || 0))
+    ),
+    failBy5DamageFormula: String(raw?.failBy5DamageFormula ?? fallback?.failBy5DamageFormula ?? "").trim(),
+    failBy5DamageType: String(raw?.failBy5DamageType ?? fallback?.failBy5DamageType ?? "").trim(),
+    failBy5MaxHpReductionFormula: String(
+      raw?.failBy5MaxHpReductionFormula ?? fallback?.failBy5MaxHpReductionFormula ?? ""
+    ).trim(),
+    successiveFailStatusId: String(raw?.successiveFailStatusId ?? fallback?.successiveFailStatusId ?? "").trim(),
+    successiveFailSlideFeet: Math.max(
+      0,
+      Math.min(500, Math.floor(Number(raw?.successiveFailSlideFeet ?? fallback?.successiveFailSlideFeet ?? 0) || 0))
+    ),
+    successiveFailExhaustion: Math.max(
+      0,
+      Math.min(6, Math.floor(Number(raw?.successiveFailExhaustion ?? fallback?.successiveFailExhaustion ?? 0) || 0))
+    ),
+    successiveFailDamageFormula: String(
+      raw?.successiveFailDamageFormula ?? fallback?.successiveFailDamageFormula ?? ""
+    ).trim(),
+    successiveFailDamageType: String(raw?.successiveFailDamageType ?? fallback?.successiveFailDamageType ?? "").trim(),
+    successiveFailMaxHpReductionFormula: String(
+      raw?.successiveFailMaxHpReductionFormula ?? fallback?.successiveFailMaxHpReductionFormula ?? ""
+    ).trim(),
+    successiveFailDaeChangeKey: String(
+      raw?.successiveFailDaeChangeKey ?? fallback?.successiveFailDaeChangeKey ?? ""
+    ).trim(),
+    successiveFailDaeChangeMode: validModes.has(rawDaeMode) ? rawDaeMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD),
+    successiveFailDaeChangeValue: String(
+      raw?.successiveFailDaeChangeValue ?? fallback?.successiveFailDaeChangeValue ?? ""
+    ).trim(),
+    alwaysStatusId: String(raw?.alwaysStatusId ?? fallback?.alwaysStatusId ?? "").trim(),
+    effectChanges
+  };
+  const checkMeta = getEnvironmentCheckMeta(preset);
+  preset.checkType = checkMeta.checkType;
+  preset.checkKey = checkMeta.checkKey;
+  preset.checkLabel = checkMeta.checkLabel;
+  return preset;
+}
+
+function buildEnvironmentPresetCatalog(environmentState = null) {
+  const actionCatalog = buildEnvironmentActionCatalog(environmentState);
+  const defaults = ENVIRONMENT_PRESETS.map((entry) =>
+    normalizeEnvironmentPresetDefinition(
+      entry,
+      {},
+      {
+        actionCatalog,
+        environmentState
+      }
+    )
+  );
+  const catalog = new Map(defaults.map((entry) => [entry.key, entry]));
+  const definitions =
+    environmentState?.presetDefinitions && typeof environmentState.presetDefinitions === "object"
+      ? environmentState.presetDefinitions
+      : {};
+
+  for (const [rawKey, rawDefinition] of Object.entries(definitions)) {
+    const key = slugifyEnvironmentIdentifier(rawKey, "preset");
+    const fallback = catalog.get(key) ?? { key, label: key };
+    catalog.set(
+      key,
+      normalizeEnvironmentPresetDefinition({ ...(rawDefinition ?? {}), key }, fallback, {
+        actionCatalog,
+        environmentState
+      })
+    );
+  }
+
+  const orderedKeys = [];
+  const pushed = new Set();
+  const pushKey = (rawKey) => {
+    const key = String(rawKey ?? "").trim();
+    if (!key || pushed.has(key) || !catalog.has(key)) return;
+    pushed.add(key);
+    orderedKeys.push(key);
+  };
+
+  pushKey("none");
+  const rawOrder = Array.isArray(environmentState?.presetOrder) ? environmentState.presetOrder : [];
+  rawOrder.forEach((rawKey) => pushKey(slugifyEnvironmentIdentifier(rawKey, "preset")));
+  defaults.forEach((entry) => pushKey(entry.key));
+  Array.from(catalog.keys()).forEach((key) => pushKey(key));
+
+  return orderedKeys.map((key) => catalog.get(key)).filter(Boolean);
+}
+
+function getEnvironmentPresetByKey(key, environmentState = null) {
+  const resolvedEnvironmentState = environmentState ?? getOperationsLedger()?.environment ?? null;
+  const catalog = buildEnvironmentPresetCatalog(resolvedEnvironmentState);
+  const normalizedKey = slugifyEnvironmentIdentifier(key, "preset");
+  return (
+    catalog.find((entry) => entry.key === normalizedKey) ?? catalog.find((entry) => entry.key === "none") ?? catalog[0]
+  );
+}
+
+function getEnvironmentCheckMeta(source = {}) {
+  const checkType = String(source.checkType ?? "skill").toLowerCase() === "save" ? "save" : "skill";
+  const fallbackKey = checkType === "save" ? "con" : "ath";
+  const rawKey = String(source.checkKey ?? source.checkSkill ?? "")
+    .trim()
+    .toLowerCase();
+  const movementCheck = Boolean(source.movementCheck);
+  const checkKey = rawKey || (movementCheck ? fallbackKey : "");
+  const defaultLabel = checkKey
+    ? checkType === "save"
+      ? `${checkKey.toUpperCase()} Save`
+      : checkKey.toUpperCase()
+    : "";
+  const checkLabel = String(source.checkLabel ?? defaultLabel).trim();
+  return {
+    checkType,
+    checkKey,
+    checkLabel
+  };
+}
+
+function getEnvironmentCheckTriggerMeta(source = {}) {
+  const trigger = normalizeEnvironmentCheckTrigger(source?.checkTrigger ?? "move");
+  const match = ENVIRONMENT_CHECK_TRIGGERS.find((entry) => entry.value === trigger);
+  return {
+    trigger,
+    label: String(match?.label ?? "On Movement"),
+    isMove: trigger === "move",
+    isManual: trigger === "manual"
+  };
+}
+
+function getEnvironmentActionMeta(source = {}, environmentState = null) {
+  const action = getEnvironmentActionByKey(source?.actionKey ?? "move", environmentState);
+  return {
+    actionKey: action.key,
+    actionLabel: action.label,
+    actionDescription: action.description,
+    actionLabelLower: String(action.label ?? "action")
+      .trim()
+      .toLowerCase()
+  };
+}
+
+function getStatusLabelById(statusId) {
+  const id = String(statusId ?? "").trim();
+  if (!id) return "";
+  const match = CONFIG.statusEffects?.find((entry) => String(entry?.id ?? "") === id);
+  return String(match?.name ?? id);
+}
+
+function getActiveEffectModeLabel(mode) {
+  const numericMode = Math.floor(Number(mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+  const entry = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {}).find(([, value]) => Number(value) === numericMode);
+  return entry ? entry[0] : "ADD";
+}
+
+const FRIENDLY_DAE_KEYS = [
+  { key: "system.attributes.movement.walk", label: "Movement Speed (Walk)", hint: "Changes base walking speed." },
+  { key: "system.attributes.movement.fly", label: "Movement Speed (Fly)", hint: "Changes base flying speed." },
+  { key: "system.attributes.movement.swim", label: "Movement Speed (Swim)", hint: "Changes base swimming speed." },
+  { key: "system.attributes.ac.value", label: "Armor Class", hint: "Changes AC value." },
+  { key: "system.attributes.hp.value", label: "Current HP", hint: "Directly changes current HP." },
+  { key: "system.attributes.hp.max", label: "Max HP", hint: "Changes maximum HP." },
+  { key: "system.attributes.hp.temp", label: "Temporary HP", hint: "Adds or sets temporary HP." },
+  { key: "system.attributes.init.bonus", label: "Initiative Bonus", hint: "Adds to initiative rolls." },
+  {
+    key: "system.bonuses.abilities.check",
+    label: "All Ability Checks",
+    hint: "Global bonus/penalty for ability checks."
+  },
+  { key: "system.bonuses.abilities.save", label: "All Saving Throws", hint: "Global bonus/penalty for saves." },
+  { key: "system.bonuses.mwak.attack", label: "Melee Weapon Attacks", hint: "Bonus/penalty to melee weapon attacks." },
+  {
+    key: "system.bonuses.rwak.attack",
+    label: "Ranged Weapon Attacks",
+    hint: "Bonus/penalty to ranged weapon attacks."
+  },
+  { key: "system.bonuses.msak.attack", label: "Melee Spell Attacks", hint: "Bonus/penalty to melee spell attacks." },
+  { key: "system.bonuses.rsak.attack", label: "Ranged Spell Attacks", hint: "Bonus/penalty to ranged spell attacks." },
+  { key: "system.skills.ath.bonuses.check", label: "Athletics Checks", hint: "Bonus/penalty to Athletics checks." },
+  { key: "system.skills.acr.bonuses.check", label: "Acrobatics Checks", hint: "Bonus/penalty to Acrobatics checks." },
+  { key: "system.skills.prc.bonuses.check", label: "Perception Checks", hint: "Bonus/penalty to Perception checks." },
+  { key: "system.skills.ste.bonuses.check", label: "Stealth Checks", hint: "Bonus/penalty to Stealth checks." }
+];
+
+let daeModifierCatalogCache = null;
+
+function humanizeDaeKey(key) {
+  return String(key ?? "")
+    .split(".")
+    .filter(Boolean)
+    .slice(-2)
+    .map((part) => part.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]/g, " "))
+    .join(" ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function collectObjectPaths(source, prefix = "", output = new Set(), depth = 0) {
+  if (!source || typeof source !== "object" || depth > 8) return output;
+  for (const [rawKey, value] of Object.entries(source)) {
+    const key = String(rawKey ?? "").trim();
+    if (!key) continue;
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (path.startsWith("system.") || path.startsWith("flags.") || path.startsWith("prototypeToken.")) output.add(path);
+    if (value && typeof value === "object") collectObjectPaths(value, path, output, depth + 1);
+  }
+  return output;
+}
+
+function extractDaeSpecKeys(rawSpecs) {
+  const keys = new Set();
+  if (!rawSpecs) return keys;
+
+  const pushIfKey = (candidate) => {
+    if (typeof candidate === "string") {
+      const key = candidate.trim();
+      if (key && key.includes(".")) keys.add(key);
+      return;
+    }
+    if (!candidate || typeof candidate !== "object") return;
+    const candidateKeys = [
+      candidate.key,
+      candidate.path,
+      candidate.fieldSpec,
+      candidate.spec,
+      candidate.attr,
+      candidate.value
+    ];
+    for (const raw of candidateKeys) {
+      if (typeof raw !== "string") continue;
+      const key = raw.trim();
+      if (key && key.includes(".")) keys.add(key);
+    }
+  };
+
+  if (Array.isArray(rawSpecs)) {
+    for (const entry of rawSpecs) pushIfKey(entry);
+    return keys;
+  }
+
+  if (rawSpecs instanceof Map) {
+    for (const [mapKey, mapValue] of rawSpecs.entries()) {
+      pushIfKey(mapKey);
+      pushIfKey(mapValue);
+    }
+    return keys;
+  }
+
+  if (typeof rawSpecs === "object") {
+    for (const [objectKey, objectValue] of Object.entries(rawSpecs)) {
+      pushIfKey(objectKey);
+      pushIfKey(objectValue);
+    }
+  }
+
+  return keys;
+}
+
+function collectDaeCatalogSpecKeys() {
+  const keys = new Set();
+  const daeModuleApi = game.modules?.get("dae")?.api ?? null;
+  const daeGlobal = globalThis.DAE ?? null;
+  const specCandidates = [
+    daeModuleApi?.ValidSpec?.allSpecsObj,
+    daeModuleApi?.ValidSpec?.allSpecs,
+    daeModuleApi?.validSpec,
+    daeGlobal?.ValidSpec?.allSpecsObj,
+    daeGlobal?.ValidSpec?.allSpecs,
+    daeGlobal?.validSpec
+  ];
+  for (const candidate of specCandidates) {
+    const extracted = extractDaeSpecKeys(candidate);
+    for (const key of extracted) keys.add(key);
+  }
+  return keys;
+}
+
+function buildDaeModifierCatalog() {
+  const map = new Map();
+  for (const entry of FRIENDLY_DAE_KEYS) {
+    map.set(entry.key, { key: entry.key, label: entry.label, hint: entry.hint });
+  }
+
+  const addCatalogKey = (rawKey, hintPrefix = "Effect field") => {
+    const key = String(rawKey ?? "").trim();
+    if (!key || map.has(key)) return;
+    map.set(key, { key, label: humanizeDaeKey(key), hint: `${hintPrefix}: ${key}` });
+  };
+
+  for (const preset of buildEnvironmentPresetCatalog(getOperationsLedger()?.environment ?? null)) {
+    for (const change of preset.effectChanges ?? []) {
+      addCatalogKey(change?.key, "System field");
+    }
+  }
+
+  for (const specKey of collectDaeCatalogSpecKeys()) {
+    addCatalogKey(specKey, "DAE spec");
+  }
+
+  const model = game.system?.model?.Actor ?? {};
+  const discovered = new Set();
+  for (const value of Object.values(model)) {
+    collectObjectPaths(value, "system", discovered);
+  }
+  for (const key of discovered) {
+    addCatalogKey(key, "System field");
+  }
+
+  for (const actor of game.actors?.contents ?? []) {
+    const actorData = actor?.toObject?.();
+    if (!actorData || typeof actorData !== "object") continue;
+    const actorDiscovered = collectObjectPaths(actorData);
+    for (const key of actorDiscovered) {
+      addCatalogKey(key, "Actor field");
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const labelCompare = String(a.label).localeCompare(String(b.label));
+    if (labelCompare !== 0) return labelCompare;
+    return String(a.key).localeCompare(String(b.key));
+  });
+}
+
+function getDaeModifierCatalog() {
+  if (!daeModifierCatalogCache) daeModifierCatalogCache = buildDaeModifierCatalog();
+  return daeModifierCatalogCache;
+}
+
+function buildEnvironmentDaeChangeKeyCatalog() {
+  return getDaeModifierCatalog();
+}
+
+function buildDamageTypeOptions(selected = "") {
+  const selectedValue = String(selected ?? "")
+    .trim()
+    .toLowerCase();
+  const rawDamageTypes = CONFIG?.DND5E?.damageTypes ?? CONFIG?.damageTypes ?? {};
+  const options = [{ value: "", label: "None", selected: selectedValue === "" }];
+
+  const resolveDamageTypeLabel = (raw, fallback) => {
+    if (typeof raw === "string") {
+      return raw.includes(".") ? (game.i18n?.localize?.(raw) ?? raw) : raw;
+    }
+    if (raw && typeof raw === "object") {
+      const candidate = String(raw.label ?? raw.name ?? raw.value ?? "").trim();
+      if (candidate) return candidate.includes(".") ? (game.i18n?.localize?.(candidate) ?? candidate) : candidate;
+    }
+    return fallback;
+  };
+
+  for (const [valueRaw, labelRaw] of Object.entries(rawDamageTypes)) {
+    const value = String(valueRaw ?? "").trim();
+    if (!value) continue;
+    const localized = resolveDamageTypeLabel(labelRaw, value);
+    options.push({
+      value,
+      label: localized,
+      selected: value.toLowerCase() === selectedValue
+    });
+  }
+
+  if (selectedValue && !options.some((entry) => String(entry.value).toLowerCase() === selectedValue)) {
+    options.push({ value: selectedValue, label: selectedValue, selected: true });
+  }
+
+  return options;
+}
+
+function buildStatusEffectOptions(selected = "") {
+  const selectedValue = String(selected ?? "").trim();
+  return [
+    { value: "", label: "None", selected: !selectedValue },
+    ...(CONFIG.statusEffects ?? [])
+      .map((entry) => {
+        const value = String(entry?.id ?? "").trim();
+        return {
+          value,
+          label: String((entry?.name ?? value) || "Status").trim(),
+          selected: value === selectedValue
+        };
+      })
+      .filter((entry) => entry.value)
+  ];
+}
+
+function buildEnvironmentCheckTypeOptions(selected = "skill") {
+  const selectedValue =
+    String(selected ?? "")
+      .trim()
+      .toLowerCase() === "save"
+      ? "save"
+      : "skill";
+  return [
+    { value: "skill", label: "Skill Check", selected: selectedValue === "skill" },
+    { value: "save", label: "Saving Throw", selected: selectedValue === "save" }
+  ];
+}
+
+function buildEnvironmentCheckTriggerOptions(selected = "move") {
+  const selectedValue = normalizeEnvironmentCheckTrigger(selected);
+  return ENVIRONMENT_CHECK_TRIGGERS.map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: entry.value === selectedValue
+  }));
+}
+
+function buildEnvironmentCheckKeyOptions(checkType = "skill", selected = "") {
+  const normalizedType =
+    String(checkType ?? "")
+      .trim()
+      .toLowerCase() === "save"
+      ? "save"
+      : "skill";
+  const selectedValue = String(selected ?? "")
+    .trim()
+    .toLowerCase();
+  const source =
+    normalizedType === "save"
+      ? (CONFIG?.DND5E?.abilities ?? CONFIG?.abilities ?? {})
+      : (CONFIG?.DND5E?.skills ?? CONFIG?.skills ?? {});
+  const fallbackKeys =
+    normalizedType === "save" ? ["str", "dex", "con", "int", "wis", "cha"] : ["acr", "ath", "prc", "ste", "sur"];
+  const options = [];
+
+  const resolveLabel = (rawValue, fallback) => {
+    if (typeof rawValue === "string") {
+      return rawValue.includes(".") ? (game.i18n?.localize?.(rawValue) ?? rawValue) : rawValue;
+    }
+    if (rawValue && typeof rawValue === "object") {
+      const candidate = String(rawValue.label ?? rawValue.name ?? rawValue.value ?? "").trim();
+      if (candidate) return candidate.includes(".") ? (game.i18n?.localize?.(candidate) ?? candidate) : candidate;
+    }
+    return fallback;
+  };
+
+  for (const [valueRaw, labelRaw] of Object.entries(source)) {
+    const value = String(valueRaw ?? "")
+      .trim()
+      .toLowerCase();
+    if (!value) continue;
+    options.push({
+      value,
+      label: resolveLabel(labelRaw, value.toUpperCase()),
+      selected: value === selectedValue
+    });
+  }
+
+  if (options.length === 0) {
+    fallbackKeys.forEach((value) => {
+      options.push({
+        value,
+        label: value.toUpperCase(),
+        selected: value === selectedValue
+      });
+    });
+  }
+
+  if (selectedValue && !options.some((entry) => entry.value === selectedValue)) {
+    options.push({ value: selectedValue, label: selectedValue.toUpperCase(), selected: true });
+  }
+
+  return options.sort((left, right) => String(left.label ?? "").localeCompare(String(right.label ?? "")));
+}
+
+function buildPartyHealthModifierKeyCatalog() {
+  return getDaeModifierCatalog();
+}
+
+function buildEnvironmentOutcomeSummary(preset) {
+  const actionMeta = getEnvironmentActionMeta(preset);
+  const statusLabel = getStatusLabelById(preset?.failStatusId);
+  const failParts = [];
+  if (statusLabel) failParts.push(`Apply ${statusLabel}`);
+  const failSlideFeet = Math.max(0, Number(preset?.failSlideFeet ?? 0) || 0);
+  if (failSlideFeet > 0) failParts.push(`Slide ${failSlideFeet} ft`);
+  const failSpeedZeroTurns = Math.max(0, Number(preset?.failSpeedZeroTurns ?? 0) || 0);
+  if (failSpeedZeroTurns > 0) {
+    const turnLabel = failSpeedZeroTurns === 1 ? "turn" : "turns";
+    failParts.push(`Speed 0 for ${failSpeedZeroTurns} ${turnLabel}`);
+  }
+  const failDamageFormula = String(preset?.failDamageFormula ?? "").trim();
+  const failDamageType = String(preset?.failDamageType ?? "").trim();
+  if (failDamageFormula) failParts.push(`${failDamageFormula} ${failDamageType || "damage"}`.trim());
+  const failExhaustion = Math.max(0, Number(preset?.failExhaustion ?? 0) || 0);
+  if (failExhaustion > 0) {
+    const levelLabel = failExhaustion === 1 ? "level" : "levels";
+    failParts.push(`+${failExhaustion} exhaustion ${levelLabel}`);
+  }
+
+  const failBy5StatusLabel = getStatusLabelById(preset?.failBy5StatusId);
+  const failBy5Parts = [];
+  if (failBy5StatusLabel) failBy5Parts.push(`Apply ${failBy5StatusLabel}`);
+  const failBy5SlideFeet = Math.max(0, Number(preset?.failBy5SlideFeet ?? 0) || 0);
+  if (failBy5SlideFeet > 0) failBy5Parts.push(`Slide ${failBy5SlideFeet} ft`);
+  const failBy5DamageFormula = String(preset?.failBy5DamageFormula ?? "").trim();
+  const failBy5DamageType = String(preset?.failBy5DamageType ?? "").trim();
+  if (failBy5DamageFormula) failBy5Parts.push(`${failBy5DamageFormula} ${failBy5DamageType || "damage"}`.trim());
+  const failBy5MaxHpReductionFormula = String(preset?.failBy5MaxHpReductionFormula ?? "").trim();
+  if (failBy5MaxHpReductionFormula)
+    failBy5Parts.push(`Reduce max HP by ${failBy5MaxHpReductionFormula} (temporary effect)`);
+
+  const successiveFailParts = [];
+  const successiveFailStatusLabel = getStatusLabelById(preset?.successiveFailStatusId);
+  if (successiveFailStatusLabel) successiveFailParts.push(`Apply ${successiveFailStatusLabel}`);
+  const successiveFailSlideFeet = Math.max(0, Number(preset?.successiveFailSlideFeet ?? 0) || 0);
+  if (successiveFailSlideFeet > 0) successiveFailParts.push(`Slide ${successiveFailSlideFeet} ft`);
+  const successiveFailExhaustion = Math.max(
+    0,
+    Number(preset?.successiveFailExhaustion ?? (preset?.movementCheck ? 1 : 0)) || 0
+  );
+  if (successiveFailExhaustion > 0) {
+    const levelLabel = successiveFailExhaustion === 1 ? "level" : "levels";
+    successiveFailParts.push(`+${successiveFailExhaustion} exhaustion ${levelLabel}`);
+  }
+  const successiveFailDamageFormula = String(preset?.successiveFailDamageFormula ?? "").trim();
+  const successiveFailDamageType = String(preset?.successiveFailDamageType ?? "").trim();
+  if (successiveFailDamageFormula) {
+    successiveFailParts.push(`${successiveFailDamageFormula} ${successiveFailDamageType || "damage"}`.trim());
+  }
+  const successiveFailMaxHpReductionFormula = String(preset?.successiveFailMaxHpReductionFormula ?? "").trim();
+  if (successiveFailMaxHpReductionFormula) {
+    successiveFailParts.push(`Reduce max HP by ${successiveFailMaxHpReductionFormula} (temporary effect)`);
+  }
+  const successiveFailDaeChangeKey = String(preset?.successiveFailDaeChangeKey ?? "").trim();
+  const successiveFailDaeChangeValue = String(preset?.successiveFailDaeChangeValue ?? "").trim();
+  const successiveFailDaeChangeMode = Math.floor(
+    Number(preset?.successiveFailDaeChangeMode ?? CONST.ACTIVE_EFFECT_MODES.ADD)
+  );
+  if (successiveFailDaeChangeKey && successiveFailDaeChangeValue) {
+    const modeLabel = getActiveEffectModeLabel(successiveFailDaeChangeMode);
+    successiveFailParts.push(
+      `DAE Change ${successiveFailDaeChangeKey} (${modeLabel}) = ${successiveFailDaeChangeValue}`
+    );
+  }
+
+  const alwaysStatusLabel = getStatusLabelById(preset?.alwaysStatusId);
+
+  return {
+    onSuccess: preset?.movementCheck
+      ? `No failure consequences are applied when the ${actionMeta.actionLabelLower} check succeeds.`
+      : `No check required for ${actionMeta.actionLabelLower}.`,
+    onFail: failParts.length > 0 ? failParts.join("; ") : "No additional failure consequence.",
+    onFailBy5: failBy5Parts.length > 0 ? failBy5Parts.join("; ") : "No additional fail-by-5 consequence.",
+    onSuccessiveFail:
+      successiveFailParts.length > 0
+        ? `On 2+ consecutive failures: ${successiveFailParts.join("; ")}`
+        : "No additional consecutive-failure consequence.",
+    alwaysOn: alwaysStatusLabel || "None"
+  };
+}
+
+function getEnvironmentSuccessiveDefaults(preset) {
+  return {
+    statusId: String(preset?.successiveFailStatusId ?? "").trim(),
+    slideFeet: Math.max(0, Number(preset?.successiveFailSlideFeet ?? 0) || 0),
+    exhaustion: Math.max(0, Number(preset?.successiveFailExhaustion ?? (preset?.movementCheck ? 1 : 0)) || 0),
+    damageFormula: String(preset?.successiveFailDamageFormula ?? "").trim(),
+    damageType: String(preset?.successiveFailDamageType ?? "").trim(),
+    maxHpReductionFormula: String(preset?.successiveFailMaxHpReductionFormula ?? "").trim(),
+    daeChangeKey: String(preset?.successiveFailDaeChangeKey ?? "").trim(),
+    daeChangeMode: Math.floor(Number(preset?.successiveFailDaeChangeMode ?? CONST.ACTIVE_EFFECT_MODES.ADD)),
+    daeChangeValue: String(preset?.successiveFailDaeChangeValue ?? "").trim()
+  };
+}
+
+function normalizeEnvironmentSuccessiveOverride(raw = {}) {
+  const rawMode = Math.floor(Number(raw?.daeChangeMode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((value) => Number(value)));
+  return {
+    statusId: String(raw?.statusId ?? "").trim(),
+    slideFeet: Math.max(0, Math.min(500, Math.floor(Number(raw?.slideFeet ?? 0) || 0))),
+    exhaustion: Math.max(0, Math.min(6, Math.floor(Number(raw?.exhaustion ?? 0) || 0))),
+    damageFormula: String(raw?.damageFormula ?? "").trim(),
+    damageType: String(raw?.damageType ?? "").trim(),
+    maxHpReductionFormula: String(raw?.maxHpReductionFormula ?? "").trim(),
+    daeChangeKey: String(raw?.daeChangeKey ?? "").trim(),
+    daeChangeMode: validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD),
+    daeChangeValue: String(raw?.daeChangeValue ?? "").trim()
+  };
+}
+
+function getEnvironmentSuccessiveConfig(environmentState, preset) {
+  const defaults = getEnvironmentSuccessiveDefaults(preset);
+  const presetKey = String(preset?.key ?? "none");
+  const rawOverride = environmentState?.successiveByPreset?.[presetKey] ?? null;
+  if (!rawOverride || typeof rawOverride !== "object") return defaults;
+  const override = normalizeEnvironmentSuccessiveOverride(rawOverride);
+  return {
+    statusId: override.statusId,
+    slideFeet: override.slideFeet,
+    exhaustion: override.exhaustion,
+    damageFormula: override.damageFormula,
+    damageType: override.damageType,
+    maxHpReductionFormula: override.maxHpReductionFormula,
+    daeChangeKey: override.daeChangeKey,
+    daeChangeMode: override.daeChangeMode,
+    daeChangeValue: override.daeChangeValue
+  };
+}
+
+function applyEnvironmentSuccessiveConfigToPreset(preset, environmentState) {
+  if (!preset || typeof preset !== "object") return preset;
+  const config = getEnvironmentSuccessiveConfig(environmentState, preset);
+  return {
+    ...preset,
+    successiveFailStatusId: config.statusId,
+    successiveFailSlideFeet: config.slideFeet,
+    successiveFailExhaustion: config.exhaustion,
+    successiveFailDamageFormula: config.damageFormula,
+    successiveFailDamageType: config.damageType,
+    successiveFailMaxHpReductionFormula: config.maxHpReductionFormula,
+    successiveFailDaeChangeKey: config.daeChangeKey,
+    successiveFailDaeChangeMode: config.daeChangeMode,
+    successiveFailDaeChangeValue: config.daeChangeValue
+  };
+}
+
+function ensureEnvironmentState(ledger) {
+  if (!ledger.environment || typeof ledger.environment !== "object") {
+    ledger.environment = {
+      presetKey: "none",
+      movementDc: 12,
+      appliedActorIds: [],
+      syncToSceneNonParty: true,
+      configurePresetKey: "slippery-surface",
+      configureActionKey: "move",
+      note: "",
+      logs: [],
+      failureStreaks: {},
+      checkResults: [],
+      successiveByPreset: {},
+      presetDefinitions: {},
+      presetOrder: [],
+      actionDefinitions: {},
+      actionOrder: []
+    };
+  }
+  if (!ledger.environment.actionDefinitions || typeof ledger.environment.actionDefinitions !== "object") {
+    ledger.environment.actionDefinitions = {};
+  }
+  if (!Array.isArray(ledger.environment.actionOrder)) ledger.environment.actionOrder = [];
+  const normalizedActionDefinitions = {};
+  for (const [actionKeyRaw, definitionRaw] of Object.entries(ledger.environment.actionDefinitions)) {
+    const key = slugifyEnvironmentIdentifier(actionKeyRaw, "action");
+    const fallback = ENVIRONMENT_ACTIONS.find((entry) => entry.key === key) ?? { key, label: key };
+    normalizedActionDefinitions[key] = normalizeEnvironmentActionDefinition(
+      { ...(definitionRaw ?? {}), key },
+      fallback
+    );
+  }
+  ledger.environment.actionDefinitions = normalizedActionDefinitions;
+  const actionCatalog = buildEnvironmentActionCatalog(ledger.environment);
+  const actionKeySet = new Set(actionCatalog.map((entry) => entry.key));
+  ledger.environment.actionOrder = ledger.environment.actionOrder
+    .map((rawKey) => slugifyEnvironmentIdentifier(rawKey, "action"))
+    .filter((key, index, arr) => actionKeySet.has(key) && arr.indexOf(key) === index);
+
+  if (!ledger.environment.presetDefinitions || typeof ledger.environment.presetDefinitions !== "object") {
+    ledger.environment.presetDefinitions = {};
+  }
+  if (!Array.isArray(ledger.environment.presetOrder)) ledger.environment.presetOrder = [];
+  const normalizedPresetDefinitions = {};
+  for (const [presetKeyRaw, definitionRaw] of Object.entries(ledger.environment.presetDefinitions)) {
+    const key = slugifyEnvironmentIdentifier(presetKeyRaw, "preset");
+    const fallback = ENVIRONMENT_PRESETS.find((entry) => entry.key === key) ?? { key, label: key };
+    normalizedPresetDefinitions[key] = normalizeEnvironmentPresetDefinition(
+      { ...(definitionRaw ?? {}), key },
+      fallback,
+      {
+        actionCatalog,
+        environmentState: ledger.environment
+      }
+    );
+  }
+  ledger.environment.presetDefinitions = normalizedPresetDefinitions;
+  const presetCatalog = buildEnvironmentPresetCatalog(ledger.environment);
+  const presetKeySet = new Set(presetCatalog.map((entry) => entry.key));
+  ledger.environment.presetOrder = ledger.environment.presetOrder
+    .map((rawKey) => slugifyEnvironmentIdentifier(rawKey, "preset"))
+    .filter((key, index, arr) => presetKeySet.has(key) && arr.indexOf(key) === index);
+
+  ledger.environment.presetKey = getEnvironmentPresetByKey(
+    String(ledger.environment.presetKey ?? "none"),
+    ledger.environment
+  ).key;
+  const defaultConfigurePresetKey =
+    presetCatalog.find((entry) => entry.key !== "none")?.key ?? presetCatalog[0]?.key ?? "none";
+  ledger.environment.configurePresetKey = getEnvironmentPresetByKey(
+    String(ledger.environment.configurePresetKey ?? defaultConfigurePresetKey),
+    ledger.environment
+  ).key;
+  ledger.environment.configureActionKey = getEnvironmentActionByKey(
+    String(ledger.environment.configureActionKey ?? "move"),
+    ledger.environment
+  ).key;
+  const dc = Number(ledger.environment.movementDc ?? 12);
+  ledger.environment.movementDc = Number.isFinite(dc) ? Math.max(1, Math.min(30, Math.floor(dc))) : 12;
+  if (!Array.isArray(ledger.environment.appliedActorIds)) ledger.environment.appliedActorIds = [];
+  ledger.environment.appliedActorIds = ledger.environment.appliedActorIds
+    .map((actorId) => String(actorId ?? "").trim())
+    .filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index);
+  ledger.environment.syncToSceneNonParty = ledger.environment.syncToSceneNonParty !== false;
+  ledger.environment.note = String(ledger.environment.note ?? "");
+  if (!ledger.environment.failureStreaks || typeof ledger.environment.failureStreaks !== "object") {
+    ledger.environment.failureStreaks = {};
+  }
+  const normalizedFailureStreaks = {};
+  for (const [actorIdRaw, streakRaw] of Object.entries(ledger.environment.failureStreaks)) {
+    const actorId = String(actorIdRaw ?? "").trim();
+    const streak = Number(streakRaw ?? 0);
+    if (!actorId) continue;
+    if (!Number.isFinite(streak) || streak <= 0) continue;
+    normalizedFailureStreaks[actorId] = Math.max(1, Math.min(99, Math.floor(streak)));
+  }
+  ledger.environment.failureStreaks = normalizedFailureStreaks;
+  if (!ledger.environment.successiveByPreset || typeof ledger.environment.successiveByPreset !== "object") {
+    ledger.environment.successiveByPreset = {};
+  }
+  const normalizedSuccessiveByPreset = {};
+  for (const [presetKeyRaw, overrideRaw] of Object.entries(ledger.environment.successiveByPreset)) {
+    const presetKey = getEnvironmentPresetByKey(String(presetKeyRaw ?? "none"), ledger.environment).key;
+    if (presetKey === "none") continue;
+    normalizedSuccessiveByPreset[presetKey] = normalizeEnvironmentSuccessiveOverride(overrideRaw);
+  }
+  ledger.environment.successiveByPreset = normalizedSuccessiveByPreset;
+  if (!Array.isArray(ledger.environment.logs)) ledger.environment.logs = [];
+  ledger.environment.logs = ledger.environment.logs
+    .map((entry) => {
+      const logType =
+        String(entry?.logType ?? "environment")
+          .trim()
+          .toLowerCase() === "weather"
+          ? "weather"
+          : "environment";
+      const createdAt = Number(entry?.createdAt ?? Date.now());
+      if (logType === "weather") {
+        return {
+          id: String(entry?.id ?? foundry.utils.randomID()),
+          logType,
+          label: String(entry?.label ?? "Weather").trim() || "Weather",
+          weatherId: String(entry?.weatherId ?? "").trim(),
+          darkness: Number.isFinite(Number(entry?.darkness)) ? Math.max(0, Math.min(1, Number(entry.darkness))) : 0,
+          visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier))
+            ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier))))
+            : 0,
+          note: String(entry?.note ?? ""),
+          createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+          createdBy: String(entry?.createdBy ?? "GM")
+        };
+      }
+      const actorIds = Array.isArray(entry?.actorIds)
+        ? entry.actorIds
+            .map((actorId) => String(actorId ?? "").trim())
+            .filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index)
+        : [];
+      const checkMeta = getEnvironmentCheckMeta(entry);
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        logType,
+        presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none"), ledger.environment).key,
+        presetLabel: String(entry?.presetLabel ?? "").trim(),
+        actionLabel: String(entry?.actionLabel ?? "").trim(),
+        movementDc: Math.max(1, Math.min(30, Math.floor(Number(entry?.movementDc ?? 12) || 12))),
+        actorIds,
+        syncToSceneNonParty: entry?.syncToSceneNonParty !== false,
+        note: String(entry?.note ?? ""),
+        checkType: checkMeta.checkType,
+        checkKey: checkMeta.checkKey,
+        checkLabel: checkMeta.checkLabel,
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+        createdBy: String(entry?.createdBy ?? "GM")
+      };
+    })
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+  if (!Array.isArray(ledger.environment.checkResults)) ledger.environment.checkResults = [];
+  ledger.environment.checkResults = ledger.environment.checkResults
+    .map((entry) => {
+      const createdAt = Number(entry?.createdAt ?? Date.now());
+      const rollTotalRaw = Number(entry?.rollTotal);
+      const dcRaw = Number(entry?.dc);
+      const streakRaw = Number(entry?.streak ?? 0);
+      const resultValue = String(entry?.result ?? "").toLowerCase() === "fail" ? "fail" : "pass";
+      const outcomeSummary = String(entry?.outcomeSummary ?? "").trim();
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        actorId: String(entry?.actorId ?? "").trim(),
+        actorName: String(entry?.actorName ?? "").trim(),
+        presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none")).key,
+        result: resultValue,
+        rollTotal: Number.isFinite(rollTotalRaw) ? Math.floor(rollTotalRaw) : null,
+        dc: Number.isFinite(dcRaw) ? Math.floor(dcRaw) : null,
+        streak: Number.isFinite(streakRaw) ? Math.max(0, Math.min(99, Math.floor(streakRaw))) : 0,
+        outcomeSummary,
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+        createdBy: String(entry?.createdBy ?? "GM")
+      };
+    })
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .slice(0, 100);
+  return ledger.environment;
+}
+
+function formatSignedModifier(value) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric) || numeric === 0) return "0";
+  return numeric > 0 ? `+${Math.floor(numeric)}` : String(Math.floor(numeric));
+}
+
+function buildInjuryStatusSummary(injury = {}) {
+  const notes = String(injury.notes ?? "").trim();
+  const effectText = String(injury.effect ?? "").trim();
+  const stabilized = Boolean(injury.stabilized);
+  const permanent = Boolean(injury.permanent);
+  const recoveryDays = Math.max(0, Number(injury.recoveryDays ?? 0));
+  const stateLabel = permanent ? "Permanent" : stabilized ? "Stabilized" : "Unstable";
+  const recoveryLabel = permanent ? "Permanent" : `${recoveryDays} day(s) remaining`;
+  const summary = [effectText, `State: ${stateLabel}`, `Recovery: ${recoveryLabel}`, notes ? `Notes: ${notes}` : ""]
+    .filter(Boolean)
+    .join(" | ");
+  return {
+    effectText,
+    notes,
+    stateLabel,
+    recoveryLabel,
+    summary
+  };
+}
+
+function isParsableUuid(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  const parser = foundry?.utils?.parseUuid;
+  if (typeof parser === "function") {
+    try {
+      parser(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return !text.startsWith("module.") && text.includes(".");
+}
+
+function getEffectOriginForActor(actor) {
+  const uuid = String(actor?.uuid ?? "").trim();
+  return uuid && isParsableUuid(uuid) ? uuid : "";
+}
+
+function isMissingActiveEffectError(error) {
+  const message = String(error?.message ?? error ?? "").toLowerCase();
+  return message.includes("activeeffect") && message.includes("does not exist");
+}
+
+function logIntegrationEffectDebug(message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  if (details === null) {
+    console.debug(`[${MODULE_ID}][integration-effects] ${message}`);
+    return;
+  }
+  console.debug(`[${MODULE_ID}][integration-effects] ${message}`, details);
+}
+
+async function safeDeleteActiveEffect(actor, effect, contextLabel = "sync") {
+  if (!actor || !effect?.id) return false;
+  const actorId = String(actor.id ?? "");
+  const effectId = String(effect.id ?? "");
+  const lockKey = `${actorId}:${effectId}`;
+  if (activeEffectDeleteLocks.has(lockKey)) {
+    logIntegrationEffectDebug("Skipping duplicate ActiveEffect delete request.", { contextLabel, actorId, effectId });
+    return true;
+  }
+  activeEffectDeleteLocks.add(lockKey);
+  try {
+    const liveEffect = actor.effects?.get(effectId);
+    if (!liveEffect) {
+      logIntegrationEffectDebug("ActiveEffect already missing before delete.", { contextLabel, actorId, effectId });
+      return true;
+    }
+    const currentOrigin = String(liveEffect.origin ?? effect.origin ?? "").trim();
+    const actorOrigin = getEffectOriginForActor(actor);
+    if (actorOrigin && currentOrigin && !isParsableUuid(currentOrigin)) {
+      try {
+        await liveEffect.update({ origin: actorOrigin });
+      } catch {
+        // Continue with best-effort deletion.
+      }
+    }
+    try {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", [liveEffect.id]);
+      return true;
+    } catch (error) {
+      if (isMissingActiveEffectError(error)) {
+        logIntegrationEffectDebug("ActiveEffect missing during primary delete call.", {
+          contextLabel,
+          actorId,
+          effectId
+        });
+        return true;
+      }
+      try {
+        await liveEffect.delete();
+        return true;
+      } catch (fallbackError) {
+        if (isMissingActiveEffectError(fallbackError)) {
+          logIntegrationEffectDebug("ActiveEffect missing during fallback delete call.", {
+            contextLabel,
+            actorId,
+            effectId
+          });
+          return true;
+        }
+        console.warn(`${MODULE_ID}: failed to delete ${contextLabel} effect ${effectId}`, error);
+        return false;
+      }
+    }
+  } finally {
+    activeEffectDeleteLocks.delete(lockKey);
+  }
+}
+
+async function upsertManagedEffect(actor, existing, data, contextLabel = "sync") {
+  if (!actor || !data) return;
+  if (!existing) {
+    logIntegrationEffectDebug("Creating managed ActiveEffect.", {
+      contextLabel,
+      actorId: String(actor.id ?? ""),
+      name: String(data?.name ?? "")
+    });
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+    return;
+  }
+
+  const normalizeManagedEffectData = (source) => {
+    const moduleFlags = foundry.utils.deepClone(source?.flags?.[MODULE_ID] ?? {});
+    if (moduleFlags && typeof moduleFlags === "object") delete moduleFlags.syncedAt;
+    return {
+      name: String(source?.name ?? ""),
+      img: String(source?.img ?? ""),
+      origin: String(source?.origin ?? ""),
+      disabled: Boolean(source?.disabled),
+      transfer: Boolean(source?.transfer),
+      description: String(source?.description ?? ""),
+      statuses: Array.isArray(source?.statuses) ? [...source.statuses] : [],
+      changes: Array.isArray(source?.changes) ? foundry.utils.deepClone(source.changes) : [],
+      flags: moduleFlags
+    };
+  };
+
+  const existingComparable = normalizeManagedEffectData(existing?.toObject?.() ?? existing);
+  const nextComparable = normalizeManagedEffectData(data);
+  if (JSON.stringify(existingComparable) === JSON.stringify(nextComparable)) return;
+
+  try {
+    await existing.update(data);
+  } catch (error) {
+    if (!isMissingActiveEffectError(error)) throw error;
+    logIntegrationEffectDebug("Stale ActiveEffect reference encountered during update; recreating.", {
+      contextLabel,
+      actorId: String(actor.id ?? ""),
+      effectId: String(existing.id ?? ""),
+      name: String(data?.name ?? "")
+    });
+    console.warn(`${MODULE_ID}: stale ${contextLabel} effect reference ${existing.id}; recreating.`);
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+  }
+}
+
+function buildIntegrationEffectData(payload, actor = null) {
+  const mode = CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
+  const addMode = CONST.ACTIVE_EFFECT_MODES.ADD;
+  const priority = 20;
+  const initiativeBonus = Number(payload.operations?.minorInitiativeBonus ?? 0);
+  const abilityCheckBonus = Number(payload.operations?.minorAbilityCheckBonus ?? 0);
+  const perceptionBonus = Number(payload.operations?.minorPerceptionBonus ?? 0);
+  const saveBonus = Number(payload.operations?.minorSavingThrowBonus ?? 0);
+
+  const changes = [
+    {
+      key: `flags.${MODULE_ID}.ae.prepEdge`,
+      mode,
+      value: payload.operations.prepEdge ? "1" : "0",
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.riskTier`,
+      mode,
+      value: String(payload.operations.riskTier ?? "moderate"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formation`,
+      mode,
+      value: String(payload.doctrine.formation ?? "loose"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationCategory`,
+      mode,
+      value: String(payload.doctrine.category ?? "loose"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.doctrineState`,
+      mode,
+      value: String(payload.doctrine.doctrineState ?? MARCH_DOCTRINE_STATES.STABLE),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationState`,
+      mode,
+      value: String(payload.doctrine.formationState ?? MARCH_DOCTRINE_STATES.STABLE),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationValid`,
+      mode,
+      value: payload.doctrine.valid ? "1" : "0",
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.cohesionCheckRequired`,
+      mode,
+      value: payload.doctrine.cohesionCheckRequired ? "1" : "0",
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.marchingRank`,
+      mode,
+      value: String(payload.assignment.marchingRank ?? "unassigned"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.injured`,
+      mode,
+      value: payload.injury.active ? "1" : "0",
+      priority
+    }
+  ];
+
+  if (initiativeBonus !== 0) {
+    changes.push({
+      key: "system.attributes.init.bonus",
+      mode: addMode,
+      value: formatSignedModifier(initiativeBonus),
+      priority
+    });
+  }
+  if (abilityCheckBonus !== 0) {
+    changes.push({
+      key: "system.bonuses.abilities.check",
+      mode: addMode,
+      value: formatSignedModifier(abilityCheckBonus),
+      priority
+    });
+  }
+  if (perceptionBonus !== 0) {
+    changes.push({
+      key: "system.skills.prc.bonuses.check",
+      mode: addMode,
+      value: formatSignedModifier(perceptionBonus),
+      priority
+    });
+  }
+  if (saveBonus !== 0) {
+    changes.push({
+      key: "system.bonuses.abilities.save",
+      mode: addMode,
+      value: formatSignedModifier(saveBonus),
+      priority
+    });
+  }
+
+  const customDaeChanges = Array.isArray(payload.operations?.customDaeChanges)
+    ? payload.operations.customDaeChanges
+    : [];
+  for (const entry of customDaeChanges) {
+    const key = String(entry?.key ?? "").trim();
+    const value = String(entry?.value ?? "").trim();
+    if (!key || !value) continue;
+    const rawMode = Math.floor(Number(entry?.mode ?? addMode));
+    const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((modeValue) => Number(modeValue)));
+    const mode = validModes.has(rawMode) ? rawMode : addMode;
+    changes.push({ key, mode, value, priority });
+  }
+
+  const data = {
+    name: INTEGRATION_EFFECT_NAME,
+    img: "icons/svg/aura.svg",
+    disabled: false,
+    transfer: false,
+    duration: {
+      startTime: game.time?.worldTime ?? 0
+    },
+    changes,
+    flags: {
+      [MODULE_ID]: {
+        integration: true
+      }
+    }
+  };
+  const origin = getEffectOriginForActor(actor);
+  if (origin) data.origin = origin;
+  return data;
+}
+
+function buildInjuryStatusEffectData(payload, actor = null) {
+  const mode = CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
+  const priority = 20;
+  const injury = payload?.injury ?? {};
+  const injuryName = String(injury.name ?? "Injury").trim() || "Injury";
+  const status = buildInjuryStatusSummary(injury);
+  const notes = status.notes;
+  const effectText = status.effectText;
+  const stabilized = Boolean(injury.stabilized);
+  const permanent = Boolean(injury.permanent);
+  const recoveryDays = Math.max(0, Number(injury.recoveryDays ?? 0));
+  const stateLabel = status.stateLabel;
+  const recoveryLabel = status.recoveryLabel;
+  const icon = permanent ? "icons/svg/skull.svg" : stabilized ? "icons/svg/regen.svg" : "icons/svg/hazard.svg";
+
+  const data = {
+    name: `${INJURY_EFFECT_NAME_PREFIX} ${injuryName}`,
+    img: icon,
+    disabled: false,
+    transfer: false,
+    description: status.summary,
+    duration: {
+      startTime: game.time?.worldTime ?? 0
+    },
+    changes: [
+      {
+        key: `flags.${MODULE_ID}.ae.injuryName`,
+        mode,
+        value: injuryName,
+        priority
+      },
+      {
+        key: `flags.${MODULE_ID}.ae.injuryState`,
+        mode,
+        value: stateLabel,
+        priority
+      },
+      {
+        key: `flags.${MODULE_ID}.ae.injuryRecovery`,
+        mode,
+        value: recoveryLabel,
+        priority
+      }
+    ],
+    flags: {
+      [MODULE_ID]: {
+        injuryStatus: true,
+        injury: {
+          name: injuryName,
+          effect: effectText,
+          notes,
+          stabilized,
+          permanent,
+          recoveryDays
+        }
+      }
+    }
+  };
+  const origin = getEffectOriginForActor(actor);
+  if (origin) data.origin = origin;
+  return data;
+}
+
+function buildEnvironmentStatusEffectData(payload, actor = null) {
+  const mode = CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
+  const addMode = CONST.ACTIVE_EFFECT_MODES.ADD;
+  const priority = 20;
+  const environment = payload?.environment ?? {};
+  const label = String(environment.label ?? "Environment").trim() || "Environment";
+  const icon = String(getEnvironmentPresetByKey(environment.presetKey).icon ?? "icons/svg/hazard.svg");
+  const movementCheck = Boolean(environment.movementCheck);
+  const check = getEnvironmentCheckMeta(environment);
+  const actionMeta = getEnvironmentActionMeta(environment);
+  const description = movementCheck
+    ? `${label} active. ${actionMeta.actionLabel} checks required (${check.checkLabel || "check"}).`
+    : `${label} active.`;
+
+  const changes = [
+    {
+      key: `flags.${MODULE_ID}.ae.environmentPreset`,
+      mode,
+      value: String(environment.presetKey ?? "none"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.environmentActive`,
+      mode,
+      value: "1",
+      priority
+    }
+  ];
+
+  const preset = getEnvironmentPresetByKey(environment.presetKey);
+  const alwaysStatusId = String(preset.alwaysStatusId ?? "").trim();
+  for (const effectChange of preset.effectChanges ?? []) {
+    if (!effectChange?.key || effectChange?.value === undefined || effectChange?.value === null) continue;
+    changes.push({
+      key: effectChange.key,
+      mode: addMode,
+      value: String(effectChange.value),
+      priority
+    });
+  }
+
+  const data = {
+    name: `${ENVIRONMENT_EFFECT_NAME_PREFIX} ${label}`,
+    img: icon,
+    disabled: false,
+    transfer: false,
+    description,
+    duration: {
+      startTime: game.time?.worldTime ?? 0
+    },
+    statuses: alwaysStatusId ? [alwaysStatusId] : [],
+    changes,
+    flags: {
+      [MODULE_ID]: {
+        environmentStatus: true,
+        environment: {
+          presetKey: String(environment.presetKey ?? "none"),
+          label,
+          actionKey: actionMeta.actionKey,
+          actionLabel: actionMeta.actionLabel,
+          movementCheck,
+          alwaysStatusId,
+          checkType: check.checkType,
+          checkKey: check.checkKey,
+          checkSkill: check.checkType === "skill" ? check.checkKey : "",
+          checkLabel: check.checkLabel
+        }
+      }
+    }
+  };
+  const origin = getEffectOriginForActor(actor);
+  if (origin) data.origin = origin;
+  return data;
+}
+
+async function upsertIntegrationEffect(actor, payload) {
+  const existing = getIntegrationEffect(actor);
+  const data = buildIntegrationEffectData(payload, actor);
+  await upsertManagedEffect(actor, existing, data, "integration");
+}
+
+async function removeIntegrationEffect(actor) {
+  const existing = getIntegrationEffect(actor);
+  if (!existing) return;
+  await safeDeleteActiveEffect(actor, existing, "integration");
+}
+
+async function upsertInjuryStatusEffect(actor, payload) {
+  const existing = getInjuryStatusEffect(actor);
+  const injuryActive = Boolean(payload?.injury?.active);
+  if (!injuryActive) {
+    if (existing) await safeDeleteActiveEffect(actor, existing, "injury");
+    return;
+  }
+  const data = buildInjuryStatusEffectData(payload, actor);
+  await upsertManagedEffect(actor, existing, data, "injury");
+}
+
+async function removeInjuryStatusEffect(actor) {
+  const existing = getInjuryStatusEffect(actor);
+  if (!existing) return;
+  await safeDeleteActiveEffect(actor, existing, "injury");
+}
+
+async function upsertEnvironmentStatusEffect(actor, payload) {
+  const existing = getEnvironmentStatusEffect(actor);
+  const active = Boolean(payload?.environment?.active);
+  if (!active) {
+    if (existing) await safeDeleteActiveEffect(actor, existing, "environment");
+    return;
+  }
+  const data = buildEnvironmentStatusEffectData(payload, actor);
+  await upsertManagedEffect(actor, existing, data, "environment");
+}
+
+async function removeEnvironmentStatusEffect(actor) {
+  const existing = getEnvironmentStatusEffect(actor);
+  if (!existing) return;
+  await safeDeleteActiveEffect(actor, existing, "environment");
+}
+
+async function applyActorIntegrationPayload(actor, payload, resolvedMode) {
+  const currentPayload = actor.getFlag(MODULE_ID, "sync") ?? null;
+  const currentMode = String(actor.getFlag(MODULE_ID, "syncMode") ?? "");
+  const nextMode = String(resolvedMode ?? "");
+  const payloadChanged = JSON.stringify(currentPayload ?? null) !== JSON.stringify(payload ?? null);
+  const modeChanged = currentMode !== nextMode;
+
+  if (payloadChanged || modeChanged) {
+    await actor.update({
+      [`flags.${MODULE_ID}.sync`]: payload,
+      [`flags.${MODULE_ID}.syncMode`]: resolvedMode
+    });
+  }
+
+  await removeIntegrationEffect(actor);
+  await upsertInjuryStatusEffect(actor, payload);
+  await removeEnvironmentStatusEffect(actor);
+}
+
+async function clearActorIntegrationPayload(actor) {
+  await removeIntegrationEffect(actor);
+  await removeInjuryStatusEffect(actor);
+  await removeEnvironmentStatusEffect(actor);
+  await actor.update({
+    [`flags.${MODULE_ID}.-=sync`]: null,
+    [`flags.${MODULE_ID}.-=syncMode`]: null,
+    [`flags.${MODULE_ID}.-=ae`]: null,
+    [`flags.${MODULE_ID}.-=injury`]: null,
+    [`flags.${MODULE_ID}.-=environment`]: null
+  });
+}
+
+async function clearActorManagedEffectState(actor) {
+  if (!actor) return;
+  await removeIntegrationEffect(actor);
+  await removeEnvironmentStatusEffect(actor);
+  await actor.update({
+    [`flags.${MODULE_ID}.-=sync`]: null,
+    [`flags.${MODULE_ID}.-=syncMode`]: null,
+    [`flags.${MODULE_ID}.-=ae`]: null,
+    [`flags.${MODULE_ID}.-=environment`]: null
+  });
+}
+
+function getSceneNonPartySyncConfig(globalContext) {
+  const context = globalContext ?? buildIntegrationGlobalContext();
+  const partyHealth = context.operations?.partyHealth ?? {};
+  const environment = context.operations?.environment ?? {};
+  const scope = getNonPartySyncScope(partyHealth.nonPartySyncScope);
+  const syncWorldGlobal = Boolean(partyHealth.syncToSceneNonParty);
+  const syncEnvironment = Boolean(
+    environment.syncToSceneNonParty && String(environment.presetKey ?? "none") !== "none"
+  );
+  return {
+    context,
+    scope,
+    scopeLabel: getNonPartySyncScopeLabel(scope),
+    syncWorldGlobal,
+    syncEnvironment,
+    enabled: syncWorldGlobal || syncEnvironment
+  };
+}
+
+async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode, options = {}) {
+  if (!actor) return { synced: false, cleared: false, skipped: true, enabled: false };
+  const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
+  const hasEffect = Boolean(getIntegrationEffect(actor));
+  const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+  if (hasSync || hasEffect || hasEnvironmentEffect) {
+    await clearActorManagedEffectState(actor);
+    return { synced: false, cleared: true, skipped: false, enabled: false };
+  }
+  return { synced: false, cleared: false, skipped: true, enabled: false };
+}
+
+async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    return {
+      synced: 0,
+      cleared: 0,
+      total: 0,
+      enabled: false,
+      scope: NON_PARTY_SYNC_SCOPES.SCENE,
+      scopeLabel: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.SCENE),
+      managedActorIds: []
+    };
+  }
+  const config = getSceneNonPartySyncConfig(globalContext);
+  const scope = getNonPartySyncScope(options.scope ?? config.scope);
+  const targets = getNonPartyIntegrationTargets(scope);
+  let synced = 0;
+  let cleared = 0;
+  const managedActorIds = new Set();
+
+  const nonPartyResults = await Promise.all(
+    targets.map(async (target) => {
+      const actor = target?.actor;
+      if (!actor) return null;
+      const result = await syncSingleSceneNonPartyActor(actor, config.context, resolvedMode, {
+        includeEnvironment: target.isSceneTarget === true,
+        nonParty: true
+      });
+      return { actor, result };
+    })
+  );
+
+  for (const item of nonPartyResults) {
+    if (!item) continue;
+    const { actor, result } = item;
+    if (result.synced) synced += 1;
+    if (result.cleared) cleared += 1;
+    if (result.synced) {
+      const actorId = String(actor?.id ?? "").trim();
+      if (actorId) managedActorIds.add(actorId);
+    }
+  }
+
+  return {
+    synced,
+    cleared,
+    total: targets.length,
+    enabled: false,
+    scope,
+    scopeLabel: getNonPartySyncScopeLabel(scope),
+    managedActorIds: Array.from(managedActorIds)
+  };
+}
+
+async function syncIntegrationState() {
+  if (!canAccessAllPlayerOps()) return;
+
+  const resolvedMode = resolveIntegrationMode();
+  const trackedActors = collectIntegrationActorIds();
+  const trackedIds = new Set(trackedActors.map((actor) => actor.id));
+
+  if (resolvedMode === INTEGRATION_MODES.OFF) {
+    const actorsToClear = game.actors.contents.filter((actor) => {
+      if (!isTrackableCharacter(actor)) return false;
+      const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
+      const hasEffect = Boolean(getIntegrationEffect(actor));
+      const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+      return hasSync || hasEffect || hasEnvironmentEffect;
+    });
+    await Promise.all(actorsToClear.map((actor) => clearActorManagedEffectState(actor)));
+    await syncSceneNonPartyIntegrationActors(null, resolvedMode);
+    return;
+  }
+
+  const globalContext = buildIntegrationGlobalContext();
+  const nonPartySyncResult = await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
+  const nonPartyManagedActorIds = new Set(
+    Array.isArray(nonPartySyncResult?.managedActorIds) ? nonPartySyncResult.managedActorIds : []
+  );
+  await Promise.all(
+    trackedActors.map(async (actor) => {
+      const payload = buildActorIntegrationPayload(actor.id, globalContext);
+      await applyActorIntegrationPayload(actor, payload, resolvedMode);
+    })
+  );
+
+  const staleActors = game.actors.contents.filter((actor) => {
+    if (!isTrackableCharacter(actor)) return false;
+    if (trackedIds.has(actor.id)) return false;
+    if (nonPartyManagedActorIds.has(String(actor.id ?? ""))) return false;
+    const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
+    const hasEffect = Boolean(getIntegrationEffect(actor));
+    const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+    return hasSync || hasEffect || hasEnvironmentEffect;
+  });
+
+  await Promise.all(staleActors.map((actor) => clearActorManagedEffectState(actor)));
+}
+
+async function purgeLegacyManagedEffects() {
+  if (!canAccessAllPlayerOps()) return;
+  const actors =
+    game.actors?.contents?.filter?.((actor) => {
+      if (!isTrackableCharacter(actor)) return false;
+      return (
+        Boolean(actor.getFlag(MODULE_ID, "sync")) ||
+        Boolean(getIntegrationEffect(actor)) ||
+        Boolean(getEnvironmentStatusEffect(actor))
+      );
+    }) ?? [];
+  if (!actors.length) return;
+  await Promise.all(actors.map((actor) => clearActorManagedEffectState(actor)));
+}
+
+function scheduleIntegrationSync(reason = "") {
+  if (!game.user?.isGM) return;
+  integrationSyncQueuedReason = String(reason ?? "").trim();
+  integrationSyncQueued = true;
+  if (integrationSyncInFlight) return;
+  if (integrationSyncTimeoutId) clearTimeout(integrationSyncTimeoutId);
+  integrationSyncTimeoutId = setTimeout(() => {
+    integrationSyncTimeoutId = null;
+    void flushIntegrationSyncQueue(reason);
+  }, 750);
+}
+
+function resolveIntegrationSyncWaiters() {
+  if (!integrationSyncWaiters.length) return;
+  const waiters = integrationSyncWaiters.splice(0, integrationSyncWaiters.length);
+  for (const resolve of waiters) {
+    try {
+      resolve();
+    } catch {
+      // Ignore waiter resolution failures.
+    }
+  }
+}
+
+async function flushIntegrationSyncQueue(reason = "") {
+  if (!game.user?.isGM) return;
+  const requestedReason = String(reason ?? "").trim();
+  if (requestedReason) integrationSyncQueuedReason = requestedReason;
+  integrationSyncQueued = true;
+  if (integrationSyncTimeoutId) {
+    clearTimeout(integrationSyncTimeoutId);
+    integrationSyncTimeoutId = null;
+  }
+  if (integrationSyncInFlight) {
+    await new Promise((resolve) => integrationSyncWaiters.push(resolve));
+    return;
+  }
+
+  integrationSyncInFlight = true;
+  try {
+    const MAX_SYNC_PASSES = 3;
+    let syncPassCount = 0;
+    do {
+      syncPassCount += 1;
+      const runReason = integrationSyncQueuedReason || requestedReason;
+      integrationSyncQueuedReason = "";
+      integrationSyncQueued = false;
+      logIntegrationEffectDebug("Running integration sync pass.", { reason: runReason || "unspecified" });
+      try {
+        await syncIntegrationState();
+      } catch (error) {
+        console.warn(`${MODULE_ID}: integration sync failed (${runReason})`, error);
+      }
+      if (syncPassCount >= MAX_SYNC_PASSES && integrationSyncQueued) {
+        // Too many consecutive passes. Yield to avoid locking the GM client during
+        // heavy play; deferred catchup ensures any pending state flush still occurs.
+        logIntegrationEffectDebug("Integration sync hit pass cap; deferring catchup.", { passCount: syncPassCount });
+        setTimeout(() => scheduleIntegrationSync("sync-catchup"), 1500);
+        integrationSyncQueued = false;
+        break;
+      }
+    } while (integrationSyncQueued);
+  } finally {
+    integrationSyncInFlight = false;
+    logIntegrationEffectDebug("Integration sync queue drained.");
+    resolveIntegrationSyncWaiters();
+  }
+}
+

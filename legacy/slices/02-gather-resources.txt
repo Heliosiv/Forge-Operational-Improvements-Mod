@@ -1,0 +1,1322 @@
+# Gather Resources And Upkeep State
+
+Source: legacy/party-operations-monolith.js:1961-3273
+Feature IDs: operations, rest-watch
+Target Modules: scripts/features/gather-*, scripts/core/gather-*
+
+Steward pools, gather requests, shared actor notes, and daily gather attempt state.
+
+----- legacy source begins -----
+function normalizeStewardPoolMode(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === STEWARD_POOL_MODES.FINITE) return STEWARD_POOL_MODES.FINITE;
+  if (normalized === STEWARD_POOL_MODES.INFINITE) return STEWARD_POOL_MODES.INFINITE;
+  return STEWARD_POOL_MODES.NONE;
+}
+
+function getStewardPoolLegacyField(poolKey) {
+  return String(STEWARD_POOL_LEGACY_FIELD_BY_KEY[poolKey] ?? "").trim();
+}
+
+function normalizeStewardPoolEntry(entryInput, poolKey, resources) {
+  const legacyField = getStewardPoolLegacyField(poolKey);
+  const legacyRaw = Number(resources?.[legacyField] ?? 0);
+  const legacyAmount = Number.isFinite(legacyRaw) ? Math.max(0, Math.floor(legacyRaw)) : 0;
+  const entry = entryInput && typeof entryInput === "object" && !Array.isArray(entryInput) ? entryInput : {};
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(entry, "mode");
+  let mode = normalizeStewardPoolMode(entry.mode);
+  const amountRaw = Number(entry.amount);
+  const amount = Number.isFinite(amountRaw) ? Math.max(0, Math.floor(amountRaw)) : legacyAmount;
+  if (!hasExplicitMode) mode = amount > 0 ? STEWARD_POOL_MODES.FINITE : STEWARD_POOL_MODES.NONE;
+  const source = String(entry.source ?? "")
+    .trim()
+    .slice(0, 180);
+  return { mode, amount, source };
+}
+
+function ensureStewardPoolsState(resources) {
+  if (!resources || typeof resources !== "object") return {};
+  if (!resources.stewardPools || typeof resources.stewardPools !== "object" || Array.isArray(resources.stewardPools)) {
+    resources.stewardPools = {};
+  }
+  for (const poolKey of STEWARD_POOL_KEYS) {
+    const normalized = normalizeStewardPoolEntry(resources.stewardPools[poolKey], poolKey, resources);
+    resources.stewardPools[poolKey] = normalized;
+    const legacyField = getStewardPoolLegacyField(poolKey);
+    if (legacyField) {
+      resources[legacyField] = normalized.mode === STEWARD_POOL_MODES.FINITE ? normalized.amount : 0;
+    }
+  }
+  return resources.stewardPools;
+}
+
+function getStewardPoolEntry(resources, poolKey) {
+  const pools = ensureStewardPoolsState(resources);
+  const pool = pools?.[poolKey];
+  if (pool && typeof pool === "object") return pool;
+  return { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" };
+}
+
+function buildStewardPoolContext(resourcesState, poolKey) {
+  const pool = getStewardPoolEntry(resourcesState, poolKey);
+  const mode = normalizeStewardPoolMode(pool.mode);
+  const amount = Math.max(0, Math.floor(Number(pool.amount ?? 0) || 0));
+  const source = String(pool.source ?? "").trim();
+  const modeOptions = [
+    { value: STEWARD_POOL_MODES.NONE, label: "None", selected: mode === STEWARD_POOL_MODES.NONE },
+    { value: STEWARD_POOL_MODES.INFINITE, label: "Surplus Source", selected: mode === STEWARD_POOL_MODES.INFINITE },
+    { value: STEWARD_POOL_MODES.FINITE, label: "Finite Stock", selected: mode === STEWARD_POOL_MODES.FINITE }
+  ];
+  const modeLabel =
+    mode === STEWARD_POOL_MODES.INFINITE
+      ? "Surplus Source"
+      : mode === STEWARD_POOL_MODES.FINITE
+        ? "Finite Stock"
+        : "None";
+  const amountDisplay =
+    mode === STEWARD_POOL_MODES.FINITE ? String(amount) : mode === STEWARD_POOL_MODES.INFINITE ? "Surplus" : "None";
+  return {
+    key: poolKey,
+    label: STEWARD_POOL_LABELS[poolKey] ?? poolKey,
+    mode,
+    modeOptions,
+    modeLabel,
+    source,
+    hasSource: source.length > 0,
+    amount,
+    amountDisplay,
+    isNone: mode === STEWARD_POOL_MODES.NONE,
+    isFinite: mode === STEWARD_POOL_MODES.FINITE,
+    isInfinite: mode === STEWARD_POOL_MODES.INFINITE,
+    summaryLabel: source.length > 0 ? `${amountDisplay} - ${source}` : amountDisplay
+  };
+}
+
+function getStewardPoolFiniteAmount(pool) {
+  if (!pool || typeof pool !== "object") return 0;
+  if (normalizeStewardPoolMode(pool.mode) !== STEWARD_POOL_MODES.FINITE) return 0;
+  return Math.max(0, Math.floor(Number(pool.amount ?? 0) || 0));
+}
+
+function isStewardPoolInfinite(pool) {
+  if (!pool || typeof pool !== "object") return false;
+  return normalizeStewardPoolMode(pool.mode) === STEWARD_POOL_MODES.INFINITE;
+}
+
+function getGatherSelectableActorsForUser(user = game.user) {
+  if (!user) return [];
+  const unique = new Map();
+  const hasSharedOpsAccess = canAccessAllPlayerOps(user);
+  const addActor = (actor) => {
+    if (!actor || actor.type !== "character" || !actor.id) return;
+    if (!hasSharedOpsAccess && !canUserManageDowntimeActor(user, actor)) return;
+    unique.set(String(actor.id), actor);
+  };
+
+  if (user.character?.type === "character") addActor(user.character);
+  for (const actor of getOwnedPcActors()) addActor(actor);
+  for (const actor of game.actors?.contents ?? []) addActor(actor);
+
+  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function normalizeGatherRequestPayload(input = {}) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  return {
+    id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    actorId: String(source.actorId ?? "").trim(),
+    actorName: String(source.actorName ?? "").trim(),
+    requesterUserId: String(source.requesterUserId ?? "").trim(),
+    requesterName: String(source.requesterName ?? "").trim(),
+    requestedAt: Number.isFinite(Number(source.requestedAt)) ? Number(source.requestedAt) : Date.now(),
+    resourceType: normalizeGatherResourceType(source.resourceType),
+    environment: normalizeGatherEnvironmentKey(source.environment),
+    gatherMode:
+      String(source.gatherMode ?? "standard")
+        .trim()
+        .toLowerCase() === "plant"
+        ? "plant"
+        : "standard",
+    hoursSpent: Math.max(1, Math.floor(Number(source.hoursSpent ?? 4) || 4)),
+    seasonMod: clampGatherModifier(source.seasonMod, 0),
+    weatherMod: clampGatherModifier(source.weatherMod, 0),
+    corruptionMod: clampGatherModifier(source.corruptionMod, 0),
+    isCorruptedRegion: Boolean(source.isCorruptedRegion),
+    hostileTerrain: Boolean(source.hostileTerrain),
+    waterAutoFound: Boolean(source.waterAutoFound),
+    duringTravel: Boolean(source.duringTravel),
+    travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff),
+    applyToLedger: source.applyToLedger !== false
+  };
+}
+
+function ensureOperationalResourceConfig(resources) {
+  if (!resources) return;
+  const legacyFoodPool = Number(resources.partyRations);
+  const configuredFoodPool = Number(resources.partyFoodRations);
+  const configuredWaterPool = Number(resources.partyWaterRations);
+  const configuredTorchPool = Number(resources.torches);
+  resources.partyFoodRations = Number.isFinite(configuredFoodPool)
+    ? Math.max(0, Math.floor(configuredFoodPool))
+    : Number.isFinite(legacyFoodPool)
+      ? Math.max(0, Math.floor(legacyFoodPool))
+      : 0;
+  resources.partyWaterRations = Number.isFinite(configuredWaterPool) ? Math.max(0, Math.floor(configuredWaterPool)) : 0;
+  resources.torches = Number.isFinite(configuredTorchPool) ? Math.max(0, Math.floor(configuredTorchPool)) : 0;
+  if (Object.prototype.hasOwnProperty.call(resources, "partyRations")) delete resources.partyRations;
+  const upkeepTimestamp = Number(resources.upkeepLastAppliedTs);
+  resources.upkeepLastAppliedTs = Number.isFinite(upkeepTimestamp) ? upkeepTimestamp : null;
+  if (!resources.itemSelections) resources.itemSelections = {};
+  for (const key of RESOURCE_TRACK_KEYS) {
+    if (!resources.itemSelections[key]) resources.itemSelections[key] = { actorId: "", itemId: "" };
+    if (typeof resources.itemSelections[key].actorId !== "string") resources.itemSelections[key].actorId = "";
+    if (typeof resources.itemSelections[key].itemId !== "string") resources.itemSelections[key].itemId = "";
+  }
+  if (!resources.gather) resources.gather = {};
+  if (!resources.gather.weatherMods) resources.gather.weatherMods = {};
+  if (!Array.isArray(resources.gather.requests)) resources.gather.requests = [];
+  resources.gather.requests = resources.gather.requests
+    .map((entry) => {
+      const source = entry && typeof entry === "object" ? entry : {};
+      const requestedAtRaw = Number(source.requestedAt ?? source.timestamp ?? Date.now());
+      const requestedAt = Number.isFinite(requestedAtRaw) ? requestedAtRaw : Date.now();
+      return {
+        id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        actorId: String(source.actorId ?? "").trim(),
+        actorName: String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        requesterUserId: String(source.requesterUserId ?? "").trim(),
+        requesterName: String(source.requesterName ?? "Player").trim() || "Player",
+        requestedAt,
+        resourceType: normalizeGatherResourceType(source.resourceType),
+        environment: normalizeGatherEnvironmentKey(source.environment),
+        gatherMode:
+          String(source.gatherMode ?? "standard")
+            .trim()
+            .toLowerCase() === "plant"
+            ? "plant"
+            : "standard",
+        hoursSpent: Math.max(1, Math.floor(Number(source.hoursSpent ?? 4) || 4)),
+        seasonMod: clampGatherModifier(source.seasonMod, 0),
+        weatherMod: clampGatherModifier(source.weatherMod, 0),
+        corruptionMod: clampGatherModifier(source.corruptionMod, 0),
+        isCorruptedRegion: Boolean(source.isCorruptedRegion),
+        hostileTerrain: Boolean(source.hostileTerrain),
+        waterAutoFound: Boolean(source.waterAutoFound),
+        duringTravel: Boolean(source.duringTravel),
+        travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff),
+        applyToLedger: source.applyToLedger !== false
+      };
+    })
+    .sort((a, b) => Number(b.requestedAt ?? 0) - Number(a.requestedAt ?? 0));
+  if (!Array.isArray(resources.gather.history)) resources.gather.history = [];
+  resources.gather.history = resources.gather.history
+    .map((entry) => {
+      const source = entry && typeof entry === "object" ? entry : {};
+      const timestampRaw = Number(source.timestamp ?? source.createdAt ?? Date.now());
+      const timestamp = Number.isFinite(timestampRaw) ? timestampRaw : Date.now();
+      const resultRaw = String(source.result ?? "")
+        .trim()
+        .toLowerCase();
+      const result =
+        resultRaw === "success" || resultRaw === "fail" ? resultRaw : Boolean(source.success) ? "success" : "fail";
+      return {
+        id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        timestamp,
+        actorId: String(source.actorId ?? "").trim(),
+        actorName: String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        dayKey: String(source.dayKey ?? "").trim(),
+        result,
+        success: result === "success",
+        resourceType: normalizeGatherResourceType(source.resourceType),
+        rations: Math.max(0, Math.floor(Number(source.rations ?? source.finalRations ?? 0) || 0)),
+        checkTotal: Math.floor(Number(source.checkTotal ?? source.rollTotal ?? 0) || 0),
+        dc: Math.max(1, Math.floor(Number(source.dc ?? 1) || 1)),
+        environment: normalizeGatherEnvironmentKey(source.environment),
+        flags: Array.isArray(source.flags) ? source.flags.map((flag) => String(flag ?? "").trim()).filter(Boolean) : [],
+        complications: Array.isArray(source.complications)
+          ? source.complications.map((flag) => String(flag ?? "").trim()).filter(Boolean)
+          : [],
+        notes: Array.isArray(source.notes) ? source.notes.map((note) => String(note ?? "").trim()).filter(Boolean) : [],
+        gatherMode:
+          String(source.gatherMode ?? "standard")
+            .trim()
+            .toLowerCase() === "plant"
+            ? "plant"
+            : "standard",
+        appliedToLedger: Boolean(source.appliedToLedger),
+        inventoryGainSource: String(source.inventoryGainSource ?? "").trim(),
+        inventoryGainAmount: Math.max(0, Math.floor(Number(source.inventoryGainAmount ?? 0) || 0)),
+        createdBy: String(source.createdBy ?? "GM").trim() || "GM",
+        requesterUserId: String(source.requesterUserId ?? "").trim(),
+        requesterName: String(source.requesterName ?? "").trim(),
+        approvedBy: String(source.approvedBy ?? "").trim(),
+        rationDieTotal: Number.isFinite(Number(source.rationDieTotal))
+          ? Math.max(0, Math.floor(Number(source.rationDieTotal) || 0))
+          : null,
+        yieldRollSource: String(source.yieldRollSource ?? "").trim(),
+        yieldRolledBy: String(source.yieldRolledBy ?? "").trim()
+      };
+    })
+    .sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
+  if (!resources.gather.pendingPools || typeof resources.gather.pendingPools !== "object") {
+    resources.gather.pendingPools = { food: 0, water: 0 };
+  }
+  resources.gather.pendingPools.food = Math.max(0, Math.floor(Number(resources.gather.pendingPools.food ?? 0) || 0));
+  resources.gather.pendingPools.water = Math.max(0, Math.floor(Number(resources.gather.pendingPools.water ?? 0) || 0));
+  if (!resources.gather.autoUpkeepPrompt || typeof resources.gather.autoUpkeepPrompt !== "object") {
+    resources.gather.autoUpkeepPrompt = {};
+  }
+  const rawPromptState = String(resources.gather.autoUpkeepPrompt.state ?? AUTO_UPKEEP_PROMPT_STATES.IDLE)
+    .trim()
+    .toLowerCase();
+  resources.gather.autoUpkeepPrompt.state = Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(rawPromptState)
+    ? rawPromptState
+    : AUTO_UPKEEP_PROMPT_STATES.IDLE;
+  resources.gather.autoUpkeepPrompt.messageId = String(resources.gather.autoUpkeepPrompt.messageId ?? "").trim();
+  resources.gather.autoUpkeepPrompt.createdAt = Math.max(
+    0,
+    Number(resources.gather.autoUpkeepPrompt.createdAt ?? 0) || 0
+  );
+  resources.gather.autoUpkeepPrompt.dayKey = String(resources.gather.autoUpkeepPrompt.dayKey ?? "").trim();
+  resources.gather.autoUpkeepPrompt.lastResolvedAt = Math.max(
+    0,
+    Number(resources.gather.autoUpkeepPrompt.lastResolvedAt ?? 0) || 0
+  );
+  if (typeof resources.gather.foodCoveredNextUpkeep !== "boolean") resources.gather.foodCoveredNextUpkeep = false;
+  if (typeof resources.gather.waterCoveredNextUpkeep !== "boolean") resources.gather.waterCoveredNextUpkeep = false;
+  const foodCoverageDueKey = Number(resources.gather.foodCoverageDueKey);
+  resources.gather.foodCoverageDueKey = Number.isFinite(foodCoverageDueKey) ? foodCoverageDueKey : null;
+  const waterCoverageDueKey = Number(resources.gather.waterCoverageDueKey);
+  resources.gather.waterCoverageDueKey = Number.isFinite(waterCoverageDueKey) ? waterCoverageDueKey : null;
+  const defaultWeatherMods = {
+    clear: 0,
+    "light-rain": 2,
+    "heavy-rain": 5,
+    wind: 2,
+    fog: 3,
+    extreme: 5
+  };
+  for (const [key, value] of Object.entries(defaultWeatherMods)) {
+    const current = Number(resources.gather.weatherMods[key]);
+    resources.gather.weatherMods[key] = Number.isFinite(current) ? current : value;
+  }
+  if (!resources.upkeep) resources.upkeep = {};
+  ensureStewardPoolsState(resources);
+}
+
+function getGatherPendingPoolAmount(resourcesState, resourceType) {
+  const key = normalizeGatherResourceType(resourceType);
+  if (!["food", "water"].includes(key)) return 0;
+  return Math.max(0, Math.floor(Number(resourcesState?.gather?.pendingPools?.[key] ?? 0) || 0));
+}
+
+function getAutoUpkeepPromptState(resourcesState) {
+  const rawState = String(resourcesState?.gather?.autoUpkeepPrompt?.state ?? AUTO_UPKEEP_PROMPT_STATES.IDLE)
+    .trim()
+    .toLowerCase();
+  return Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(rawState) ? rawState : AUTO_UPKEEP_PROMPT_STATES.IDLE;
+}
+
+function getAutoUpkeepPromptData(resourcesState) {
+  return {
+    state: getAutoUpkeepPromptState(resourcesState),
+    messageId: String(resourcesState?.gather?.autoUpkeepPrompt?.messageId ?? "").trim(),
+    createdAt: Math.max(0, Number(resourcesState?.gather?.autoUpkeepPrompt?.createdAt ?? 0) || 0),
+    dayKey: String(resourcesState?.gather?.autoUpkeepPrompt?.dayKey ?? "").trim(),
+    lastResolvedAt: Math.max(0, Number(resourcesState?.gather?.autoUpkeepPrompt?.lastResolvedAt ?? 0) || 0)
+  };
+}
+
+function hasGatherAttemptsForDay(resourcesState, dayKey) {
+  const targetDayKey = String(dayKey ?? "").trim();
+  if (!targetDayKey) return false;
+  const history = Array.isArray(resourcesState?.gather?.history) ? resourcesState.gather.history : [];
+  return history.some((entry) => String(entry?.dayKey ?? "").trim() === targetDayKey);
+}
+
+function hasPendingGatherRequests(resourcesState) {
+  return Array.isArray(resourcesState?.gather?.requests) && resourcesState.gather.requests.length > 0;
+}
+
+async function setAutomaticUpkeepPromptState(nextState, updates = {}) {
+  const normalizedState = Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(
+    String(nextState ?? "")
+      .trim()
+      .toLowerCase()
+  )
+    ? String(nextState).trim().toLowerCase()
+    : AUTO_UPKEEP_PROMPT_STATES.IDLE;
+  await updateOperationsLedger(
+    (ledger) => {
+      if (!ledger.resources) ledger.resources = {};
+      ensureOperationalResourceConfig(ledger.resources);
+      ledger.resources.gather.autoUpkeepPrompt.state = normalizedState;
+      if (Object.prototype.hasOwnProperty.call(updates, "messageId")) {
+        ledger.resources.gather.autoUpkeepPrompt.messageId = String(updates.messageId ?? "").trim();
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "createdAt")) {
+        ledger.resources.gather.autoUpkeepPrompt.createdAt = Math.max(0, Number(updates.createdAt ?? 0) || 0);
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "dayKey")) {
+        ledger.resources.gather.autoUpkeepPrompt.dayKey = String(updates.dayKey ?? "").trim();
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "lastResolvedAt")) {
+        ledger.resources.gather.autoUpkeepPrompt.lastResolvedAt = Math.max(0, Number(updates.lastResolvedAt ?? 0) || 0);
+      }
+    },
+    { skipLocalRefresh: true }
+  );
+}
+
+async function clearAutomaticUpkeepPromptState(reason = "Automatic upkeep prompt resolved.") {
+  const resources = getOperationsLedger().resources ?? {};
+  ensureOperationalResourceConfig(resources);
+  const prompt = getAutoUpkeepPromptData(resources);
+  const existing = prompt.messageId ? (game.messages?.get?.(prompt.messageId) ?? null) : null;
+  if (existing) {
+    await existing.update({
+      content: `<div class="po-chat-card po-chat-card-gather"><p><strong>Automatic Upkeep</strong></p><p>${poEscapeHtml(String(reason))}</p></div>`,
+      flags: {
+        [MODULE_ID]: {
+          autoUpkeepPrompt: {
+            state: AUTO_UPKEEP_PROMPT_STATES.IDLE,
+            dayKey: prompt.dayKey
+          }
+        }
+      }
+    });
+  }
+  return setAutomaticUpkeepPromptState(AUTO_UPKEEP_PROMPT_STATES.IDLE, {
+    messageId: "",
+    createdAt: 0,
+    dayKey: "",
+    lastResolvedAt: Date.now()
+  });
+}
+
+function ensurePartyOperationsClass(appOrElement) {
+  const root = getAppRootElement(appOrElement);
+  if (!(root instanceof HTMLElement)) return;
+  const frame = root.matches(".window-app, .application") ? root : root.closest(".window-app, .application");
+  if (!frame?.classList) return;
+  const hasPartyOpsWindow = Boolean(frame.querySelector?.(".po-window[data-tool], .po-window[data-main-tab]"));
+  if (!hasPartyOpsWindow) return;
+  frame.classList.add("party-operations");
+}
+
+function applyNonGmOperationsReadonly(appOrElement) {
+  if (game.user?.isGM || canAccessAllPlayerOps(game.user)) return;
+  const root = getAppRootElement(appOrElement);
+  if (!root) return;
+  const operationsWindow = root.querySelector(".po-window[data-main-tab='operations'], .po-window[data-main-tab='gm']");
+  if (!operationsWindow) return;
+
+  operationsWindow.querySelectorAll("[data-action]").forEach((element) => {
+    const action = String(element?.dataset?.action ?? "").trim();
+    if (!NON_GM_READONLY_ACTIONS.has(action)) return;
+    if ("disabled" in element) element.disabled = true;
+    element.setAttribute("aria-disabled", "true");
+    element.dataset.poReadonly = "true";
+    const existingTitle = String(element.getAttribute("title") ?? "").trim();
+    if (!existingTitle.includes("GM only")) {
+      const suffix = existingTitle ? ` ${existingTitle}` : "";
+      element.setAttribute("title", `GM only.${suffix}`.trim());
+    }
+  });
+
+  const selector = [
+    ".po-base-site-editor input",
+    ".po-base-site-editor select",
+    ".po-injury-editor input",
+    ".po-injury-editor select",
+    ".po-injury-editor textarea",
+    ".po-reputation-builder input",
+    ".po-reputation-builder select",
+    ".po-reputation-builder textarea"
+  ].join(", ");
+  operationsWindow.querySelectorAll(selector).forEach((element) => {
+    if ("disabled" in element) element.disabled = true;
+    element.setAttribute("aria-disabled", "true");
+    element.dataset.poReadonly = "true";
+  });
+}
+
+function suppressNextSettingRefresh(fullSettingKey) {
+  if (!fullSettingKey) return;
+  const count = suppressedSettingRefreshKeys.get(fullSettingKey) ?? 0;
+  suppressedSettingRefreshKeys.set(fullSettingKey, count + 1);
+}
+
+function consumeSuppressedSettingRefresh(fullSettingKey) {
+  const count = suppressedSettingRefreshKeys.get(fullSettingKey) ?? 0;
+  if (count <= 0) return false;
+  if (count === 1) suppressedSettingRefreshKeys.delete(fullSettingKey);
+  else suppressedSettingRefreshKeys.set(fullSettingKey, count - 1);
+  return true;
+}
+
+async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return false;
+  const settingRecord = game.settings?.settings?.get?.(`${MODULE_ID}.${normalizedSettingKey}`) ?? null;
+  const settingScope = String(settingRecord?.scope ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (!game.user?.isGM) {
+    if (settingScope === "client") {
+      const fullClientSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
+      suppressNextSettingRefresh(fullClientSettingKey);
+      await game.settings.set(MODULE_ID, normalizedSettingKey, value);
+      return true;
+    }
+    const hasActiveGm = hasActiveGmClient();
+    if (!hasActiveGm) {
+      if (canUsePlayerUiLocalOverride(normalizedSettingKey, game.user)) {
+        setPlayerUiLocalSettingOverride(normalizedSettingKey, value);
+        logPlayerPermissionDebug(
+          "local-override",
+          "Saved Party Operations change to local player test state because no GM client is active.",
+          {
+            settingKey: normalizedSettingKey
+          }
+        );
+        notifyUiInfoThrottled(
+          "Party Operations saved locally for player-side UI testing. Changes are not synced until a GM client reconnects.",
+          { key: `player-local-override:${normalizedSettingKey}`, ttlMs: 5000 }
+        );
+        return true;
+      }
+      logPlayerPermissionDebug(
+        "no-active-gm",
+        "Party Operations change blocked because no active GM client is available.",
+        {
+          settingKey: normalizedSettingKey
+        }
+      );
+      ui.notifications?.warn("Party Operations change blocked: no active GM client is available.");
+      return false;
+    }
+    if (!canAccessAllPlayerOps(game.user)) return false;
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "ops:setting-write",
+      userId: game.user.id,
+      settingKey: normalizedSettingKey,
+      value: foundry.utils.deepClone(value)
+    });
+    return true;
+  }
+  const fullSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
+  suppressNextSettingRefresh(fullSettingKey);
+  await game.settings.set(MODULE_ID, normalizedSettingKey, value);
+  return true;
+}
+
+let mainTabNavigator = null;
+let launcherUiController = null;
+let integrationAccess = null;
+let gatherSettingsAccess = null;
+const {
+  getLauncherPlacement: getLauncherPlacementForConfig,
+  isFloatingLauncherLocked: isFloatingLauncherLockedForConfig,
+  resetFloatingLauncherPosition: resetFloatingLauncherPositionForBootstrap
+} = createLauncherStateAccess({
+  resolveController: () => launcherUiController,
+  launcherPlacements: LAUNCHER_PLACEMENTS
+});
+const {
+  normalizePlayerHubMode,
+  getPlayerHubModeSetting,
+  areAdvancedSettingsEnabled,
+  shouldAutoOpenRestForPlayers,
+  normalizeLauncherPlacement
+} = createPartyOperationsSettingsAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  playerHubModes: PLAYER_HUB_MODES,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  gameRef: game
+});
+
+// Defer these reads so config-access wiring cannot reference later bindings during module evaluation.
+function getIntegrationModeSettingForConfig(...args) {
+  return integrationAccess?.getIntegrationModeSetting?.(...args) ?? INTEGRATION_MODES.AUTO;
+}
+
+function resolveIntegrationModeForConfig(...args) {
+  return integrationAccess?.resolveIntegrationMode?.(...args) ?? INTEGRATION_MODES.AUTO;
+}
+
+function isDaeAvailableForConfig(...args) {
+  return Boolean(integrationAccess?.isDaeAvailable?.(...args) ?? false);
+}
+
+function getGatherRollModeSettingForConfig(...args) {
+  return gatherSettingsAccess?.getGatherRollModeSetting?.(...args) ?? "prefer-monks";
+}
+
+function getGatherResourceConfigForConfig(...args) {
+  return gatherSettingsAccess?.getGatherResourceConfig?.(...args) ?? {};
+}
+
+function openMainTab(...args) {
+  return mainTabNavigator?.openMainTab?.(...args) ?? null;
+}
+
+function openOperationsUi(...args) {
+  return mainTabNavigator?.openOperationsUi?.(...args) ?? null;
+}
+
+function openRestWatchUiForCurrentUser(...args) {
+  return mainTabNavigator?.openRestWatchUiForCurrentUser?.(...args) ?? null;
+}
+
+function openGmUi(...args) {
+  return mainTabNavigator?.openGmUi?.(...args) ?? null;
+}
+
+function ensureLauncherUi(...args) {
+  if (!launcherUiController?.ensureLauncherUi) {
+    return {
+      ok: false,
+      placement: LAUNCHER_PLACEMENTS.FLOATING,
+      clickOpener: false,
+      floatingLauncher: false,
+      sidebarLauncher: false,
+      error: "launcher ui not initialized"
+    };
+  }
+  return launcherUiController.ensureLauncherUi(...args);
+}
+
+const {
+  validatePartyOpsConfig,
+  getPartyOpsConfigSetting,
+  savePartyOpsConfigSetting,
+  normalizeInventoryHookMode,
+  getInventoryHookModeSetting,
+  setInventoryHookMode,
+  getModuleConfigSnapshot
+} = createPartyOperationsConfigAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  configSchema: CONFIG_SCHEMA,
+  defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
+  lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  partyOpsLootRarities: PARTY_OPS_LOOT_RARITIES,
+  inventoryHookModes: INVENTORY_HOOK_MODES,
+  gameRef: game,
+  setModuleSettingWithLocalRefreshSuppressed,
+  isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
+  setPartyOpsConfigNormalizationInProgress: (value) => {
+    partyOpsConfigNormalizationInProgress = Boolean(value);
+  },
+  getPlayerHubModeSetting,
+  getLauncherPlacement: getLauncherPlacementForConfig,
+  isFloatingLauncherLocked: isFloatingLauncherLockedForConfig,
+  getIntegrationModeSetting: getIntegrationModeSettingForConfig,
+  resolveIntegrationMode: resolveIntegrationModeForConfig,
+  isDaeAvailable: isDaeAvailableForConfig,
+  getJournalVisibilityMode,
+  getJournalFilterDebounceMs,
+  getSessionSummaryRangeSetting,
+  getGatherRollModeSetting: getGatherRollModeSettingForConfig,
+  getGatherResourceConfig: getGatherResourceConfigForConfig,
+  foundryRef: foundry
+});
+const { getIntegrationModeSetting, isDaeAvailable, resolveIntegrationMode } = (integrationAccess =
+  createIntegrationAccess({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    integrationModes: INTEGRATION_MODES,
+    gameRef: game
+  }));
+const {
+  getGatherRollModeSetting,
+  clampGatherInteger,
+  clampGatherModifier,
+  normalizeGatherTravelTradeoff,
+  normalizeGatherEnvironmentKey,
+  normalizeGatherResourceType,
+  getGatherResourceConfig,
+  getGatherEnvironmentChoices,
+  getGatherQuickPresets,
+  getGatherQuickPresetById,
+  getGatherResourceTypeLabel,
+  buildGatherPresetContext
+} = (gatherSettingsAccess = createGatherSettingsAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  gatherDefaults: GATHER_DEFAULTS,
+  gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+  gatherEnvironmentKeys: GATHER_ENVIRONMENT_KEYS,
+  gatherEnvironmentLabels: GATHER_ENVIRONMENT_LABELS,
+  gatherQuickPresets: GATHER_QUICK_PRESETS,
+  gameRef: game
+}));
+const { getGatherHistoryViewState, setGatherHistoryViewState, buildGatherHistoryContext } = createGatherHistoryView({
+  gatherHistorySortOptions: GATHER_HISTORY_SORT_OPTIONS,
+  gatherHistoryResultFilterOptions: GATHER_HISTORY_RESULT_FILTER_OPTIONS,
+  gatherHistoryResourceFilterOptions: GATHER_HISTORY_RESOURCE_FILTER_OPTIONS,
+  gatherEnvironmentKeys: GATHER_ENVIRONMENT_KEYS,
+  gatherEnvironmentLabels: GATHER_ENVIRONMENT_LABELS,
+  normalizeGatherEnvironmentKey,
+  normalizeGatherResourceType,
+  getGatherResourceTypeLabel,
+  formatGatherFlagLabel,
+  formatGatherComplicationLabel,
+  sessionStorageRef: sessionStorage,
+  resolveUserId: () => game.user?.id ?? "anon",
+  randomId: () => foundry.utils.randomID(),
+  getNow: () => Date.now(),
+  createDate: (value) => new Date(value)
+});
+const { normalizeDowntimeEntriesSort, normalizeDowntimeLogsSort, getGmDowntimeViewState, setGmDowntimeViewState } =
+  createGmDowntimeViewAccess({
+    downtimeEntrySortOptions: DOWNTIME_ENTRY_SORT_OPTIONS,
+    downtimeLogSortOptions: DOWNTIME_LOG_SORT_OPTIONS,
+    sessionStorageRef: sessionStorage,
+    resolveUserId: () => game.user?.id ?? "anon"
+  });
+const { normalizePlayerHubActionType, normalizePlayerHubClaimVariant, getPlayerHubActionRequestFromUiAction } =
+  createPlayerHubActions({
+    playerHubActionTypes: PLAYER_HUB_ACTION_TYPES,
+    playerHubClaimVariants: PLAYER_HUB_CLAIM_VARIANTS
+  });
+
+const { PartyOperationsSettingsHub, openPartyOperationsSettingsHub } = createPartyOperationsSettingsHub({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
+  playerHubModes: PLAYER_HUB_MODES,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  inventoryHookModes: INVENTORY_HOOK_MODES,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  areAdvancedSettingsEnabled,
+  normalizePlayerHubMode,
+  normalizeInventoryHookMode,
+  normalizeLauncherPlacement,
+  setModuleSettingWithLocalRefreshSuppressed,
+  refreshOpenApps,
+  ensureLauncherUi,
+  notifyUiInfoThrottled,
+  notifyUiWarnThrottled,
+  canAccessAllPlayerOps
+});
+const { registerPartyOpsSettings, hasRegisteredPartyOpsSettingsNamespace, ensurePartyOpsSettingsRegistered } =
+  createPartyOperationsSettingsBootstrap({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    settingsHubType: PartyOperationsSettingsHub,
+    areAdvancedSettingsEnabled,
+    lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+    lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
+    playerHubModes: PLAYER_HUB_MODES,
+    defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
+    validatePartyOpsConfig,
+    notifyUiInfoThrottled,
+    normalizePlayerHubMode,
+    setModuleSettingWithLocalRefreshSuppressed,
+    isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
+    setPartyOpsConfigNormalizationInProgress: (value) => {
+      partyOpsConfigNormalizationInProgress = Boolean(value);
+    },
+    registerPartyOpsUiSettings,
+    registerPartyOpsDataSettings,
+    registerPartyOpsFeatureSettings,
+    getRefreshScopesForSettingKey,
+    refreshOpenApps,
+    buildDefaultRestWatchState,
+    buildDefaultMarchingOrderState,
+    buildDefaultActivityState,
+    buildDefaultOperationsLedger,
+    buildDefaultInjuryRecoveryState,
+    buildDefaultLootSourceConfig,
+    buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioLibraryHiddenTrackStore,
+    buildDefaultAudioMixPresetStore,
+    syncAudioLibraryDraftFromSettings,
+    autoInventoryPackIndexCache,
+    autoInventoryDefaults: {
+      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
+    },
+    gatherDefaults: GATHER_DEFAULTS,
+    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+    launcherPlacements: LAUNCHER_PLACEMENTS,
+    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+    inventoryHookModes: INVENTORY_HOOK_MODES,
+    ensureLauncherUi,
+    resetFloatingLauncherPosition: resetFloatingLauncherPositionForBootstrap,
+    refreshScopeKeys: REFRESH_SCOPE_KEYS,
+    openRestWatchUiForCurrentUser,
+    openMainTab,
+    gameRef: game
+  });
+
+function canAccessGmPage(user = game.user) {
+  return Boolean(user?.isGM);
+}
+
+function canUserOwnActor(user, actor, options = {}) {
+  if (!user || !actor) return false;
+  const requireCharacter = options?.requireCharacter !== false;
+  if (canAccessGmPage(user)) return true;
+  if (requireCharacter && actor.type !== "character") return false;
+  try {
+    if (typeof actor.testUserPermission === "function" && actor.testUserPermission(user, "OWNER")) return true;
+  } catch {
+    // Fall through to the conservative character match.
+  }
+  const userCharacterId = String(user?.character?.id ?? "").trim();
+  const actorId = String(actor?.id ?? "").trim();
+  return Boolean(userCharacterId && actorId && userCharacterId === actorId);
+}
+
+function buildGatherRequestContext(resourcesState = null, options = {}) {
+  const requests = Array.isArray(resourcesState?.gather?.requests) ? resourcesState.gather.requests : [];
+  const viewer = options?.viewer ?? game.user;
+  const canManage = canAccessAllPlayerOps(viewer);
+  const viewerId = String(viewer?.id ?? "").trim();
+  const quickPresets = getGatherQuickPresets();
+
+  const formatSigned = (value) => {
+    const normalized = clampGatherModifier(value, 0);
+    return normalized > 0 ? `+${normalized}` : `${normalized}`;
+  };
+
+  const getGatherModeLabel = (value) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase() === "plant"
+      ? "Plant"
+      : "Standard";
+  const getTravelModeLabel = (value) => (Boolean(value) ? "During Travel" : "Stopping to Gather");
+  const getTravelTradeoffLabel = (value) => {
+    const normalized = normalizeGatherTravelTradeoff(value);
+    return normalized === GATHER_TRAVEL_CHOICES.FELL_BEHIND ? "Fell Behind" : "Pace";
+  };
+  const getRiskTags = (source) => {
+    const tags = [];
+    if (source.hostileTerrain) tags.push({ label: "Hostile", tone: "risk" });
+    if (source.isCorruptedRegion) tags.push({ label: "Corrupted", tone: "risk" });
+    if (source.duringTravel) tags.push({ label: "Travel", tone: "warn" });
+    if (source.resourceType === "water" && source.waterAutoFound) tags.push({ label: "Auto-water", tone: "safe" });
+    return tags;
+  };
+  const findMatchingPresetLabel = (source) => {
+    const match =
+      quickPresets.find((preset) => {
+        const presetOptions = preset?.options ?? {};
+        return (
+          normalizeGatherEnvironmentKey(presetOptions.environment) === source.environment &&
+          normalizeGatherResourceType(presetOptions.resourceType) === source.resourceType &&
+          (String(presetOptions.gatherMode ?? "standard")
+            .trim()
+            .toLowerCase() === "plant"
+            ? "plant"
+            : "standard") === source.gatherMode &&
+          Boolean(presetOptions.duringTravel) === source.duringTravel &&
+          normalizeGatherTravelTradeoff(presetOptions.travelTradeoff) === source.travelTradeoff &&
+          Boolean(presetOptions.hostileTerrain) === source.hostileTerrain &&
+          Boolean(presetOptions.isCorruptedRegion) === source.isCorruptedRegion &&
+          Boolean(presetOptions.waterAutoFound) === source.waterAutoFound &&
+          clampGatherModifier(presetOptions.seasonMod, 0) === source.seasonMod &&
+          clampGatherModifier(presetOptions.weatherMod, 0) === source.weatherMod &&
+          clampGatherModifier(presetOptions.corruptionMod, 0) === source.corruptionMod
+        );
+      }) ?? null;
+    return String(match?.label ?? "").trim();
+  };
+
+  const rows = requests
+    .filter((entry) => canManage || String(entry?.requesterUserId ?? "").trim() === viewerId)
+    .map((entry) => {
+      const source = normalizeGatherRequestPayload(entry);
+      const requestedAtDate = new Date(Number(source.requestedAt ?? Date.now()));
+      const riskTags = getRiskTags(source);
+      const modifierSummary = `DC Mods S ${formatSigned(source.seasonMod)} | W ${formatSigned(source.weatherMod)} | C ${formatSigned(source.corruptionMod)}`;
+      const modifierLoad =
+        Math.abs(Number(source.seasonMod ?? 0)) +
+        Math.abs(Number(source.weatherMod ?? 0)) +
+        Math.abs(Number(source.corruptionMod ?? 0));
+      const isSafeDefault =
+        !source.hostileTerrain && !source.isCorruptedRegion && !source.duringTravel && modifierLoad <= 2;
+      const matchingPresetLabel = findMatchingPresetLabel(source);
+      return {
+        ...source,
+        resourceTypeLabel: getGatherResourceTypeLabel(source.resourceType),
+        gatherModeLabel: getGatherModeLabel(source.gatherMode),
+        travelModeLabel: getTravelModeLabel(source.duringTravel),
+        travelTradeoffLabel: getTravelTradeoffLabel(source.travelTradeoff),
+        environmentLabel: GATHER_ENVIRONMENT_LABELS[source.environment] ?? source.environment,
+        requestedAtLabel: Number.isFinite(requestedAtDate.getTime()) ? requestedAtDate.toLocaleString() : "Unknown",
+        modifierSummary,
+        riskTags,
+        hasRiskTags: riskTags.length > 0,
+        isSafeDefault,
+        riskLevelLabel: isSafeDefault ? "Safe / Default" : "Higher Risk",
+        matchingPresetLabel,
+        hasMatchingPreset: matchingPresetLabel.length > 0,
+        intentSummary: `${getGatherResourceTypeLabel(source.resourceType)} | ${getGatherModeLabel(source.gatherMode)} | ${getTravelModeLabel(source.duringTravel)}`,
+        reviewActionLabel: "Review Details",
+        primaryActionLabel: "Finalize & Prompt",
+        declineActionLabel: "Remove"
+      };
+    })
+    .sort((left, right) => Number(right.requestedAt ?? 0) - Number(left.requestedAt ?? 0));
+
+  return {
+    rows,
+    hasRows: rows.length > 0,
+    count: rows.length,
+    isManager: canManage,
+    emptyMessage: canManage ? "No pending gather requests." : "You have no pending gather requests."
+  };
+}
+
+function buildGatherDefaultsContext(resourcesState = null) {
+  const config = getGatherResourceConfig();
+  const weatherOptions = getGatherWeatherOptions(resourcesState).map((entry) => ({
+    ...entry,
+    dcModLabel:
+      Number(entry.dcMod) > 0 ? `+${Math.floor(Number(entry.dcMod))}` : `${Math.floor(Number(entry.dcMod) || 0)}`
+  }));
+  const presets = buildGatherPresetContext(config).map((preset) => {
+    const tagList = String(preset?.tagsText ?? "")
+      .split(" - ")
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    return {
+      ...preset,
+      tags: tagList,
+      hasTagList: tagList.length > 0
+    };
+  });
+  const formatSigned = (value) => {
+    const normalized = clampGatherModifier(value, 0);
+    return normalized > 0 ? `+${normalized}` : `${normalized}`;
+  };
+
+  return {
+    summary: `Applies to upcoming approvals. Season ${formatSigned(config.seasonMod)} | Weather ${formatSigned(config.weatherMod)} | Corruption ${formatSigned(config.corruptionMod)}`,
+    travelDefaultLabel:
+      normalizeGatherTravelTradeoff(config.travelTradeoffDefault) === GATHER_TRAVEL_CHOICES.FELL_BEHIND
+        ? "Fell Behind"
+        : "Pace",
+    weatherOptions,
+    presets,
+    hasWeatherOptions: weatherOptions.length > 0,
+    hasPresets: presets.length > 0,
+    emptyPresetMessage: "No quick presets are configured.",
+    advancedHint: "Advanced review controls below can override any default before resolving."
+  };
+}
+
+function getRestWatchSourceSlots(state) {
+  const sourceSlots = Array.isArray(state?.slots) && state.slots.length > 0 ? state.slots : buildStoredWatchSlots();
+  return normalizeRestWatchSlots(sourceSlots);
+}
+
+function normalizeRestWatchCampfireBySlot(input = {}, slotIds = [], fallback = false) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const normalized = {};
+  for (const slotId of slotIds) {
+    if (typeof source?.[slotId] === "boolean") normalized[slotId] = source[slotId];
+    else normalized[slotId] = Boolean(fallback);
+  }
+  return normalized;
+}
+
+function getRestWatchSlotCampfireState(state, slotIdInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!slotId) return Boolean(state?.campfire);
+  if (typeof state?.campfireBySlot?.[slotId] === "boolean") return state.campfireBySlot[slotId];
+  return Boolean(state?.campfire);
+}
+
+function buildRestWatchCampfireOverview(slots = []) {
+  const totalSlots = Math.max(0, slots.length);
+  const litSlots = slots.filter((slot) => slot?.campfireActive).length;
+  const anyLit = litSlots > 0;
+  const allLit = totalSlots > 0 && litSlots === totalSlots;
+  const mixed = anyLit && !allLit;
+  return {
+    totalSlots,
+    litSlots,
+    anyLit,
+    allLit,
+    mixed,
+    stateLabel: mixed ? `Mixed (${litSlots}/${totalSlots} lit)` : allLit ? "Lit" : "Out",
+    toggleAllLabel: allLit ? "Extinguish All Watches" : "Light All Watches",
+    toggleAllStatus: allLit ? "All Lit" : mixed ? "Mixed" : "All Out"
+  };
+}
+
+function getGatherDayKey(timestamp = getCurrentWorldTimestamp()) {
+  return getCalendarDayKeyBridge(timestamp, { gameRef: game, globalRef: globalThis });
+}
+
+function buildGatherEnvironmentSignature(input = {}) {
+  const environment = normalizeGatherEnvironmentKey(input.environment);
+  const season = clampGatherModifier(input.seasonMod, 0);
+  const weather = clampGatherModifier(input.weatherMod, 0);
+  const corruption = clampGatherModifier(input.corruptionMod, 0);
+  const hostile = Boolean(input.hostileTerrain) ? "hostile" : "calm";
+  const corruptedRegion = Boolean(input.isCorruptedRegion) ? "corrupted" : "clean";
+  return `${environment}|s${season}|w${weather}|c${corruption}|${hostile}|${corruptedRegion}`;
+}
+
+function getLegacyPartyOpsFlag(actor, flagKeyInput) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey) return undefined;
+  if (typeof actor.getFlag === "function") {
+    try {
+      return actor.getFlag("partyops", flagKey);
+    } catch {
+      // Legacy scope may be unavailable in newer Foundry versions.
+    }
+  }
+  const getProperty = globalThis?.foundry?.utils?.getProperty;
+  if (typeof getProperty === "function") {
+    const direct = getProperty(actor, `flags.partyops.${flagKey}`);
+    if (direct !== undefined) return direct;
+  }
+  const root = actor?.flags?.partyops;
+  if (!root || typeof root !== "object") return undefined;
+  return flagKey.split(".").reduce((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return value[segment];
+  }, root);
+}
+
+async function setLegacyPartyOpsFlagSilently(actor, flagKeyInput, value) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey || typeof actor.setFlag !== "function") return false;
+  try {
+    await actor.setFlag("partyops", flagKey, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getModuleActorFlag(actor, flagKeyInput) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey) return undefined;
+  if (typeof actor.getFlag === "function") {
+    try {
+      return actor.getFlag(MODULE_ID, flagKey);
+    } catch {
+      // Fall through to direct data access.
+    }
+  }
+  const getProperty = globalThis?.foundry?.utils?.getProperty;
+  if (typeof getProperty === "function") {
+    const direct = getProperty(actor, `flags.${MODULE_ID}.${flagKey}`);
+    if (direct !== undefined) return direct;
+  }
+  const root = actor?.flags?.[MODULE_ID];
+  if (!root || typeof root !== "object") return undefined;
+  return flagKey.split(".").reduce((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return value[segment];
+  }, root);
+}
+
+async function setModuleActorFlagSilently(actor, flagKeyInput, value) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey || typeof actor.setFlag !== "function") return false;
+  try {
+    await actor.setFlag(MODULE_ID, flagKey, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function canUserPersistSharedActorNotes(actor, user = game.user) {
+  if (!actor || !user) return false;
+  if (user.isGM) return true;
+  try {
+    if (typeof actor.testUserPermission === "function") {
+      return Boolean(actor.testUserPermission(user, "OWNER"));
+    }
+  } catch {
+    // Fall through to conservative owner check.
+  }
+  const userCharacterId = String(user?.character?.id ?? "").trim();
+  const actorId = String(actor?.id ?? "").trim();
+  return Boolean(userCharacterId && actorId && userCharacterId === actorId);
+}
+
+function resolveActorDocument(actorOrActorId) {
+  if (!actorOrActorId) return null;
+  if (typeof actorOrActorId === "string") return game.actors?.get?.(actorOrActorId) ?? null;
+  return actorOrActorId?.documentName === "Actor" ? actorOrActorId : null;
+}
+
+function normalizeSharedRestWatchNoteStore(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const store = {};
+  for (const [slotId, entry] of Object.entries(source)) {
+    const normalizedSlotId = String(slotId ?? "").trim();
+    if (!normalizedSlotId) continue;
+    const record = entry && typeof entry === "object" && !Array.isArray(entry) ? entry : { text: entry };
+    store[normalizedSlotId] = {
+      text: clampRestWatchRichNoteText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
+      updatedAt: Math.max(0, Number(record.updatedAt ?? 0) || 0),
+      updatedBy: String(record.updatedBy ?? "").trim(),
+      source: normalizeRestNoteSaveSource(record.source)
+    };
+  }
+  return store;
+}
+
+function normalizeSharedMarchingNoteRecord(value) {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value : { text: value };
+  return {
+    text: clampSocketText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Math.max(0, Number(record.updatedAt ?? 0) || 0),
+    updatedBy: String(record.updatedBy ?? "").trim()
+  };
+}
+
+function getPublishedRestWatchNoteText(actorOrActorId, slotIdInput, fallback = "") {
+  const actor = resolveActorDocument(actorOrActorId);
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!actor || !slotId) return String(fallback ?? "");
+  const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
+  if (!Object.prototype.hasOwnProperty.call(store, slotId)) return String(fallback ?? "");
+  return String(store[slotId]?.text ?? "");
+}
+
+function getPublishedMarchingNoteText(actorOrActorId, fallback = "") {
+  const actor = resolveActorDocument(actorOrActorId);
+  if (!actor) return String(fallback ?? "");
+  const record = getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.MARCHING);
+  if (record === undefined) return String(fallback ?? "");
+  return String(normalizeSharedMarchingNoteRecord(record).text ?? "");
+}
+
+async function publishRestWatchNoteForActor(actorOrActorId, slotIdInput, text, options = {}) {
+  const actor = resolveActorDocument(actorOrActorId);
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!actor || !slotId) return false;
+  if (!canUserPersistSharedActorNotes(actor, options.user ?? game.user)) return false;
+  const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
+  store[slotId] = {
+    text: clampRestWatchRichNoteText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Date.now(),
+    updatedBy: String(options.user?.name ?? game.user?.name ?? "").trim(),
+    source: normalizeRestNoteSaveSource(options.source)
+  };
+  return setModuleActorFlagSilently(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH, store);
+}
+
+async function publishMarchingNoteForActor(actorOrActorId, text, options = {}) {
+  const actor = resolveActorDocument(actorOrActorId);
+  if (!actor) return false;
+  if (!canUserPersistSharedActorNotes(actor, options.user ?? game.user)) return false;
+  return setModuleActorFlagSilently(actor, SHARED_ACTOR_NOTE_FLAGS.MARCHING, {
+    text: clampSocketText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Date.now(),
+    updatedBy: String(options.user?.name ?? game.user?.name ?? "").trim()
+  });
+}
+
+function applyPublishedRestWatchNotesToState(state) {
+  if (!state || typeof state !== "object") return state;
+  const slots = Array.isArray(state.slots) ? state.slots : [];
+  slots.forEach((slot, index) => {
+    const slotId = String(slot?.id ?? `watch-${index + 1}`).trim();
+    const entries = ensureRestSlotEntriesList(slot);
+    entries.forEach((entry) => {
+      entry.notes = getPublishedRestWatchNoteText(entry?.actorId, slotId, entry?.notes ?? "");
+    });
+  });
+  return state;
+}
+
+function applyPublishedMarchingNotesToState(state) {
+  if (!state || typeof state !== "object") return state;
+  if (!state.notes || typeof state.notes !== "object") state.notes = {};
+  for (const actorId of getOrderedMarchingActors(state)) {
+    state.notes[actorId] = getPublishedMarchingNoteText(actorId, state.notes?.[actorId] ?? "");
+  }
+  return state;
+}
+
+function getGatherAttemptState(actor) {
+  if (!actor) return { lastDay: "", lastEnvironmentSignature: "" };
+  return {
+    lastDay: String(actor.getFlag(MODULE_ID, "gather.lastDay") ?? getLegacyPartyOpsFlag(actor, "gather.lastDay") ?? ""),
+    lastEnvironmentSignature: String(
+      actor.getFlag(MODULE_ID, "gather.lastEnvironmentSignature") ??
+        getLegacyPartyOpsFlag(actor, "gather.lastEnvironmentSignature") ??
+        ""
+    )
+  };
+}
+
+async function setGatherAttemptState(actor, dayKey, environmentSignature) {
+  if (!actor) return;
+  const payload = {
+    "gather.lastDay": String(dayKey ?? ""),
+    "gather.lastEnvironmentSignature": String(environmentSignature ?? ""),
+    "gather.lastWorldTime": Number(getCurrentWorldTimestamp())
+  };
+  try {
+    await actor.setFlag(MODULE_ID, "gather.lastDay", payload["gather.lastDay"]);
+    await actor.setFlag(MODULE_ID, "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]);
+    await actor.setFlag(MODULE_ID, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to persist gather attempt flags`, {
+      actorId: actor.id,
+      actorName: actor.name,
+      error
+    });
+  }
+  // Best-effort legacy mirror; do not fail or warn when legacy scope is unavailable.
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastDay", payload["gather.lastDay"]);
+  await setLegacyPartyOpsFlagSilently(
+    actor,
+    "gather.lastEnvironmentSignature",
+    payload["gather.lastEnvironmentSignature"]
+  );
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
+}
+
+function canAttemptGatherForDay(actor, dayKey, environmentSignature) {
+  const state = getGatherAttemptState(actor);
+  if (state.lastDay !== String(dayKey ?? "")) return true;
+  return state.lastEnvironmentSignature !== String(environmentSignature ?? "");
+}
+
+function isActorInImmediateDanger(actor) {
+  if (!actor) return false;
+  const combat = game.combat;
+  if (!combat) return false;
+  const combatants = Array.from(combat.combatants ?? []);
+  return combatants.some((entry) => {
+    if (!entry) return false;
+    if (entry.actorId !== actor.id) return false;
+    if (entry.defeated) return false;
+    return true;
+  });
+}
+
+function resolveGatherResourceOutcome(input = {}) {
+  const resourceType = normalizeGatherResourceType(input.resourceType);
+  const checkTotal = Math.floor(Number(input.checkTotal ?? 0) || 0);
+  const dc = Math.max(1, Math.floor(Number(input.dc ?? 10) || 10));
+  const natural = clampGatherInteger(input.natural, 0, 20, 0);
+  const success = checkTotal >= dc;
+  const successBy = success ? Math.max(0, checkTotal - dc) : 0;
+  const failedBy = success ? 0 : Math.max(0, dc - checkTotal);
+  const resultFlags = [];
+  const complications = [];
+  const notes = [];
+
+  let rationDieTotal = null;
+  let baseRations = 0;
+  let bonusRations = 0;
+
+  const waterAutoFound = Boolean(input.waterAutoFound) && resourceType === "water";
+  const hasManualYieldDie = Number.isFinite(Number(input.rationDieTotal));
+  if (success) {
+    rationDieTotal = hasManualYieldDie
+      ? Math.max(0, Math.floor(Number(input.rationDieTotal) || 0))
+      : waterAutoFound
+        ? 1
+        : 0;
+    baseRations = Math.max(0, rationDieTotal);
+    if (waterAutoFound && !hasManualYieldDie) notes.push("Water auto-found near obvious source.");
+
+    if (Boolean(input.successBy5DoubleEnabled) && successBy >= 5) {
+      baseRations *= 2;
+      notes.push("Success by 5+: rations doubled.");
+    }
+
+    if (Boolean(input.nat20BonusEnabled) && natural === 20) {
+      bonusRations = clampGatherInteger(input.nat20BonusDieTotal, 1, 4, 1);
+      notes.push(`Natural 20 bonus: +${bonusRations} rations.`);
+      resultFlags.push("safe-campsite-found");
+    }
+  } else {
+    if (Boolean(input.hostileEncounterFlagEnabled) && Boolean(input.hostileTerrain)) {
+      resultFlags.push("encounter-check-flag");
+      notes.push("Hostile terrain encounter check flagged.");
+    }
+    if (Boolean(input.failBy5ComplicationEnabled) && failedBy >= 5) {
+      complications.push("fail-by-5-complication");
+      notes.push("Failed by 5+: complication triggered.");
+    }
+  }
+
+  if (Boolean(input.nat1ComplicationEnabled) && natural === 1) {
+    complications.push("natural-1-danger");
+    notes.push("Natural 1: spoiled/poisoned/attract-danger complication.");
+  }
+
+  const finalRations = success ? Math.max(0, baseRations + bonusRations) : 0;
+  const contaminationRoll = Number(input.contaminationRollTotal);
+  const contaminatedWater = Boolean(
+    success &&
+    resourceType === "water" &&
+    input.corruptionWaterCheckEnabled &&
+    input.isCorruptedRegion &&
+    contaminationRoll === 1
+  );
+  if (contaminatedWater) {
+    resultFlags.push("water-contaminated");
+    notes.push("Corrupted water contamination triggered.");
+    if (input.corruptionSavePassed === false) {
+      complications.push("contaminated-water-save-failed");
+      notes.push("Constitution save failed against contamination.");
+    }
+  }
+
+  const travelTradeoff = normalizeGatherTravelTradeoff(input.travelTradeoff);
+  if (Boolean(input.duringTravel) && Boolean(input.travelTradeoffEnabled)) {
+    if (travelTradeoff === GATHER_TRAVEL_CHOICES.PACE) {
+      resultFlags.push("travel-pace-reduced-one-step");
+      notes.push("Travel pace reduced by one step.");
+    } else {
+      resultFlags.push("travel-fell-behind");
+      notes.push("Actor fell behind during travel.");
+      const travelConSavePassed = Boolean(input.travelConSavePassed);
+      if (!travelConSavePassed) {
+        complications.push("travel-con-save-failed");
+        notes.push("Constitution save failed after falling behind.");
+      }
+    }
+  }
+
+  return {
+    success,
+    checkTotal,
+    dc,
+    natural,
+    successBy,
+    failedBy,
+    resourceType,
+    waterAutoFound,
+    rationDieTotal,
+    baseRations,
+    bonusRations,
+    finalRations,
+    contaminatedWater,
+    contaminationRoll: Number.isFinite(contaminationRoll) ? contaminationRoll : null,
+    resultFlags,
+    complications,
+    notes
+  };
+}
+

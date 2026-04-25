@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const moduleSource = readLegacyRuntimeSource("rest-march-runtime");
 const stylesheet = readFileSync(new URL("../styles/party-operations.css", import.meta.url), "utf8");
 
 function extractFunctionSource(source, functionName) {
@@ -33,7 +34,7 @@ function extractFunctionSource(source, functionName) {
       continue;
     }
 
-    if (char === "\"" || char === "'" || char === "`") {
+    if (char === '"' || char === "'" || char === "`") {
       inString = true;
       stringQuote = char;
       continue;
@@ -67,7 +68,10 @@ const functionBlock = [
 ].join("\n\n");
 
 const context = vm.createContext({ result: {}, REST_WATCH_MAX_ENTRIES: 4 });
-vm.runInContext(`${functionBlock}\nresult.getSenseRange = getSenseRange;\nresult.getDarkvision = getDarkvision;\nresult.buildRestWatchDetailSummary = buildRestWatchDetailSummary;`, context);
+vm.runInContext(
+  `${functionBlock}\nresult.getSenseRange = getSenseRange;\nresult.getDarkvision = getDarkvision;\nresult.buildRestWatchDetailSummary = buildRestWatchDetailSummary;`,
+  context
+);
 
 const { getSenseRange, getDarkvision, buildRestWatchDetailSummary } = context.result;
 
@@ -98,25 +102,19 @@ assert.equal(
 );
 
 assert.equal(
-  buildRestWatchDetailSummary(
-    { visibleEntryCount: 4, slotNoDarkvision: false, campfireActive: false },
-    [
-      { actor: { darkvision: 60, passivePerception: 15, passiveInvestigation: 12, languageList: ["Common"] } },
-      { actor: { darkvision: 60, passivePerception: 11, passiveInvestigation: 8, languageList: ["Elvish"] } }
-    ]
-  ).coverageLabel,
+  buildRestWatchDetailSummary({ visibleEntryCount: 4, slotNoDarkvision: false, campfireActive: false }, [
+    { actor: { darkvision: 60, passivePerception: 15, passiveInvestigation: 12, languageList: ["Common"] } },
+    { actor: { darkvision: 60, passivePerception: 11, passiveInvestigation: 8, languageList: ["Elvish"] } }
+  ]).coverageLabel,
   "Darkvision 60 ft",
   "Fully covered watches should show the best darkvision range."
 );
 
 assert.equal(
-  buildRestWatchDetailSummary(
-    { visibleEntryCount: 4, slotNoDarkvision: false, campfireActive: false },
-    [
-      { actor: { darkvision: 60, passivePerception: 15, passiveInvestigation: 12, languageList: ["Common"] } },
-      { actor: { darkvision: null, passivePerception: 11, passiveInvestigation: 8, languageList: ["Elvish"] } }
-    ]
-  ).coverageLabel,
+  buildRestWatchDetailSummary({ visibleEntryCount: 4, slotNoDarkvision: false, campfireActive: false }, [
+    { actor: { darkvision: 60, passivePerception: 15, passiveInvestigation: 12, languageList: ["Common"] } },
+    { actor: { darkvision: null, passivePerception: 11, passiveInvestigation: 8, languageList: ["Elvish"] } }
+  ]).coverageLabel,
   "Darkvision 60 ft",
   "Mixed watches should be covered when at least one assigned actor has darkvision."
 );

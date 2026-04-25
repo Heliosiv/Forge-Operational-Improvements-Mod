@@ -598,6 +598,7 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
   const state = getMarchingOrderState();
   const locked = state.locked;
   const playerLocked = !isActualGM && isLockedForUser(state, isActualGM);
+  let selectedClickActorId = null;
 
   const draggableEntries = [
     ...Array.from(html.querySelectorAll(".po-entry")),
@@ -613,11 +614,39 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
     entry.setAttribute("draggable", draggable ? "true" : "false");
     entry.classList.toggle("is-draggable", draggable);
     if (!draggable) return;
+    entry.setAttribute("tabindex", "0");
+    entry.setAttribute("role", entry.getAttribute?.("role") ?? "button");
+    entry.setAttribute("aria-pressed", "false");
     if (entry.dataset.poDndEntryBound === "1") return;
     entry.dataset.poDndEntryBound = "1";
     entry.addEventListener("dragstart", (event) => {
       event.dataTransfer?.setData("text/plain", actorId);
       event.dataTransfer?.setDragImage?.(entry, 20, 20);
+    });
+    const selectEntryForClickMove = async (event) => {
+      if (event?.target?.closest?.("button, input, textarea, select, a")) return;
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      if (selectedClickActorId && selectedClickActorId !== actorId) {
+        const targetCell =
+          entry.closest?.(".po-march-board-cell[data-rank-id]") ??
+          entry.closest?.(".po-march-spacing-cell[data-rank-id]") ??
+          entry.closest?.(".po-rank-col[data-rank-id]");
+        if (targetCell) {
+          await moveSelectedActorToTarget(targetCell, event);
+          return;
+        }
+      }
+      if (selectedClickActorId === actorId) {
+        clearClickSelection();
+      } else {
+        applyClickSelection(actorId);
+      }
+    };
+    entry.addEventListener("click", selectEntryForClickMove);
+    entry.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      await selectEntryForClickMove(event);
     });
 
     const handle = entry.querySelector(".po-entry-handle");
@@ -640,12 +669,79 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
     ...Array.from(html.querySelectorAll(".po-march-spacing-cell[data-rank-id]"))
   ];
 
+  const clearClickSelection = () => {
+    selectedClickActorId = null;
+    draggableEntries.forEach((entry) => {
+      entry.classList.remove("is-click-selected");
+      entry.setAttribute("aria-pressed", "false");
+    });
+    dropTargets.forEach((target) => target.classList.remove("is-click-target"));
+  };
+
+  const applyClickSelection = (actorId) => {
+    selectedClickActorId = actorId;
+    draggableEntries.forEach((entry) => {
+      const selected = entry.dataset.actorId === actorId;
+      entry.classList.toggle("is-click-selected", selected);
+      entry.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    dropTargets.forEach((target) => target.classList.toggle("is-click-target", Boolean(actorId)));
+  };
+
+  const moveSelectedActorToTarget = async (column, event) => {
+    const liveState = getMarchingOrderState();
+    if (isLockedForUser(liveState, isActualGM)) {
+      notifyUiWarnThrottled("Marching order is locked by the GM.", {
+        key: "marching-order-locked",
+        ttlMs: 1500
+      });
+      clearClickSelection();
+      return;
+    }
+    const actorId = selectedClickActorId;
+    if (!actorId) return;
+    const rankId = column.dataset.rankId || column.closest?.("[data-rank-id]")?.dataset?.rankId;
+    if (!rankId) return;
+    const requestedCellIndex = Number.parseInt(String(column.dataset.cellIndex ?? ""), 10);
+
+    let insertIndex = Number.parseInt(String(column.dataset.insertIndex ?? ""), 10);
+    if (!Number.isInteger(insertIndex) || insertIndex < 0) {
+      const targetEntry =
+        event?.target?.closest?.(".po-entry") ??
+        event?.target?.closest?.(".po-march-board-card") ??
+        event?.target?.closest?.(".po-march-spacing-token");
+      const entryList = [
+        ...Array.from(column.querySelectorAll(".po-entry")),
+        ...Array.from(column.querySelectorAll(".po-march-board-card")),
+        ...Array.from(column.querySelectorAll(".po-march-spacing-token"))
+      ];
+      insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
+    }
+
+    const request = { op: "joinRank", actorId, rankId };
+    if (Number.isInteger(insertIndex) && insertIndex >= 0) request.insertIndex = insertIndex;
+    if (Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0) request.cellIndex = requestedCellIndex;
+    const saved = await updateMarchingOrderState(request, { skipLocalRefresh: true });
+
+    if (saved !== false) {
+      clearClickSelection();
+      refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
+    }
+  };
+
   dropTargets.forEach((column) => {
     if (column.dataset.poDndColBound === "1") return;
     column.dataset.poDndColBound = "1";
     column.addEventListener("dragover", (event) => {
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+
+    column.addEventListener("click", async (event) => {
+      if (!selectedClickActorId) return;
+      if (event?.target?.closest?.("button, input, textarea, select, a")) return;
+      event.preventDefault();
+      await moveSelectedActorToTarget(column, event);
     });
 
     column.addEventListener("drop", async (event) => {

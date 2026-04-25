@@ -1,0 +1,2782 @@
+# Operations Ledger And Loot Claim State
+
+Source: legacy/party-operations-monolith.js:22955-25727
+Feature IDs: operations, loot, journal
+Target Modules: scripts/features/operations-*, scripts/features/loot-claims-*
+
+Loot preview context, claim board context, operations ledger defaults, journal helpers, and claim actor selectors.
+
+----- legacy source begins -----
+function buildLootPreviewContext() {
+  const draft = getLootPreviewDraft();
+  const result = getLootPreviewResult();
+  const hasResult = Boolean(result && typeof result === "object");
+  const previewSort = normalizeLootPreviewSort(draft?.sort);
+  const mode = String(draft.mode ?? "horde");
+  const profile = String(draft.profile ?? "standard");
+  const challenge = String(draft.challenge ?? "mid");
+  const scale = String(draft.scale ?? "medium");
+  const itemCountTarget = getLootItemCount(draft);
+  const valueBudgetContext = buildLootValueBudgetContext(draft, itemCountTarget);
+  const displayTotals = calculateLootPreviewValueTotals(result, valueBudgetContext);
+  const generatedAt = Number(result?.generatedAt ?? 0);
+  const generatedAtLabel = generatedAt > 0 ? new Date(generatedAt).toLocaleString() : "-";
+  const sourceConfig = getLootSourceConfig();
+  const enabledTableSources = Math.max(
+    0,
+    (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length
+  );
+  const tableRollBudget = Math.max(0, getLootTableRollBudget(draft));
+  const tableScalarPercent = Math.max(25, Math.min(300, Math.floor(Number(draft?.tableScalar ?? 100) || 100)));
+  const tableFrequencyBandLabel =
+    tableScalarPercent <= 50
+      ? "Sparse"
+      : tableScalarPercent <= 85
+        ? "Light"
+        : tableScalarPercent <= 115
+          ? "Normal"
+          : tableScalarPercent <= 175
+            ? "Busy"
+            : "Flooded";
+  const tableFrequencySummary =
+    enabledTableSources <= 0
+      ? "No bonus table sources are enabled, so this slider currently has nothing to pull from."
+      : `${tableFrequencyBandLabel}: up to ${tableRollBudget} bonus table roll(s) from ${enabledTableSources} enabled source(s).`;
+  const tableFrequencyEffect =
+    tableRollBudget <= 0
+      ? "Bonus table pulls are effectively off at this setting."
+      : tableRollBudget === 1
+        ? "Expect only an occasional bonus table contribution."
+        : `Higher settings widen bonus table pulls until the builder hits the ${tableRollBudget}-roll cap for this draft.`;
+  const valuablesBudgetGp = Math.max(0, Number(valueBudgetContext?.targetValuablesBudgetGp ?? 0) || 0);
+  const coinBudgetGp = Math.max(
+    0,
+    Number(valueBudgetContext?.targetCoinBudgetGp ?? valueBudgetContext?.targetCurrencyBudgetGp ?? 0) || 0
+  );
+  const currencyBudgetSummary =
+    valuablesBudgetGp > 0
+      ? `${valueBudgetContext.targetCurrencyBudgetGp} gp in currency (${coinBudgetGp} coin, ${valuablesBudgetGp} gems/art)`
+      : `${valueBudgetContext.targetCurrencyBudgetGp} gp in currency`;
+  const valueBudgetSummary = `Current target: ${valueBudgetContext.effectiveTotalTargetGp} gp total, split to ${valueBudgetContext.targetItemBudgetGp} gp in items and ${currencyBudgetSummary}.`;
+  const valueStrictnessSummary = `${valueBudgetContext.strictnessBandLabel} keeps the total between ${valueBudgetContext.targetValueRangeMinGp}-${valueBudgetContext.targetValueRangeMaxGp} gp (plus or minus ${valueBudgetContext.tolerancePercent}%).`;
+  const itemStrictnessSummary = `Item budget window: ${valueBudgetContext.itemTargetValueRangeMinGp}-${valueBudgetContext.itemTargetValueRangeMaxGp} gp.`;
+  const itemRows = Array.isArray(result?.items)
+    ? result.items.map((entry, index) => ({
+        id: String(
+          entry?.id ?? `${String(entry?.uuid ?? "").trim() || String(entry?.name ?? "item").trim() || "item"}-${index}`
+        ),
+        uuid: String(entry?.uuid ?? "").trim(),
+        name: String(entry?.name ?? "Item"),
+        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
+        quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+        itemType: String(entry?.itemType ?? ""),
+        rarity: String(entry?.rarity ?? ""),
+        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+        itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+        variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
+        itemValueLabel:
+          Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
+            ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+            : "",
+        itemWeightLabel: formatLootWeightLabel(entry?.itemWeightLb ?? 0),
+        tierLabel: formatPartyOperationsTierLabel(entry?.tier ?? ""),
+        valueBandLabel: formatPartyOperationsValueBandLabel(entry?.valueBand ?? ""),
+        tagSchemaLabel: formatPartyOperationsTagSchemaLabel(entry?.tagSchema ?? ""),
+        metaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }),
+        sourceLabel: String(entry?.sourceLabel ?? ""),
+        hasRarity: String(entry?.rarity ?? "").trim().length > 0,
+        hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
+        hasItemWeight: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)) > 0,
+        hasMetaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }).length > 0,
+        hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
+        canOpen: String(entry?.uuid ?? "").trim().length > 0
+      }))
+    : [];
+  return {
+    draft,
+    showEncounterCreatures: mode === "encounter",
+    modeOptions: LOOT_PREVIEW_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === mode })),
+    profileOptions: LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === profile })),
+    challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({
+      ...entry,
+      selected: entry.value === challenge
+    })),
+    scaleOptions: LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === scale })),
+    budget: {
+      targetPerItemGp: Number(valueBudgetContext.targetPerItemGp ?? 0),
+      totalBudgetGp: Number(valueBudgetContext.totalBudgetGp ?? 0),
+      targetItemBudgetGp: Number(valueBudgetContext.targetItemBudgetGp ?? 0),
+      targetCurrencyBudgetGp: Number(valueBudgetContext.targetCurrencyBudgetGp ?? 0),
+      itemSharePercent: Number(valueBudgetContext.itemSharePercent ?? 0),
+      currencySharePercent: Number(valueBudgetContext.currencySharePercent ?? 0),
+      autoTotalTargetGp: Number(valueBudgetContext.autoTotalTargetGp ?? 0),
+      manualTotalTargetGp: Number(valueBudgetContext.manualTotalTargetGp ?? 0),
+      effectiveTotalTargetGp: Number(valueBudgetContext.effectiveTotalTargetGp ?? 0),
+      targetValueRangeMinGp: Number(valueBudgetContext.targetValueRangeMinGp ?? 0),
+      targetValueRangeMaxGp: Number(valueBudgetContext.targetValueRangeMaxGp ?? 0),
+      itemTargetValueRangeMinGp: Number(valueBudgetContext.itemTargetValueRangeMinGp ?? 0),
+      itemTargetValueRangeMaxGp: Number(valueBudgetContext.itemTargetValueRangeMaxGp ?? 0),
+      itemToleranceGp: Number(valueBudgetContext.itemToleranceGp ?? 0),
+      toleranceGp: Number(valueBudgetContext.toleranceGp ?? 0),
+      tolerancePercent: Number(valueBudgetContext.tolerancePercent ?? 0),
+      strictnessBandLabel: String(valueBudgetContext.strictnessBandLabel ?? "Normal"),
+      valueBudgetSummary,
+      valueStrictnessSummary,
+      itemStrictnessSummary,
+      desiredItemCount: Math.max(0, Number(valueBudgetContext.targetCount ?? 0) || 0),
+      baselineDesiredItemCount: Math.max(
+        0,
+        Number(valueBudgetContext.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0
+      ),
+      autoMaxItems: Math.max(0, Number(valueBudgetContext.autoMaxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
+      manualMaxItems: Math.max(0, Number(valueBudgetContext.manualMaxItems ?? draft.maxItems ?? 0) || 0),
+      maxItems: Math.max(0, Number(valueBudgetContext.maxItems ?? 0) || 0),
+      usingManualTotalTarget: Number(valueBudgetContext.manualTotalTargetGp ?? 0) > 0,
+      usingManualMaxItems: Number(valueBudgetContext.manualMaxItems ?? draft.maxItems ?? 0) > 0,
+      autoMaxItemValueGp: Number(valueBudgetContext.autoMaxItemValueGp ?? 0),
+      manualMaxItemValueGp: Number(valueBudgetContext.manualMaxItemValueGp ?? 0),
+      effectiveMaxItemValueGp: Number(valueBudgetContext.effectiveMaxItemValueGp ?? 0),
+      usingManualCap: Number(valueBudgetContext.manualMaxItemValueGp ?? 0) > 0
+    },
+    tableFrequency: {
+      bandLabel: tableFrequencyBandLabel,
+      scalarPercent: tableScalarPercent,
+      enabledSourceCount: enabledTableSources,
+      rollBudget: tableRollBudget,
+      summary: tableFrequencySummary,
+      effect: tableFrequencyEffect
+    },
+    hasResult,
+    generatedAtLabel,
+    generatedBy: String(result?.generatedBy ?? "GM"),
+    currency: {
+      pp: Math.max(0, Number(result?.currency?.pp ?? 0) || 0),
+      gp: Math.max(0, Number(result?.currency?.gp ?? 0) || 0),
+      sp: Math.max(0, Number(result?.currency?.sp ?? 0) || 0),
+      cp: Math.max(0, Number(result?.currency?.cp ?? 0) || 0),
+      gpEquivalent: Math.max(0, Number(result?.currency?.gpEquivalent ?? 0) || 0),
+      formula: String(result?.currency?.formula ?? "")
+    },
+    stats: {
+      candidateCount: Math.max(0, Number(result?.stats?.candidateCount ?? 0) || 0),
+      itemCountTarget: Math.max(0, Number(result?.stats?.itemCountTarget ?? 0) || 0),
+      itemCountGenerated: Math.max(0, Number(result?.stats?.itemCountGenerated ?? 0) || 0),
+      tableRollCount: Math.max(0, Number(result?.stats?.tableRollCount ?? 0) || 0),
+      enabledItemSources: Math.max(0, Number(result?.stats?.enabledItemSources ?? 0) || 0),
+      enabledTableSources: Math.max(0, Number(result?.stats?.enabledTableSources ?? 0) || 0),
+      desiredItemCount: Math.max(
+        0,
+        Number(result?.stats?.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0
+      ),
+      maxItems: Math.max(0, Number(result?.stats?.maxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
+      encounterTargetGp: Number(
+        result?.stats?.encounterTargetGp ??
+          displayTotals.encounterTargetGp ??
+          valueBudgetContext.effectiveTotalTargetGp ??
+          0
+      ),
+      itemTargetGp: Number(
+        result?.stats?.itemTargetGp ?? displayTotals.itemTargetGp ?? valueBudgetContext.targetItemBudgetGp ?? 0
+      ),
+      currencyTargetGp: Number(
+        result?.stats?.currencyTargetGp ??
+          displayTotals.currencyTargetGp ??
+          valueBudgetContext.targetCurrencyBudgetGp ??
+          0
+      ),
+      finalItemsValueGp: Number(result?.stats?.finalItemsValueGp ?? displayTotals.finalItemsValueGp ?? 0),
+      finalCurrencyValueGp: Number(
+        result?.stats?.finalCurrencyValueGp ?? displayTotals.finalCurrencyValueGp ?? result?.currency?.gpEquivalent ?? 0
+      ),
+      finalCombinedValueGp: Number(result?.stats?.finalCombinedValueGp ?? displayTotals.finalCombinedValueGp ?? 0),
+      itemDeltaGp: Number(result?.stats?.itemDeltaGp ?? displayTotals.itemDeltaGp ?? 0),
+      deltaGp: Number(result?.stats?.deltaGp ?? displayTotals.deltaGp ?? 0),
+      strictnessToleranceGp: Number(result?.stats?.strictnessToleranceGp ?? valueBudgetContext.toleranceGp ?? 0),
+      strictnessTolerancePercent: Number(
+        result?.stats?.strictnessTolerancePercent ?? valueBudgetContext.tolerancePercent ?? 0
+      ),
+      strictnessBandLabel: String(
+        result?.stats?.strictnessBandLabel ?? valueBudgetContext.strictnessBandLabel ?? "Normal"
+      ),
+      deterministic: Boolean(result?.stats?.deterministic ?? draft?.deterministic !== false),
+      seed: String(result?.stats?.seed ?? "")
+    },
+    sort: previewSort,
+    sortOptions: LOOT_PREVIEW_SORT_OPTIONS.map((entry) => ({
+      ...entry,
+      selected: entry.value === previewSort
+    })),
+    items: itemRows,
+    itemsSorted: sortLootPreviewItems(itemRows, previewSort),
+    tableRolls: Array.isArray(result?.tableRolls)
+      ? result.tableRolls.map((entry) => ({
+          sourceLabel: String(entry?.sourceLabel ?? "Source"),
+          sourceType: String(entry?.sourceType ?? "currency"),
+          tableName: String(entry?.tableName ?? "Roll Table"),
+          formula: String(entry?.formula ?? ""),
+          total: Math.max(0, Number(entry?.total ?? 0) || 0),
+          result: String(entry?.result ?? "No result")
+        }))
+      : [],
+    warnings: Array.isArray(result?.warnings)
+      ? result.warnings.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : []
+  };
+}
+
+function buildLootClaimsContext(user = game.user) {
+  const ledger = getOperationsLedger();
+  const claims = ensureLootClaimsState(ledger);
+  const boards = Array.isArray(claims.boards) ? claims.boards : [];
+  const openBoards = boards
+    .filter((entry) => String(entry?.status ?? "open") !== "archived")
+    .sort((a, b) => Number(b?.publishedAt ?? 0) - Number(a?.publishedAt ?? 0));
+  const archivedBoards = boards.filter((entry) => String(entry?.status ?? "open") === "archived");
+  const boardById = new Map(boards.map((entry) => [String(entry?.id ?? ""), entry]));
+  const storedRunId = getLootClaimRunSelection();
+  const activeRunId = normalizeLootClaimRunId(claims.activeBoardId);
+  const activeRun = activeRunId ? boardById.get(activeRunId) : null;
+  const fallbackRunId =
+    activeRun && String(activeRun?.status ?? "open") !== "archived"
+      ? String(activeRun.id ?? "")
+      : String(openBoards[0]?.id ?? "");
+  const selectedRunId = boardById.has(storedRunId) ? storedRunId : fallbackRunId;
+  if (storedRunId !== selectedRunId) setLootClaimRunSelection(selectedRunId);
+  const selectedRun = boardById.get(selectedRunId) ?? null;
+  const displayRun = selectedRun ?? openBoards[0] ?? null;
+  const displayRunId = normalizeLootClaimRunId(displayRun?.id);
+  const displayRunStatus = String(displayRun?.status ?? "open");
+  const displayRunIsArchived = displayRunStatus === "archived";
+  if (displayRunId && displayRunId !== selectedRunId) setLootClaimRunSelection(displayRunId);
+
+  const formatTimestampLabel = (timestampInput, fallbackLabel = "-") => {
+    const timestamp = Math.max(0, Number(timestampInput ?? 0) || 0);
+    return timestamp > 0 ? new Date(timestamp).toLocaleString() : fallbackLabel;
+  };
+
+  const now = Date.now();
+  const mapClaimLogEntry = (entry = {}) => {
+    const claimedAt = Math.max(0, Number(entry?.claimedAt ?? 0) || 0);
+    const undoExpiresAt = Math.max(0, Number(entry?.undoExpiresAt ?? 0) || 0);
+    const undoneAt = Math.max(0, Number(entry?.undoneAt ?? 0) || 0);
+    const canUndo = undoExpiresAt > now && undoneAt <= 0;
+    return {
+      id: String(entry?.id ?? "").trim(),
+      itemName: String(entry?.itemName ?? "Item").trim() || "Item",
+      actorName: String(entry?.actorName ?? "-").trim() || "-",
+      claimedByName: String(entry?.claimedByName ?? "Player").trim() || "Player",
+      claimedAt,
+      claimedAtLabel: formatTimestampLabel(claimedAt),
+      canUndo,
+      undoExpiresAt,
+      undoRemainingSeconds: canUndo ? Math.max(1, Math.ceil((undoExpiresAt - now) / 1000)) : 0,
+      undoneAt,
+      undoneAtLabel: undoneAt > 0 ? formatTimestampLabel(undoneAt) : "",
+      undoneByName: String(entry?.undoneByName ?? "").trim(),
+      isUndone: undoneAt > 0
+    };
+  };
+
+  const mapRunCard = (run) => {
+    const id = normalizeLootClaimRunId(run?.id);
+    const status = String(run?.status ?? "open") === "archived" ? "archived" : "open";
+    const currencyRemaining = run?.currencyRemaining ?? run?.currency ?? {};
+    const hasCurrencyRemaining = ["pp", "gp", "sp", "cp"].some((denom) => {
+      return Math.max(0, Math.floor(Number(currencyRemaining?.[denom] ?? 0) || 0)) > 0;
+    });
+    const itemCount = Array.isArray(run?.items)
+      ? run.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
+    const claimsLogCount = Array.isArray(run?.claimsLog) ? run.claimsLog.length : 0;
+    const contestedItemCount = Array.isArray(run?.items)
+      ? run.items.filter((item) => Array.isArray(item?.vouchedByActorIds) && item.vouchedByActorIds.length > 1).length
+      : 0;
+    const majorItemCount = Array.isArray(run?.items) ? run.items.filter((item) => Boolean(item?.majorItem)).length : 0;
+    const claimsLogEntries = Array.isArray(run?.claimsLog)
+      ? [...run.claimsLog]
+          .map((entry) => mapClaimLogEntry(entry))
+          .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
+      : [];
+    return {
+      id,
+      selected: id === displayRunId,
+      status,
+      isOpen: status === "open",
+      isArchived: status === "archived",
+      statusLabel: status === "archived" ? "Archived" : "Open",
+      publishedAt: Math.max(0, Number(run?.publishedAt ?? 0) || 0),
+      publishedAtLabel: formatTimestampLabel(run?.publishedAt),
+      publishedBy: String(run?.publishedBy ?? "").trim() || "GM",
+      archivedAt: Math.max(0, Number(run?.archivedAt ?? 0) || 0),
+      archivedAtLabel: formatTimestampLabel(run?.archivedAt, "Not archived"),
+      archivedBy: String(run?.archivedBy ?? "").trim() || "GM",
+      itemCount,
+      claimsLogCount,
+      claimsLogEntries,
+      contestedItemCount,
+      majorItemCount,
+      hasContestedItems: contestedItemCount > 0,
+      hasMajorItems: majorItemCount > 0,
+      hasCurrencyRemaining,
+      currencyRemaining: {
+        pp: Math.max(0, Math.floor(Number(currencyRemaining?.pp ?? 0) || 0)),
+        gp: Math.max(0, Math.floor(Number(currencyRemaining?.gp ?? 0) || 0)),
+        sp: Math.max(0, Math.floor(Number(currencyRemaining?.sp ?? 0) || 0)),
+        cp: Math.max(0, Math.floor(Number(currencyRemaining?.cp ?? 0) || 0))
+      },
+      currencyRemainingLabel: formatLootCurrencyRemainingLabel(currencyRemaining),
+      tableRollCount: Array.isArray(run?.tableRolls) ? run.tableRolls.length : 0
+    };
+  };
+
+  const archiveSort = getLootClaimsArchiveSort();
+  const sortedArchivedBoards = [...archivedBoards].sort((left, right) => {
+    const leftArchivedAt = Math.max(0, Number(left?.archivedAt ?? 0) || 0);
+    const rightArchivedAt = Math.max(0, Number(right?.archivedAt ?? 0) || 0);
+    const leftPublishedAt = Math.max(0, Number(left?.publishedAt ?? 0) || 0);
+    const rightPublishedAt = Math.max(0, Number(right?.publishedAt ?? 0) || 0);
+    const leftItemCount = Array.isArray(left?.items)
+      ? left.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
+    const rightItemCount = Array.isArray(right?.items)
+      ? right.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
+    switch (archiveSort) {
+      case "archived-asc":
+        return leftArchivedAt - rightArchivedAt;
+      case "published-desc":
+        return rightPublishedAt - leftPublishedAt;
+      case "published-asc":
+        return leftPublishedAt - rightPublishedAt;
+      case "items-desc":
+        return rightItemCount - leftItemCount;
+      case "items-asc":
+        return leftItemCount - rightItemCount;
+      case "archived-desc":
+      default:
+        return rightArchivedAt - leftArchivedAt;
+    }
+  });
+
+  const publishedAt = Number(displayRun?.publishedAt ?? claims.publishedAt ?? 0);
+  const publishedAtLabel = publishedAt > 0 ? new Date(publishedAt).toLocaleString() : "-";
+  const selectableActors = getLootClaimSelectableActorsForUser(user);
+  const canManageClaims = canAccessAllPlayerOps(user);
+  const storedActorId = getLootClaimActorSelection();
+  const actorOptions = selectableActors.map((actor) => {
+    const actorId = String(actor.id ?? "").trim();
+    const actorName = String(actor.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`;
+    const actorType = String(actor.type ?? "npc").trim() || "npc";
+    const actorTypeLabel = actorType.charAt(0).toUpperCase() + actorType.slice(1);
+    const actorImage = normalizeFoundryAssetImagePath(actor.img ?? actor.prototypeToken?.texture?.src, {
+      fallback: "icons/svg/mystery-man.svg"
+    });
+    const isStashLike = actorType !== "character";
+    const sys = actor.system?.currency ?? {};
+    const cPp = Math.max(0, Math.floor(Number(sys.pp ?? 0) || 0));
+    const cGp = Math.max(0, Math.floor(Number(sys.gp ?? 0) || 0));
+    const cSp = Math.max(0, Math.floor(Number(sys.sp ?? 0) || 0));
+    const cCp = Math.max(0, Math.floor(Number(sys.cp ?? 0) || 0));
+    const currencyParts = [];
+    if (cPp > 0) currencyParts.push(`${cPp}pp`);
+    if (cGp > 0) currencyParts.push(`${cGp}gp`);
+    if (cSp > 0) currencyParts.push(`${cSp}sp`);
+    if (cCp > 0) currencyParts.push(`${cCp}cp`);
+    const currencyLabel = currencyParts.slice(0, 2).join(" ");
+    return {
+      id: actorId,
+      name: actorName,
+      type: actorType,
+      typeLabel: actorTypeLabel,
+      img: actorImage,
+      isStashLike,
+      isLastUsed: actorId.length > 0 && actorId === storedActorId,
+      currencyLabel,
+      hasCurrencyLabel: currencyLabel.length > 0,
+      selected: false
+    };
+  });
+  // Group PC actors by owning player (GM view)
+  const actorGroups = [];
+  if (canManageClaims) {
+    const groupByUserId = new Map();
+    const ungrouped = [];
+    for (const actorOption of actorOptions) {
+      const foundActor = game.actors?.get?.(actorOption.id);
+      const ownership = foundActor?.ownership ?? {};
+      const ownerUsers = Object.entries(ownership)
+        .filter(([userId, level]) => userId !== "default" && Number(level) >= 3)
+        .map(([userId]) => game.users?.get?.(userId))
+        .filter((u) => u && !u.isGM);
+      if (ownerUsers.length > 0) {
+        const ownerUser = ownerUsers[0];
+        if (!groupByUserId.has(ownerUser.id)) {
+          groupByUserId.set(ownerUser.id, {
+            ownerUserId: String(ownerUser.id),
+            ownerName: String(ownerUser.name ?? "Player"),
+            ownerColor: String(ownerUser.color ?? "#888888"),
+            isActive: Boolean(ownerUser.active),
+            actors: []
+          });
+        }
+        groupByUserId.get(ownerUser.id).actors.push(actorOption);
+      } else {
+        ungrouped.push(actorOption);
+      }
+    }
+    const sortedGroups = Array.from(groupByUserId.values()).sort((a, b) => {
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      return a.ownerName.localeCompare(b.ownerName);
+    });
+    actorGroups.push(...sortedGroups);
+    if (ungrouped.length > 0) {
+      actorGroups.push({
+        ownerName: "Unassigned",
+        isActive: false,
+        ownerUserId: "",
+        ownerColor: "#888888",
+        actors: ungrouped
+      });
+    }
+  }
+  // Active players with no eligible PC on the board
+  const activePlayers = (game.users?.contents ?? []).filter((u) => u && !u.isGM && Boolean(u.active));
+  const representedUserIds = new Set(actorGroups.filter((g) => g.ownerUserId).map((g) => g.ownerUserId));
+  const unrepresentedPlayers = activePlayers
+    .filter((u) => !representedUserIds.has(String(u.id)))
+    .map((u) => ({ name: String(u.name ?? "Player"), color: String(u.color ?? "#888888") }));
+  const canChooseActor = actorOptions.length > 1;
+  const preferredActorId = storedActorId || String(getActiveActorForUser(user)?.id ?? "").trim();
+  const fallbackActorId = actorOptions[0]?.id ?? "";
+  const selectedActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
+  for (const option of actorOptions) option.selected = option.id === selectedActorId;
+  if (!storedActorId || storedActorId !== selectedActorId) {
+    setLootClaimActorSelection(selectedActorId);
+  }
+  const selectedActorName = actorOptions.find((entry) => entry.id === selectedActorId)?.name ?? "";
+  const selectedActorIsStashLike = Boolean(actorOptions.find((entry) => entry.id === selectedActorId)?.isStashLike);
+  const voucherEligibleActorIds = new Set(
+    selectableActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean)
+  );
+  const currencyEligibleActorIds = new Set(
+    selectableActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean)
+  );
+  const actorNameById = new Map(
+    (game.actors?.contents ?? [])
+      .filter((actor) => actor?.type === "character" && actor?.id)
+      .map((actor) => [String(actor.id), String(actor.name ?? `Actor ${actor.id}`).trim() || `Actor ${actor.id}`])
+  );
+  const displayCurrencyClaimedActorIds = Array.isArray(displayRun?.currencyClaimedActorIds)
+    ? displayRun.currencyClaimedActorIds
+    : [];
+  const claimedActorIds = new Set(
+    displayCurrencyClaimedActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+  );
+  const selectedActorClaimedCurrency = claimedActorIds.has(selectedActorId);
+  const displayCurrency = displayRun?.currency ?? { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
+  const displayCurrencyRemaining = displayRun?.currencyRemaining ?? displayCurrency;
+  const liveSearch = getLootClaimsLiveSearch();
+  const liveSearchNeedle = liveSearch.toLowerCase();
+  const liveSort = getLootClaimsLiveSort();
+  const currencyRemaining = {
+    pp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.pp ?? displayCurrency?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.gp ?? displayCurrency?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.sp ?? displayCurrency?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.cp ?? displayCurrency?.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(displayCurrencyRemaining?.gpEquivalent ?? displayCurrency?.gpEquivalent ?? 0) || 0)
+  };
+  const hasCurrencyRemaining =
+    currencyRemaining.pp > 0 || currencyRemaining.gp > 0 || currencyRemaining.sp > 0 || currencyRemaining.cp > 0;
+  const displayItems = Array.isArray(displayRun?.items) ? displayRun.items : [];
+  const displayTableRolls = Array.isArray(displayRun?.tableRolls) ? displayRun.tableRolls : [];
+  const displayClaimsLog = Array.isArray(displayRun?.claimsLog) ? displayRun.claimsLog : [];
+  const displayClaimsLogEntries = displayClaimsLog
+    .map((entry) => mapClaimLogEntry(entry))
+    .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0));
+  const undoEntries = displayClaimsLogEntries.filter((entry) => entry.canUndo).slice(0, 6);
+  const openRunCards = openBoards.map((run) => mapRunCard(run));
+  const archivedRunCards = sortedArchivedBoards.map((run) => mapRunCard(run));
+  const selectedRunCard = displayRun ? mapRunCard(displayRun) : null;
+  const runOptions = [...openBoards].map((run) => {
+    const status = String(run?.status ?? "open") === "archived" ? "archived" : "open";
+    const statusLabel = status === "archived" ? "Archived" : "Open";
+    const publishedLabel = formatTimestampLabel(run?.publishedAt);
+    const itemCount = Array.isArray(run?.items)
+      ? run.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
+    return {
+      id: String(run?.id ?? ""),
+      label: `${publishedLabel} - ${itemCount} item(s) - ${statusLabel}`,
+      selected: String(run?.id ?? "") === displayRunId,
+      isArchived: status === "archived",
+      isOpen: status === "open"
+    };
+  });
+  const archiveSortOptions = LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS.map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: entry.value === archiveSort
+  }));
+  const liveSortOptions = LOOT_CLAIMS_LIVE_SORT_OPTIONS.map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: entry.value === liveSort
+  }));
+  const hasSelectedRun = Boolean(displayRun);
+  const selectedRunHasItems = displayItems.length > 0;
+  const selectedRunItemCount = displayItems.reduce(
+    (sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+    0
+  );
+  const selectedRunClaimsLogCount = displayClaimsLog.length;
+  const selectedRunContestedItemCount = displayItems.filter(
+    (entry) => Array.isArray(entry?.vouchedByActorIds) && entry.vouchedByActorIds.length > 1
+  ).length;
+  const canDepositAllItems = hasSelectedRun && !displayRunIsArchived && Boolean(selectedActorId) && selectedRunHasItems;
+  const canClaimCurrency =
+    hasSelectedRun &&
+    !displayRunIsArchived &&
+    Boolean(selectedActorId) &&
+    currencyEligibleActorIds.has(selectedActorId) &&
+    hasCurrencyRemaining;
+  const splitEligibleActors = selectableActors.filter((actor) => String(actor?.type ?? "") === "character");
+  const canSplitCurrency =
+    hasSelectedRun && !displayRunIsArchived && splitEligibleActors.length > 0 && hasCurrencyRemaining;
+  const canSendEverything =
+    hasSelectedRun &&
+    !displayRunIsArchived &&
+    Boolean(selectedActorId) &&
+    (selectedRunHasItems || hasCurrencyRemaining);
+  const singleVouchItems = displayItems.filter(
+    (item) => Array.isArray(item?.vouchedByActorIds) && item.vouchedByActorIds.length === 1
+  );
+  const unvouchedItems = displayItems.filter(
+    (item) => !Array.isArray(item?.vouchedByActorIds) || item.vouchedByActorIds.length === 0
+  );
+  const pcActorCount = actorOptions.filter((a) => !a.isStashLike).length;
+  const canAutoAssignByVouch = hasSelectedRun && !displayRunIsArchived && singleVouchItems.length > 0;
+  const canAutoSplitItems = hasSelectedRun && !displayRunIsArchived && unvouchedItems.length > 0 && pcActorCount >= 2;
+  return {
+    selectedRunId: displayRunId,
+    selectedRunStatus: displayRunStatus,
+    selectedRunIsArchived: displayRunIsArchived,
+    hasSelectedRun,
+    selectedRunCard,
+    canArchiveSelectedRun: hasSelectedRun && !displayRunIsArchived,
+    hasOpenRuns: openRunCards.length > 0,
+    openRunCount: openRunCards.length,
+    openRuns: openRunCards,
+    hasArchivedRuns: archivedRunCards.length > 0,
+    archivedRunCount: archivedRunCards.length,
+    archivedRuns: archivedRunCards,
+    archiveSort,
+    archiveSortOptions,
+    runOptions,
+    hasMultipleOpenRuns: runOptions.length > 1,
+    publishedAtLabel,
+    publishedBy: String(displayRun?.publishedBy ?? claims.publishedBy ?? "").trim() || "GM",
+    hasPublished: publishedAt > 0,
+    hasItems: selectedRunHasItems,
+    itemCount: selectedRunItemCount,
+    claimsLogCount: selectedRunClaimsLogCount,
+    claimsLogEntries: displayClaimsLogEntries,
+    undoEntries,
+    hasUndoEntries: undoEntries.length > 0,
+    currency: foundry.utils.deepClone(displayCurrency),
+    currencyRemaining,
+    currencyRemainingLabel: formatLootCurrencyRemainingLabel(currencyRemaining),
+    hasCurrencyRemaining,
+    selectedActorClaimedCurrency,
+    canClaimCurrency,
+    canSplitCurrency,
+    splitEligibleActorCount: splitEligibleActors.length,
+    canDepositAllItems,
+    canSendEverything,
+    currencyClaimedCount: claimedActorIds.size,
+    tableRolls: foundry.utils.deepClone(displayTableRolls),
+    canChooseActor,
+    actorOptions,
+    selectedActorId,
+    selectedActorName,
+    selectedActorIsStashLike,
+    actorGroups,
+    hasActorGroups: actorGroups.length > 0,
+    unrepresentedPlayers,
+    hasUnrepresentedPlayers: unrepresentedPlayers.length > 0,
+    canAutoAssignByVouch,
+    canAutoSplitItems,
+    liveSearch,
+    hasLiveSearch: liveSearch.length > 0,
+    liveSort,
+    liveSortOptions,
+    items: displayItems
+      .map((entry) => ({
+        ...entry,
+        claimRunId: displayRunId,
+        quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+        itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+        variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
+        itemValueLabel:
+          Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
+            ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+            : "",
+        itemWeightLabel: formatLootWeightLabel(entry?.itemWeightLb ?? 0),
+        hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
+        hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
+        hasItemWeight: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)) > 0,
+        hasRarity: entry.rarity.length > 0,
+        isUnidentified: entry?.identified === false,
+        isJackpotRoll: Boolean(entry?.jackpotRoll),
+        jackpotBleedLabel:
+          String(entry?.jackpotBleedType ?? "")
+            .trim()
+            .toLowerCase() === "rarity"
+            ? "Lucky Upgrade"
+            : "Lucky Find",
+        canOpen: entry.uuid.length > 0,
+        isMajorItem: Boolean(entry.majorItem),
+        vouchedByActorIds: Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [],
+        vouchedByNames: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
+          .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
+          .filter(Boolean),
+        voucherCount: Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds.length : 0,
+        hasVouchers: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 0,
+        selectedActorVouched:
+          Boolean(selectedActorId) &&
+          Array.isArray(entry.vouchedByActorIds) &&
+          entry.vouchedByActorIds.includes(selectedActorId),
+        canVouch: !displayRunIsArchived && Boolean(selectedActorId) && voucherEligibleActorIds.has(selectedActorId),
+        requiresRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
+        canRunRollOff:
+          !displayRunIsArchived && Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
+        canClaimDirect: !displayRunIsArchived && Boolean(selectedActorId),
+        vouchedByNamesText: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
+          .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
+          .filter(Boolean)
+          .join(", ")
+      }))
+      .filter(
+        (entry) =>
+          !liveSearchNeedle ||
+          String(entry?.name ?? "")
+            .toLowerCase()
+            .includes(liveSearchNeedle)
+      )
+      .sort((left, right) => {
+        switch (liveSort) {
+          case "value-asc":
+            return Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0);
+          case "value-desc":
+            return Number(right?.itemValueGp ?? 0) - Number(left?.itemValueGp ?? 0);
+          case "weight-asc":
+            return Number(left?.itemWeightLb ?? 0) - Number(right?.itemWeightLb ?? 0);
+          case "weight-desc":
+            return Number(right?.itemWeightLb ?? 0) - Number(left?.itemWeightLb ?? 0);
+          case "quantity-asc":
+            return Number(left?.quantity ?? 0) - Number(right?.quantity ?? 0);
+          case "quantity-desc":
+            return Number(right?.quantity ?? 0) - Number(left?.quantity ?? 0);
+          case "name-desc":
+            return String(right?.name ?? "").localeCompare(String(left?.name ?? ""));
+          case "name-asc":
+          default:
+            return String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
+        }
+      }),
+    hasVisibleItems: displayItems
+      .map((entry) => ({ name: String(entry?.name ?? "") }))
+      .some((entry) => !liveSearchNeedle || entry.name.toLowerCase().includes(liveSearchNeedle)),
+    contestedItemCount: selectedRunContestedItemCount
+  };
+}
+
+function buildDefaultOperationsLedger() {
+  return {
+    roles: {
+      quartermaster: "",
+      cartographer: "",
+      chronicler: "",
+      steward: ""
+    },
+    sops: {
+      campSetup: false,
+      watchRotation: false,
+      dungeonBreach: false,
+      urbanEntry: false,
+      prisonerHandling: false,
+      retreatProtocol: false
+    },
+    sopNotes: {
+      campSetup: "",
+      watchRotation: "",
+      dungeonBreach: "",
+      urbanEntry: "",
+      prisonerHandling: "",
+      retreatProtocol: ""
+    },
+    sopNoteLedger: {
+      campSetup: [],
+      watchRotation: [],
+      dungeonBreach: [],
+      urbanEntry: [],
+      prisonerHandling: [],
+      retreatProtocol: []
+    },
+    reputation: {
+      factions: getDefaultReputationFactions()
+    },
+    supplyLines: {
+      resupplyRisk: "moderate",
+      caravanEscortPlanned: false,
+      caches: [],
+      safehouses: []
+    },
+    recon: {
+      objective: "",
+      region: "",
+      intelSource: "",
+      heatLevel: "moderate",
+      network: "limited",
+      rumorReliability: 50,
+      bribeBudget: 0,
+      spySlots: 0,
+      recentFindings: "",
+      lastBriefAt: "-",
+      lastBriefBy: "-"
+    },
+    baseOperations: {
+      maintenanceRisk: "moderate",
+      sites: []
+    },
+    merchants: {
+      currentSettlement: "",
+      cityCatalog: [],
+      definitions: [],
+      stockStateById: {},
+      accessLog: [],
+      shopSession: {
+        isOpen: false,
+        restrictToSelected: false,
+        allowedUserIds: [],
+        userSettlements: {},
+        lastOpenedAt: 0,
+        lastOpenedBy: "",
+        lastClosedAt: 0,
+        lastClosedBy: ""
+      }
+    },
+    downtime: {
+      hoursGranted: 4,
+      publishedHoursGranted: 0,
+      publishedAt: 0,
+      publishedBy: "",
+      tuning: {
+        economy: "standard",
+        risk: "standard",
+        discovery: "standard"
+      },
+      entries: {},
+      logs: []
+    },
+    lootClaims: {
+      publishedAt: 0,
+      publishedBy: "",
+      activeBoardId: "",
+      boards: [],
+      currency: {
+        pp: 0,
+        gp: 0,
+        sp: 0,
+        cp: 0,
+        gpEquivalent: 0
+      },
+      currencyRemaining: {
+        pp: 0,
+        gp: 0,
+        sp: 0,
+        cp: 0,
+        gpEquivalent: 0
+      },
+      currencyClaimedActorIds: [],
+      items: [],
+      tableRolls: [],
+      claimsLog: []
+    },
+    environment: {
+      presetKey: "none",
+      movementDc: 12,
+      appliedActorIds: [],
+      syncToSceneNonParty: true,
+      configurePresetKey: "slippery-surface",
+      configureActionKey: "move",
+      note: "",
+      logs: [],
+      failureStreaks: {},
+      checkResults: [],
+      successiveByPreset: {},
+      presetDefinitions: {},
+      presetOrder: [],
+      actionDefinitions: {},
+      actionOrder: []
+    },
+    weather: {
+      current: null,
+      logs: []
+    },
+    partyHealth: {
+      syncToSceneNonParty: true,
+      nonPartySyncScope: NON_PARTY_SYNC_SCOPES.SCENE
+    },
+    resources: {
+      food: 14,
+      partyFoodRations: 0,
+      partyWaterRations: 0,
+      water: 14,
+      torches: 0,
+      stewardPools: {
+        food: { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" },
+        water: { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" },
+        torches: { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" }
+      },
+      upkeepLastAppliedTs: null,
+      gather: {
+        weatherMods: {
+          clear: 0,
+          "light-rain": 2,
+          "heavy-rain": 5,
+          wind: 2,
+          fog: 3,
+          extreme: 5
+        },
+        pendingPools: {
+          food: 0,
+          water: 0
+        },
+        autoUpkeepPrompt: {
+          state: AUTO_UPKEEP_PROMPT_STATES.IDLE,
+          messageId: "",
+          createdAt: 0,
+          dayKey: "",
+          lastResolvedAt: 0
+        },
+        foodCoverageDueKey: null,
+        waterCoverageDueKey: null,
+        requests: [],
+        history: []
+      },
+      encumbrance: "light",
+      upkeep: {
+        partySize: 4,
+        foodPerMember: 1,
+        waterPerMember: 1,
+        foodMultiplier: 1,
+        waterMultiplier: 1,
+        torchPerRest: 0
+      }
+    }
+  };
+}
+
+function isLootItemLikelyMajor(entry = {}) {
+  const rarity = String(entry?.rarity ?? "")
+    .trim()
+    .toLowerCase();
+  if (!rarity) return false;
+  return rarity.includes("rare") || rarity.includes("legendary") || rarity.includes("artifact");
+}
+
+function getUpkeepDueCount(timestamp = getCurrentWorldTimestamp()) {
+  return getCalendarDueCountBridge(timestamp, {
+    boundaryMinutes: UPKEEP_DUSK_MINUTES,
+    gameRef: game,
+    globalRef: globalThis
+  });
+}
+
+function getNextUpkeepDueKey(timestamp = getCurrentWorldTimestamp()) {
+  return getUpkeepDueCount(timestamp) + 1;
+}
+
+function getUpkeepDaysFromCalendar(lastAppliedTimestamp, currentTimestamp = getCurrentWorldTimestamp()) {
+  return getElapsedCalendarDaysBridge(lastAppliedTimestamp, currentTimestamp, {
+    boundaryMinutes: UPKEEP_DUSK_MINUTES,
+    gameRef: game,
+    globalRef: globalThis
+  });
+}
+
+function getOperationsLedger() {
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.OPS_LEDGER);
+  const defaults = buildDefaultOperationsLedger();
+  const merged = foundry.utils.mergeObject(defaults, stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+
+  const ensureObject = (value, fallback) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    return foundry.utils.deepClone(fallback);
+  };
+
+  merged.roles = ensureObject(merged.roles, defaults.roles);
+  merged.sops = ensureObject(merged.sops, defaults.sops);
+  merged.sopNotes = ensureObject(merged.sopNotes, defaults.sopNotes);
+  merged.sopNoteLedger = ensureObject(merged.sopNoteLedger, defaults.sopNoteLedger);
+  merged.reputation = ensureObject(merged.reputation, defaults.reputation);
+  merged.supplyLines = ensureObject(merged.supplyLines, defaults.supplyLines);
+  merged.recon = ensureObject(merged.recon, defaults.recon);
+  merged.baseOperations = ensureObject(merged.baseOperations, defaults.baseOperations);
+  merged.merchants = ensureObject(merged.merchants, defaults.merchants);
+  merged.downtime = ensureObject(merged.downtime, defaults.downtime);
+  merged.lootClaims = ensureObject(merged.lootClaims, defaults.lootClaims);
+  merged.environment = ensureObject(merged.environment, defaults.environment);
+  merged.weather = ensureObject(merged.weather, defaults.weather);
+  merged.partyHealth = ensureObject(merged.partyHealth, defaults.partyHealth);
+  merged.resources = ensureObject(merged.resources, defaults.resources);
+
+  merged.reputation.factions = Array.isArray(merged.reputation.factions)
+    ? merged.reputation.factions
+    : foundry.utils.deepClone(defaults.reputation.factions);
+  for (const key of SOP_KEYS) {
+    merged.sopNoteLedger[key] = Array.isArray(merged.sopNoteLedger[key]) ? merged.sopNoteLedger[key] : [];
+  }
+  merged.supplyLines.caches = Array.isArray(merged.supplyLines.caches) ? merged.supplyLines.caches : [];
+  merged.supplyLines.safehouses = Array.isArray(merged.supplyLines.safehouses) ? merged.supplyLines.safehouses : [];
+  merged.baseOperations.sites = Array.isArray(merged.baseOperations.sites) ? merged.baseOperations.sites : [];
+  merged.downtime.logs = Array.isArray(merged.downtime.logs) ? merged.downtime.logs : [];
+  merged.lootClaims.boards = Array.isArray(merged.lootClaims.boards) ? merged.lootClaims.boards : [];
+  merged.lootClaims.activeBoardId = normalizeLootClaimRunId(merged.lootClaims.activeBoardId);
+  merged.lootClaims.items = Array.isArray(merged.lootClaims.items) ? merged.lootClaims.items : [];
+  merged.lootClaims.tableRolls = Array.isArray(merged.lootClaims.tableRolls) ? merged.lootClaims.tableRolls : [];
+  merged.lootClaims.claimsLog = Array.isArray(merged.lootClaims.claimsLog) ? merged.lootClaims.claimsLog : [];
+  merged.lootClaims.currencyClaimedActorIds = Array.isArray(merged.lootClaims.currencyClaimedActorIds)
+    ? merged.lootClaims.currencyClaimedActorIds
+    : [];
+  merged.environment.logs = Array.isArray(merged.environment.logs) ? merged.environment.logs : [];
+  merged.environment.checkResults = Array.isArray(merged.environment.checkResults)
+    ? merged.environment.checkResults
+    : [];
+  merged.weather.logs = Array.isArray(merged.weather.logs) ? merged.weather.logs : [];
+  merged.partyHealth.syncToSceneNonParty = merged.partyHealth.syncToSceneNonParty !== false;
+  merged.partyHealth.nonPartySyncScope = getNonPartySyncScope(merged.partyHealth.nonPartySyncScope);
+
+  merged.resources.gather = ensureObject(merged.resources.gather, defaults.resources.gather);
+  merged.resources.gather.weatherMods = ensureObject(
+    merged.resources.gather.weatherMods,
+    defaults.resources.gather.weatherMods
+  );
+  merged.resources.upkeep = ensureObject(merged.resources.upkeep, defaults.resources.upkeep);
+  ensureOperationalResourceConfig(merged.resources);
+  ensureMerchantsState(merged);
+  delete merged.communication;
+
+  return merged;
+}
+
+async function updateOperationsLedger(mutator, options = {}) {
+  if (typeof mutator !== "function") return;
+  try {
+    const ledger = getOperationsLedger();
+    mutator(ledger);
+
+    if (!game.user?.isGM) {
+      if (!hasActiveGmClient()) {
+        const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+        if (!saved) return false;
+        if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+        return true;
+      }
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:ledger-write",
+        userId: game.user.id,
+        ledger
+      });
+      return true;
+    }
+
+    const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+    if (!saved) return false;
+    scheduleIntegrationSync("operations-ledger");
+    if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    if (!options.skipSocketRefresh) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    return true;
+  } catch (error) {
+    logUiFailure("operations-ledger", "update failed", error, {
+      skipLocalRefresh: Boolean(options?.skipLocalRefresh),
+      skipSocketRefresh: Boolean(options?.skipSocketRefresh),
+      isGM: Boolean(game.user?.isGM)
+    });
+    throw error;
+  }
+}
+
+function getOwnedPcActors() {
+  const fromParty = Array.isArray(game.party?.members) ? game.party.members : [];
+  const unique = new Map();
+  for (const actor of fromParty) {
+    if (!actor || actor.type !== "character" || !actor.hasPlayerOwner) continue;
+    unique.set(actor.id, actor);
+  }
+  if (unique.size === 0) {
+    for (const actor of game.actors.contents) {
+      if (!actor || actor.type !== "character" || !actor.hasPlayerOwner) continue;
+      unique.set(actor.id, actor);
+    }
+  }
+  return Array.from(unique.values());
+}
+
+function getPartyCharacterActors() {
+  const unique = new Map();
+  for (const actor of Array.isArray(game.party?.members) ? game.party.members : []) {
+    if (!actor || actor.type !== "character" || !actor.id) continue;
+    unique.set(String(actor.id), actor);
+  }
+  return Array.from(unique.values()).sort((left, right) =>
+    String(left?.name ?? "").localeCompare(String(right?.name ?? ""))
+  );
+}
+
+function getLootClaimSelectableActorsForUser(user = game.user) {
+  if (!user) return [];
+  const isGmUser = canAccessAllPlayerOps(user);
+  const unique = new Map();
+  const addActor = (actor) => {
+    if (!actor || !actor.id) return;
+    if (!canUserManageDowntimeActor(user, actor)) return;
+    unique.set(String(actor.id), actor);
+  };
+
+  if (!isGmUser && user.character?.id) addActor(user.character);
+  for (const actor of getPartyCharacterActors()) addActor(actor);
+  for (const actor of getOwnedPcActors()) addActor(actor);
+  if (!isGmUser) {
+    for (const actor of game.actors?.contents ?? []) addActor(actor);
+  }
+
+  return Array.from(unique.values()).sort((left, right) => {
+    const leftIsCharacter = String(left?.type ?? "") === "character";
+    const rightIsCharacter = String(right?.type ?? "") === "character";
+    if (leftIsCharacter !== rightIsCharacter) return leftIsCharacter ? -1 : 1;
+    return (left?.name ?? "").localeCompare(right?.name ?? "");
+  });
+}
+
+function getLootCurrencySplitEligibleActorsForUser(user = game.user) {
+  return getLootClaimSelectableActorsForUser(user).filter((actor) => String(actor?.type ?? "") === "character");
+}
+
+async function runLootClaimRequestOnce(requestKey, operation) {
+  const key = String(requestKey ?? "").trim();
+  if (!key) return operation();
+  if (activeLootClaimRequestKeys.has(key)) return { skipped: true };
+  activeLootClaimRequestKeys.add(key);
+  try {
+    return await operation();
+  } finally {
+    activeLootClaimRequestKeys.delete(key);
+  }
+}
+
+function getNeutralFriendlyActors() {
+  const dispositions = CONST?.TOKEN_DISPOSITIONS ?? { HOSTILE: -1, NEUTRAL: 0, FRIENDLY: 1 };
+  const allowed = new Set([dispositions.NEUTRAL, dispositions.FRIENDLY]);
+  const unique = new Map();
+  for (const actor of game.actors.contents) {
+    if (!actor || actor.type === "character" || actor.hasPlayerOwner) continue;
+    const disposition = Number(actor.prototypeToken?.disposition ?? dispositions.NEUTRAL);
+    if (!allowed.has(disposition)) continue;
+    unique.set(actor.id, actor);
+  }
+  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function getPartyMemberActorIds() {
+  const ids = new Set();
+  for (const actor of Array.isArray(game.party?.members) ? game.party.members : []) {
+    if (!actor?.id) continue;
+    ids.add(String(actor.id));
+  }
+  for (const actor of getOwnedPcActors()) {
+    if (!actor?.id) continue;
+    ids.add(String(actor.id));
+  }
+  return ids;
+}
+
+function getSceneNonPartyIntegrationTargets() {
+  const scene = game.scenes?.current;
+  if (!scene) return [];
+  const partyActorIds = getPartyMemberActorIds();
+  const unique = new Map();
+  for (const tokenDoc of scene.tokens?.contents ?? []) {
+    const actor = tokenDoc?.actor;
+    if (!actor) continue;
+    const actorId = String(actor.id ?? tokenDoc.actorId ?? "").trim();
+    if (actorId && partyActorIds.has(actorId)) continue;
+    if (actor.hasPlayerOwner) continue;
+    const actorUuid = String(actor.uuid ?? "").trim();
+    const tokenUuid = String(tokenDoc.uuid ?? "").trim();
+    const key = actorUuid || tokenUuid || `${scene.id}:${tokenDoc.id}:${actorId || tokenDoc.id}`;
+    if (!key) continue;
+    if (!unique.has(key)) {
+      unique.set(key, {
+        key,
+        actor,
+        actorName: String(actor.name ?? tokenDoc.name ?? "Unknown Actor").trim() || "Unknown Actor",
+        tokenCount: 0,
+        tokenNames: []
+      });
+    }
+    const row = unique.get(key);
+    row.tokenCount += 1;
+    const tokenName = String(tokenDoc.name ?? actor.name ?? "").trim();
+    if (tokenName && !row.tokenNames.includes(tokenName)) row.tokenNames.push(tokenName);
+  }
+  return Array.from(unique.values())
+    .map((row) => ({
+      actor: row.actor,
+      actorRef: String(row.key),
+      actorName: row.actorName,
+      tokenCount: Math.max(1, Number(row.tokenCount ?? 0) || 1),
+      tokenNamesLabel: row.tokenNames.length > 0 ? row.tokenNames.join(", ") : row.actorName
+    }))
+    .sort((a, b) => a.actorName.localeCompare(b.actorName));
+}
+
+function getSceneNonPartyIntegrationActors() {
+  return getSceneNonPartyIntegrationTargets()
+    .map((entry) => entry.actor)
+    .filter(Boolean);
+}
+
+function getNonPartySyncScope(rawScope) {
+  const value = String(rawScope ?? "")
+    .trim()
+    .toLowerCase();
+  if (value === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY) return NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY;
+  if (value === NON_PARTY_SYNC_SCOPES.WORLD_ALL) return NON_PARTY_SYNC_SCOPES.WORLD_ALL;
+  return NON_PARTY_SYNC_SCOPES.SCENE;
+}
+
+function getNonPartySyncScopeLabel(scope) {
+  if (scope === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY) return "All Non-Party Monsters (World)";
+  if (scope === NON_PARTY_SYNC_SCOPES.WORLD_ALL) return "All Actors (World)";
+  return "Non-Party Actors on Current Scene";
+}
+
+function getWorldNonPartyIntegrationTargets() {
+  const partyActorIds = getPartyMemberActorIds();
+  return game.actors.contents
+    .filter((actor) => actor && !actor.hasPlayerOwner && !partyActorIds.has(String(actor.id ?? "")))
+    .map((actor) => ({
+      actor,
+      actorRef: String(actor.id ?? ""),
+      actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      tokenCount: 0,
+      tokenNamesLabel: "Not on active scene",
+      isSceneTarget: false
+    }))
+    .sort((a, b) => a.actorName.localeCompare(b.actorName));
+}
+
+function getWorldAllIntegrationTargets() {
+  return game.actors.contents
+    .filter((actor) => Boolean(actor))
+    .map((actor) => ({
+      actor,
+      actorRef: String(actor.id ?? ""),
+      actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      tokenCount: 0,
+      tokenNamesLabel: "Not on active scene",
+      isSceneTarget: false
+    }))
+    .sort((a, b) => a.actorName.localeCompare(b.actorName));
+}
+
+function getNonPartyIntegrationTargets(scope = NON_PARTY_SYNC_SCOPES.SCENE) {
+  const normalizedScope = getNonPartySyncScope(scope);
+  if (normalizedScope === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY) return getWorldNonPartyIntegrationTargets();
+  if (normalizedScope === NON_PARTY_SYNC_SCOPES.WORLD_ALL) return getWorldAllIntegrationTargets();
+  return getSceneNonPartyIntegrationTargets().map((entry) => ({ ...entry, isSceneTarget: true }));
+}
+
+function getNonPartyIntegrationActors(scope = NON_PARTY_SYNC_SCOPES.SCENE) {
+  return getNonPartyIntegrationTargets(scope)
+    .map((entry) => entry.actor)
+    .filter(Boolean);
+}
+
+function resolveActorFromReference(actorRef) {
+  const ref = String(actorRef ?? "").trim();
+  if (!ref) return null;
+  if (typeof fromUuidSync === "function" && ref.includes(".")) {
+    try {
+      const doc = fromUuidSync(ref);
+      if (doc && doc.documentName === "Actor") return doc;
+      if (doc && doc.documentName === "Token") return doc.actor ?? null;
+      if (doc?.actor) return doc.actor;
+    } catch {
+      // Fall through to actor id lookup.
+    }
+  }
+  return game.actors.get(ref) ?? null;
+}
+
+function getIntegrationModeLabel(mode) {
+  if (mode === INTEGRATION_MODES.DAE) return "DAE + Flags";
+  if (mode === INTEGRATION_MODES.FLAGS) return "Flags Only";
+  if (mode === INTEGRATION_MODES.OFF) return "Off";
+  return "Auto";
+}
+
+function getResourceOwnerActors(user = game.user) {
+  const canManage = canAccessAllPlayerOps(user);
+  return game.actors.contents
+    .filter((actor) => {
+      if (!actor || actor.type !== "character") return false;
+      if (canManage) return Boolean(actor.hasPlayerOwner);
+      return canUserOwnActor(user, actor, { requireCharacter: true });
+    })
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function getResourceInventoryItems(actor) {
+  if (!actor?.items?.contents) return [];
+  return actor.items.contents
+    .filter(
+      (item) =>
+        item &&
+        item.type === "consumable" &&
+        (item.system?.quantity !== undefined || getItemUsesAvailableValue(item) !== null)
+    )
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function buildResourceSelectionContext(resourcesState, resourceKey, options = {}) {
+  const user = options?.user ?? game.user;
+  const selectedActorId = String(resourcesState?.itemSelections?.[resourceKey]?.actorId ?? "");
+  const selectedItemId = String(resourcesState?.itemSelections?.[resourceKey]?.itemId ?? "");
+  const actors = getResourceOwnerActors(user);
+  const actorOptions = [
+    { id: "", name: "None", selected: !selectedActorId },
+    ...actors.map((actor) => ({ id: actor.id, name: actor.name, selected: actor.id === selectedActorId }))
+  ];
+
+  const selectedActor = selectedActorId ? game.actors.get(selectedActorId) : null;
+  const itemOptions = [{ id: "", name: "None", selected: !selectedItemId }];
+  if (selectedActor) {
+    const items = getResourceInventoryItems(selectedActor);
+    for (const item of items) {
+      const qty = Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
+      itemOptions.push({
+        id: item.id,
+        name: `${item.name} (${qty})`,
+        selected: item.id === selectedItemId
+      });
+    }
+  }
+
+  return {
+    selectedActorId,
+    selectedItemId,
+    actorOptions,
+    itemOptions,
+    hasActor: Boolean(selectedActor)
+  };
+}
+
+function getSelectedResourceItemQuantity(resourcesState, resourceKey) {
+  const actorId = String(resourcesState?.itemSelections?.[resourceKey]?.actorId ?? "");
+  const itemId = String(resourcesState?.itemSelections?.[resourceKey]?.itemId ?? "");
+  if (!actorId || !itemId) return 0;
+  const actor = game.actors.get(actorId);
+  const item = actor?.items?.get(itemId);
+  if (!item) return 0;
+  return Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
+}
+
+function buildDowntimeSummaryContext(downtimeState = {}, options = {}) {
+  const user = options?.user ?? game.user;
+  const canManageDowntime = canAccessAllPlayerOps(user);
+  const publication = normalizeDowntimePublication(downtimeState?.publication ?? {});
+  const entries = Array.isArray(downtimeState?.entries) ? downtimeState.entries : [];
+  const logs = Array.isArray(downtimeState?.logs) ? downtimeState.logs : [];
+  const pendingCount = entries.filter((entry) => !entry?.result).length;
+  const resolvedCount = Math.max(0, entries.length - pendingCount);
+  const visibleHoursGranted = resolveDowntimeVisibleHours({
+    isGM: canManageDowntime,
+    stateHoursGranted: downtimeState?.hoursGranted,
+    publicationHoursGranted: publication?.publishedHoursGranted,
+    published: publication?.isPublished
+  });
+  const draftHoursGranted = clampDowntimeHours(downtimeState?.hoursGranted ?? visibleHoursGranted, visibleHoursGranted);
+  const publishedAtLabel = publication.publishedAt > 0 ? new Date(publication.publishedAt).toLocaleString() : "-";
+  const canSubmit = canSubmitPublishedDowntime({
+    isGM: canManageDowntime,
+    isPublished: publication.isPublished
+  });
+
+  return {
+    hoursGranted: visibleHoursGranted,
+    draftHoursGranted,
+    publishedHoursGranted: publication.publishedHoursGranted,
+    publication: {
+      isPublished: publication.isPublished,
+      publishedHoursGranted: publication.publishedHoursGranted,
+      publishedAt: publication.publishedAt,
+      publishedAtLabel,
+      publishedBy: publication.publishedBy || "-",
+      statusLabel: publication.isPublished ? `${publication.publishedHoursGranted} hour(s) open` : "Not open",
+      submitHint: publication.isPublished
+        ? `Players can spend up to ${publication.publishedHoursGranted} hour(s) from this downtime session.`
+        : "Players cannot spend downtime until the GM opens a session.",
+      buttonLabel: publication.isPublished ? "Republish Session to Players" : "Open Session to Players"
+    },
+    pendingCount,
+    resolvedCount,
+    logs: [],
+    logCount: logs.length,
+    hasLogs: logs.length > 0,
+    entries: [],
+    hasEntries: entries.length > 0,
+    submit: {
+      canSubmit,
+      canChooseActor: false,
+      actorName: "",
+      actorOptions: [],
+      actionOptions: [],
+      selectedActionKey: "browsing",
+      hoursMax: Math.max(1, visibleHoursGranted),
+      hours: String(Math.max(1, visibleHoursGranted)),
+      note: "",
+      areaSettingsLabel: formatPhase1AreaSettingsLabel(downtimeState?.tuning ?? {}),
+      showBrowsingFields: false,
+      showCraftingFields: false,
+      showProfessionFields: false,
+      browsingAbilityOptions: [],
+      craftingCategoryViews: [],
+      craftingCatalogCategoryViews: [],
+      hasCraftingOptions: false,
+      materialsOwnedOptions: [],
+      showMaterialDropZone: false,
+      materialDrops: [],
+      hasMaterialDrops: false,
+      materialDropsJson: "[]",
+      professionOptions: [],
+      hasProfessionOptions: false,
+      knownProfessionNames: [],
+      hasKnownProfessionNames: false,
+      selectedCraftableName: "",
+      hasSelectedCraftable: false,
+      selectedCraftableTool: "",
+      selectedCraftableProgressRequired: 0,
+      selectedCraftableMaterialCost: 0,
+      selectedCraftableBaseCost: 0,
+      hasCraftingProject: false,
+      craftingProjectProgressLabel: "",
+      selectedProfessionName: "",
+      selectedProfessionKnown: false,
+      disabledReason: canSubmit ? "" : "Waiting for GM to publish granted downtime hours."
+    },
+    gmResolve: {
+      hasPending: false,
+      pendingOptions: [],
+      selectedActorId: "",
+      selectedActorName: "",
+      selectedActionKey: "browsing",
+      selectedActionLabel: "Browsing",
+      selectedActionGuidance: "",
+      hasSelectedActionDetails: false,
+      selectedActionDetails: []
+    }
+  };
+}
+
+function buildOperationsContext() {
+  const ledger = getOperationsLedger();
+  const roles = [];
+
+  const sops = [];
+
+  const roleCoverage = roles.filter((role) => role.hasActor).length;
+  const missingRoles = Math.max(0, roles.length - roleCoverage);
+  const activeSops = 0;
+  const disorderRisk = missingRoles;
+  const effects = getOperationalEffects(ledger, roles, sops);
+  const reconState = ensureReconState(ledger);
+  const recon = buildReconContext(reconState);
+  const reputationState = ensureReputationState(ledger);
+  const reputationFilters = getReputationFilterState();
+  const reputation = buildReputationContext(reputationState, reputationFilters, {
+    scope: REPUTATION_VIEW_SCOPES.OPERATIONS
+  });
+  const partyHealthState = ensurePartyHealthState(ledger);
+  const downtimeState = ensureDowntimeState(ledger);
+  const activeOperationsPage = String(getActiveOperationsPage() ?? "")
+    .trim()
+    .toLowerCase();
+  const shouldBuildDowntimeDetails = activeOperationsPage === "downtime";
+  const downtime = shouldBuildDowntimeDetails
+    ? buildDowntimeContext(downtimeState)
+    : buildDowntimeSummaryContext(downtimeState);
+  const lootSources = buildLootSourceRegistryContext();
+  const lootClaims = buildLootClaimsContext(game.user);
+  const operationsJournal = buildOperationsJournalContext();
+  const lootRegistryTab = getActiveLootRegistryTab();
+  lootSources.registryTab = lootRegistryTab;
+  lootSources.registryTabPreview = lootRegistryTab === "preview";
+  lootSources.registryTabSettings = lootRegistryTab === "settings";
+  lootSources.preview = buildLootPreviewContext();
+  const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
+  const merchants = buildMerchantsContext(ledger, { user: game.user });
+  const environmentState = ensureEnvironmentState(ledger);
+  const weatherState = ensureWeatherState(ledger);
+  const environmentActionCatalog = buildEnvironmentActionCatalog(environmentState);
+  const environmentPresetCatalog = buildEnvironmentPresetCatalog(environmentState);
+  const environmentPresetBase = getEnvironmentPresetByKey(environmentState.presetKey, environmentState);
+  const environmentPreset = applyEnvironmentSuccessiveConfigToPreset(environmentPresetBase, environmentState);
+  const environmentCheck = getEnvironmentCheckMeta(environmentPreset);
+  const environmentCheckTrigger = getEnvironmentCheckTriggerMeta(environmentPreset);
+  const environmentAction = getEnvironmentActionMeta(environmentPreset, environmentState);
+  const environmentOutcomes = buildEnvironmentOutcomeSummary(environmentPreset);
+  const environmentSuccessiveConfig = getEnvironmentSuccessiveConfig(environmentState, environmentPresetBase);
+  const configurePresetBase = getEnvironmentPresetByKey(environmentState.configurePresetKey, environmentState);
+  const configurePreset = applyEnvironmentSuccessiveConfigToPreset(configurePresetBase, environmentState);
+  const configurePresetCheckTrigger = getEnvironmentCheckTriggerMeta(configurePreset);
+  const configurePresetAction = getEnvironmentActionMeta(configurePreset, environmentState);
+  const configureAction = getEnvironmentActionByKey(
+    environmentState.configureActionKey || configurePreset.actionKey,
+    environmentState
+  );
+  const configureActionUsage = environmentPresetCatalog
+    .filter((preset) => preset.key !== "none" && preset.actionKey === configureAction.key)
+    .map((preset) => preset.label);
+  const builtInPresetKeys = new Set(ENVIRONMENT_PRESETS.map((preset) => preset.key));
+  const builtInActionKeys = new Set(ENVIRONMENT_ACTIONS.map((action) => action.key));
+  const daeAvailable = isDaeAvailable();
+  const partyModifierKeyCatalog = buildPartyHealthModifierKeyCatalog();
+  const partyModifierKeyOptions = partyModifierKeyCatalog.map((entry) => ({
+    value: entry.key,
+    label: entry.label,
+    hint: entry.hint
+  }));
+  const partyModifierModeOptions = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+    .map(([label, value]) => ({ label, value: Number(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const daeModeOptions = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+    .map(([label, value]) => ({
+      value: Number(value),
+      label,
+      selected: Number(value) === Number(environmentSuccessiveConfig.daeChangeMode)
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const environmentDaeKeyCatalog = buildEnvironmentDaeChangeKeyCatalog();
+  const daeKeyOptions = environmentDaeKeyCatalog.map((entry) => ({
+    value: entry.key,
+    label: entry.label,
+    hint: entry.hint,
+    selected: entry.key === environmentSuccessiveConfig.daeChangeKey
+  }));
+  const selectedEnvDaeHint =
+    daeKeyOptions.find((entry) => entry.selected)?.hint ?? "Select a system field to change on successive failure.";
+  const statusEffectOptions = buildStatusEffectOptions(environmentSuccessiveConfig.statusId);
+  const damageTypeOptions = buildDamageTypeOptions(environmentSuccessiveConfig.damageType);
+  const configurePresetDaeHint =
+    environmentDaeKeyCatalog.find((entry) => entry.key === configurePreset.successiveFailDaeChangeKey)?.hint ??
+    "Select a system field to change on successive failure.";
+  const configurePresetEffectChanges = Array.isArray(configurePreset.effectChanges)
+    ? configurePreset.effectChanges.map((change, index) => ({
+        id: String(change?.id ?? `${configurePreset.key}-change-${index + 1}`),
+        index,
+        key: String(change?.key ?? "").trim(),
+        value: String(change?.value ?? "").trim(),
+        hint: environmentDaeKeyCatalog.find((entry) => entry.key === String(change?.key ?? "").trim())?.hint ?? ""
+      }))
+    : [];
+  const gmQuickPanel = getActiveGmQuickPanel();
+  const environmentTargets = getOwnedPcActors()
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+    .map((actor) => ({
+      actorId: actor.id,
+      actorName: actor.name,
+      actorImg: normalizeFoundryAssetImagePath(actor.img, { fallback: "icons/svg/mystery-man.svg" }),
+      selected: environmentState.appliedActorIds.includes(actor.id),
+      failureStreak: Math.max(0, Number(environmentState.failureStreaks?.[actor.id] ?? 0) || 0)
+    }));
+  const environmentActorNames = new Map(environmentTargets.map((target) => [target.actorId, target.actorName]));
+  const environmentLogs = (environmentState.logs ?? [])
+    .filter(
+      (entry) =>
+        String(entry?.logType ?? "environment")
+          .trim()
+          .toLowerCase() !== "weather"
+    )
+    .map((entry) => {
+      const preset = getEnvironmentPresetByKey(entry.presetKey, environmentState);
+      const check = getEnvironmentCheckMeta({
+        checkType: entry.checkType ?? preset.checkType,
+        checkKey: entry.checkKey ?? preset.checkKey,
+        checkLabel: entry.checkLabel ?? preset.checkLabel
+      });
+      const action = getEnvironmentActionMeta(preset, environmentState);
+      const actorNames = (entry.actorIds ?? []).map(
+        (actorId) => environmentActorNames.get(actorId) ?? game.actors.get(actorId)?.name ?? `Actor ${actorId}`
+      );
+      const createdAtDate = new Date(Number(entry.createdAt ?? Date.now()));
+      return {
+        id: entry.id,
+        presetKey: entry.presetKey,
+        presetLabel: String(entry.presetLabel ?? "").trim() || preset.label,
+        actionLabel: String(entry.actionLabel ?? "").trim() || action.actionLabel,
+        checkLabel: check.checkLabel,
+        movementDc: Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12)),
+        actorNames,
+        actorNamesText: actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned",
+        syncToSceneNonParty: entry.syncToSceneNonParty !== false,
+        note: String(entry.note ?? ""),
+        hasNote: String(entry.note ?? "").trim().length > 0,
+        createdBy: String(entry.createdBy ?? "GM"),
+        createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
+      };
+    });
+  const environmentCheckResults = (environmentState.checkResults ?? [])
+    .map((entry) => {
+      const preset = getEnvironmentPresetByKey(entry.presetKey, environmentState);
+      const actorName =
+        String(entry.actorName ?? "").trim() ||
+        (entry.actorId ? String(game.actors.get(entry.actorId)?.name ?? `Actor ${entry.actorId}`) : "Unknown Actor");
+      const createdAtDate = new Date(Number(entry.createdAt ?? Date.now()));
+      const rollValue = Number(entry.rollTotal);
+      const dcValue = Number(entry.dc);
+      const rollLabel = Number.isFinite(rollValue) ? String(Math.floor(rollValue)) : "-";
+      const dcLabel = Number.isFinite(dcValue) ? String(Math.floor(dcValue)) : "-";
+      return {
+        id: entry.id,
+        actorName,
+        presetLabel: preset.label,
+        resultLabel: entry.result === "fail" ? "Fail" : "Pass",
+        isFail: entry.result === "fail",
+        rollVsDc: `${rollLabel} vs ${dcLabel}`,
+        streak: Math.max(0, Number(entry.streak ?? 0) || 0),
+        outcomeSummary: String(entry.outcomeSummary ?? ""),
+        hasOutcomeSummary: String(entry.outcomeSummary ?? "").trim().length > 0,
+        createdBy: String(entry.createdBy ?? "GM"),
+        createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
+      };
+    })
+    .slice(0, 20);
+
+  const upkeep = {
+    partySize: Number(ledger.resources?.upkeep?.partySize ?? 4),
+    foodPerMember: Number(ledger.resources?.upkeep?.foodPerMember ?? 1),
+    waterPerMember: Number(ledger.resources?.upkeep?.waterPerMember ?? 1),
+    foodMultiplier: Number(ledger.resources?.upkeep?.foodMultiplier ?? 1),
+    waterMultiplier: Number(ledger.resources?.upkeep?.waterMultiplier ?? 1),
+    torchPerRest: Number(ledger.resources?.upkeep?.torchPerRest ?? 0)
+  };
+
+  const resourcesState = foundry.utils.deepClone(ledger.resources ?? {});
+  ensureOperationalResourceConfig(resourcesState);
+  const stewardPools = {
+    food: buildStewardPoolContext(resourcesState, "food"),
+    water: buildStewardPoolContext(resourcesState, "water"),
+    torches: buildStewardPoolContext(resourcesState, "torches")
+  };
+  const gatherHistoryView = getGatherHistoryViewState();
+  const gatherDefaults = buildGatherDefaultsContext(resourcesState);
+  const gatherRequests = buildGatherRequestContext(resourcesState, { viewer: game.user });
+  const gatherHistory = buildGatherHistoryContext(resourcesState, { viewState: gatherHistoryView });
+  const foodDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.foodPerMember * upkeep.foodMultiplier));
+  const waterDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.waterPerMember * upkeep.waterMultiplier));
+  const torchDrainPerDay = Math.max(0, Math.ceil(upkeep.torchPerRest));
+  const upkeepDaysPending = getUpkeepDaysFromCalendar(resourcesState.upkeepLastAppliedTs, getCurrentWorldTimestamp());
+  const resourcesNumeric = {
+    food: Number(resourcesState.food ?? 0),
+    partyFoodRations: getStewardPoolFiniteAmount(stewardPools.food),
+    partyWaterRations: getStewardPoolFiniteAmount(stewardPools.water),
+    water: Number(resourcesState.water ?? 0),
+    torches: getStewardPoolFiniteAmount(stewardPools.torches)
+  };
+  const hasInfiniteFoodSteward = isStewardPoolInfinite(stewardPools.food);
+  const hasInfiniteWaterSteward = isStewardPoolInfinite(stewardPools.water);
+  const linkedFoodStock = getSelectedResourceItemQuantity(resourcesState, "food");
+  const linkedWaterStock = getSelectedResourceItemQuantity(resourcesState, "water");
+  const totalFoodReserve = Math.max(0, resourcesNumeric.partyFoodRations) + linkedFoodStock;
+  const totalWaterReserve = Math.max(0, resourcesNumeric.partyWaterRations) + linkedWaterStock;
+
+  const formatCyclesLeft = (stock, drain, infinite = false) => {
+    if (infinite) return "infinite";
+    if (drain <= 0) return "infinite";
+    return (Math.max(0, stock) / drain).toFixed(1);
+  };
+
+  const selectedBindingCount = RESOURCE_TRACK_KEYS.filter((key) => {
+    const selected = resourcesState.itemSelections?.[key] ?? {};
+    return Boolean(String(selected.actorId ?? "").trim() && String(selected.itemId ?? "").trim());
+  }).length;
+
+  const pendingGatherFood = getGatherPendingPoolAmount(resourcesState, "food");
+  const pendingGatherWater = getGatherPendingPoolAmount(resourcesState, "water");
+  const gatherFoodCoveredNextUpkeep = pendingGatherFood > 0;
+  const gatherWaterCoveredNextUpkeep = pendingGatherWater > 0;
+  const autoUpkeepPrompt = getAutoUpkeepPromptData(resourcesState);
+  const autoUpkeepPromptLabel =
+    autoUpkeepPrompt.state === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER
+      ? "Awaiting gather"
+      : autoUpkeepPrompt.state === AUTO_UPKEEP_PROMPT_STATES.DECISION
+        ? "Awaiting GM decision"
+        : "Idle";
+  const archivedSyncActorIds = new Set(
+    (partyHealthState.archivedSyncEffects ?? []).map((entry) => String(entry?.actorId ?? "").trim()).filter(Boolean)
+  );
+  const activeSyncEffects = getOwnedPcActors()
+    .map((actor) => {
+      const effect = getIntegrationEffect(actor);
+      if (!effect) return null;
+      return {
+        actorId: actor.id,
+        actorName: actor.name,
+        effectId: effect.id,
+        effectName: String(effect.name ?? INTEGRATION_EFFECT_NAME)
+      };
+    })
+    .filter((entry) => entry && !archivedSyncActorIds.has(String(entry.actorId ?? "").trim()));
+  const currentWeather = weatherState.current ?? null;
+  const weatherLogs = (weatherState.logs ?? []).map((entry) => {
+    const loggedAtDate = new Date(Number(entry.loggedAt ?? Date.now()));
+    return {
+      ...entry,
+      loggedAtLabel: Number.isFinite(loggedAtDate.getTime()) ? loggedAtDate.toLocaleString() : "Unknown"
+    };
+  });
+  const weatherSceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const weatherQuickOptions = buildWeatherSelectionCatalog(weatherState, weatherSceneSnapshot);
+  const storedWeatherDraft = getGmQuickWeatherDraft();
+  const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
+  const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
+  const selectedWeatherOption =
+    weatherQuickOptions.find((entry) => entry.key === selectedWeatherKey) ?? fallbackWeatherOption;
+  const weatherQuickDraft = {
+    selectedKey: String(selectedWeatherOption?.key ?? ""),
+    darkness: Number.isFinite(Number(storedWeatherDraft?.darkness))
+      ? Math.max(0, Math.min(1, Number(storedWeatherDraft.darkness)))
+      : Math.max(0, Math.min(1, Number(selectedWeatherOption?.darkness ?? weatherSceneSnapshot.darkness ?? 0))),
+    visibilityModifier: Number.isFinite(Number(storedWeatherDraft?.visibilityModifier))
+      ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
+      : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
+    note: String(storedWeatherDraft?.note ?? ""),
+    presetName: String(storedWeatherDraft?.presetName ?? "")
+  };
+  const globalLogs = (environmentState.logs ?? [])
+    .map((entry) => {
+      const createdAt = Number(entry?.createdAt ?? Date.now());
+      const createdAtLabel = Number.isFinite(createdAt) ? new Date(createdAt).toLocaleString() : "Unknown";
+      const logType =
+        String(entry?.logType ?? "environment")
+          .trim()
+          .toLowerCase() === "weather"
+          ? "weather"
+          : "environment";
+      if (logType === "weather") {
+        return {
+          id: `weather:${entry.id}`,
+          sourceId: entry.id,
+          logType,
+          logTypeLabel: "Weather",
+          title: String(entry.label ?? "Weather").trim() || "Weather",
+          summary: `Visibility ${formatSignedModifier(Number(entry.visibilityModifier ?? 0)) || "0"} - Darkness ${Number(entry.darkness ?? 0).toFixed(2)}`,
+          details: getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0)),
+          note: String(entry.note ?? ""),
+          hasNote: String(entry.note ?? "").trim().length > 0,
+          createdBy: String(entry.createdBy ?? "GM"),
+          createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+          createdAtLabel
+        };
+      }
+      const preset = getEnvironmentPresetByKey(entry.presetKey, environmentState);
+      const check = getEnvironmentCheckMeta(entry);
+      const action =
+        String(entry.actionLabel ?? "").trim() || getEnvironmentActionMeta(preset, environmentState).actionLabel;
+      const actorNames = (entry.actorIds ?? []).map(
+        (actorId) => environmentActorNames.get(actorId) ?? game.actors.get(actorId)?.name ?? `Actor ${actorId}`
+      );
+      return {
+        id: `env:${entry.id}`,
+        sourceId: entry.id,
+        logType,
+        logTypeLabel: "Environment",
+        title: String(entry.presetLabel ?? "").trim() || preset.label,
+        summary: `${action} - ${check.checkLabel} - DC ${Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12))}`,
+        details: `Affected: ${actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned"}`,
+        note: String(entry.note ?? ""),
+        hasNote: String(entry.note ?? "").trim().length > 0,
+        createdBy: String(entry.createdBy ?? "GM"),
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+        createdAtLabel
+      };
+    })
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+  const activeSyncEffectsTab = getActiveSyncEffectsTab();
+  const archivedSyncEffects = (partyHealthState.archivedSyncEffects ?? [])
+    .map((entry) => {
+      const archivedAtDate = new Date(Number(entry.archivedAt ?? Date.now()));
+      return {
+        id: entry.id,
+        actorId: entry.actorId,
+        actorName: entry.actorName,
+        effectName: entry.effectName,
+        label: entry.label,
+        note: entry.note,
+        archivedBy: entry.archivedBy,
+        archivedAt: Number(entry.archivedAt ?? 0) || 0,
+        archivedAtLabel: Number.isFinite(archivedAtDate.getTime()) ? archivedAtDate.toLocaleString() : "Unknown"
+      };
+    })
+    .sort((a, b) => Number(b.archivedAt ?? 0) - Number(a.archivedAt ?? 0));
+  const modifierAddLog = (partyHealthState.modifierAddLog ?? [])
+    .map((entry) => {
+      const createdAt = Number(entry?.createdAt ?? Date.now()) || Date.now();
+      const createdAtDate = new Date(createdAt);
+      const origin = String(entry?.origin ?? "custom").trim() || "custom";
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        customModifierId: String(entry?.customModifierId ?? "").trim(),
+        origin,
+        originLabel: origin === "quick" ? "Quick Panel" : "Custom Panel",
+        label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
+        key: String(entry?.key ?? "").trim(),
+        modeLabel: getActiveEffectModeLabel(entry?.mode),
+        value: String(entry?.value ?? "").trim(),
+        note: String(entry?.note ?? ""),
+        hasNote: String(entry?.note ?? "").trim().length > 0,
+        createdBy: String(entry?.createdBy ?? "GM").trim() || "GM",
+        createdAt,
+        createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
+      };
+    })
+    .filter((entry) => entry.key && entry.value)
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+    .slice(0, 8);
+  const stagedModifierQueue = (partyHealthState.stagedModifierQueue ?? [])
+    .map((entry) => {
+      const createdAt = Number(entry?.createdAt ?? Date.now()) || Date.now();
+      const createdAtDate = new Date(createdAt);
+      const key = String(entry?.key ?? "").trim();
+      const mode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
+        key,
+        keyLabel: getDaeKeyLabel(key),
+        mode,
+        modeLabel: getActiveEffectModeLabel(mode),
+        value: String(entry?.value ?? "").trim(),
+        note: String(entry?.note ?? ""),
+        hasNote: String(entry?.note ?? "").trim().length > 0,
+        modeOptions: partyModifierModeOptions.map((option) => ({
+          ...option,
+          selected: Number(option.value) === Number(mode)
+        })),
+        keyOptions: partyModifierKeyOptions.map((option) => ({
+          ...option,
+          selected: String(option.value ?? "").trim() === key
+        })),
+        createdBy: String(entry?.createdBy ?? "GM").trim() || "GM",
+        createdAt,
+        createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
+      };
+    })
+    .filter((entry) => entry.key && entry.value)
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+    .slice(0, 12);
+  const resolvedIntegrationMode = resolveIntegrationMode();
+  const integrationModeLabel = getIntegrationModeLabel(resolvedIntegrationMode);
+  const nonPartySyncScope = getNonPartySyncScope(partyHealthState.nonPartySyncScope);
+  const nonPartySyncScopeLabel = getNonPartySyncScopeLabel(nonPartySyncScope);
+  const nonPartySyncScopeOptions = [
+    {
+      value: NON_PARTY_SYNC_SCOPES.SCENE,
+      label: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.SCENE),
+      selected: nonPartySyncScope === NON_PARTY_SYNC_SCOPES.SCENE
+    },
+    {
+      value: NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY,
+      label: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY),
+      selected: nonPartySyncScope === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY
+    },
+    {
+      value: NON_PARTY_SYNC_SCOPES.WORLD_ALL,
+      label: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.WORLD_ALL),
+      selected: nonPartySyncScope === NON_PARTY_SYNC_SCOPES.WORLD_ALL
+    }
+  ];
+  const nonPartySyncGlobal = Boolean(partyHealthState.syncToSceneNonParty);
+  const nonPartySyncEnvironment = Boolean(
+    environmentState.syncToSceneNonParty && String(environmentState.presetKey ?? "none") !== "none"
+  );
+  const nonPartySyncEnabled = nonPartySyncGlobal || nonPartySyncEnvironment;
+  const nonPartyTargets = getNonPartyIntegrationTargets(nonPartySyncScope);
+  const nonPartyRowsAll = nonPartyTargets.map((target) => {
+    const actor = target.actor;
+    const hasSyncFlag = Boolean(actor?.getFlag(MODULE_ID, "sync"));
+    const integrationEffect = getIntegrationEffect(actor);
+    const injuryEffect = getInjuryStatusEffect(actor);
+    const environmentEffect = getEnvironmentStatusEffect(actor);
+    const hasIntegrationEffect = Boolean(integrationEffect);
+    const hasInjuryEffect = Boolean(injuryEffect);
+    const hasEnvironmentEffect = Boolean(environmentEffect);
+    const hasAnySync = hasSyncFlag || hasIntegrationEffect || hasInjuryEffect || hasEnvironmentEffect;
+    const effectNames = [];
+    if (hasIntegrationEffect) effectNames.push(String(integrationEffect?.name ?? INTEGRATION_EFFECT_NAME));
+    if (hasInjuryEffect) effectNames.push(String(injuryEffect?.name ?? `${INJURY_EFFECT_NAME_PREFIX} Status`));
+    if (hasEnvironmentEffect)
+      effectNames.push(String(environmentEffect?.name ?? `${ENVIRONMENT_EFFECT_NAME_PREFIX} Status`));
+    const shouldBeCleared = hasAnySync && (!nonPartySyncEnabled || resolvedIntegrationMode === INTEGRATION_MODES.OFF);
+    return {
+      actorRef: target.actorRef,
+      actorName: target.actorName,
+      tokenCount: target.tokenCount,
+      tokenNamesLabel: target.tokenNamesLabel,
+      isSceneTarget: target.isSceneTarget === true,
+      locationLabel:
+        target.isSceneTarget === true
+          ? `Scene Tokens: ${target.tokenCount} | ${target.tokenNamesLabel}`
+          : "World Actor Target",
+      hasSyncFlag,
+      hasIntegrationEffect,
+      hasInjuryEffect,
+      hasEnvironmentEffect,
+      hasAnySync,
+      shouldBeCleared,
+      statusLabel: hasAnySync ? (shouldBeCleared ? "Stale (should clear)" : "Synced") : "Clear",
+      effectsSummary: effectNames.length > 0 ? effectNames.join(" | ") : "None"
+    };
+  });
+  const nonPartyFilterKeyword = getNonPartySyncFilterKeyword();
+  const nonPartyFilterQuery = normalizeLootPackSourcesFilter(nonPartyFilterKeyword);
+  const nonPartyFilterActive = nonPartyFilterQuery.length > 0;
+  const nonPartyRows = nonPartyFilterActive
+    ? nonPartyRowsAll.filter((entry) =>
+        matchesLootSourceSearchQuery(nonPartyFilterQuery, {
+          label: entry.actorName,
+          id: entry.actorRef,
+          sourceKind: `${entry.locationLabel} ${entry.effectsSummary} ${entry.statusLabel}`,
+          available: entry.hasAnySync,
+          enabled: !entry.shouldBeCleared
+        })
+      )
+    : nonPartyRowsAll;
+  const nonPartySyncedCount = nonPartyRowsAll.filter((entry) => entry.hasAnySync).length;
+  const nonPartyStaleCount = nonPartyRowsAll.filter((entry) => entry.shouldBeCleared).length;
+
+  return {
+    roles,
+    sops,
+    resources: {
+      food: resourcesNumeric.food,
+      linkedFoodStock,
+      linkedWaterStock,
+      partyFoodRations: resourcesNumeric.partyFoodRations,
+      partyWaterRations: resourcesNumeric.partyWaterRations,
+      water: resourcesNumeric.water,
+      torches: resourcesNumeric.torches,
+      stewardPools,
+      itemSelections: {
+        food: buildResourceSelectionContext(resourcesState, "food", { user: game.user }),
+        water: buildResourceSelectionContext(resourcesState, "water", { user: game.user }),
+        torches: buildResourceSelectionContext(resourcesState, "torches", { user: game.user })
+      },
+      gatherDefaults,
+      gatherWeatherOptions: gatherDefaults.weatherOptions,
+      gatherFoodCoveredNextUpkeep,
+      gatherWaterCoveredNextUpkeep,
+      gatherPresets: gatherDefaults.presets,
+      hasGatherPresets: gatherDefaults.hasPresets,
+      gatherRequests,
+      hasGatherRequests: gatherRequests.hasRows,
+      gatherHistory,
+      hasGatherHistory: gatherHistory.hasRows,
+      pendingGatherFood,
+      pendingGatherWater,
+      autoUpkeepPrompt,
+      summary: {
+        foodDrainPerDay,
+        waterDrainPerDay,
+        torchDrainPerDay,
+        upkeepDaysPending,
+        foodDrainPending: foodDrainPerDay * upkeepDaysPending,
+        waterDrainPending: waterDrainPerDay * upkeepDaysPending,
+        foodStewardPoolDisplay: stewardPools.food.amountDisplay,
+        waterStewardPoolDisplay: stewardPools.water.amountDisplay,
+        torchStewardPoolDisplay: stewardPools.torches.amountDisplay,
+        foodCyclesLeft: formatCyclesLeft(totalFoodReserve, foodDrainPerDay, hasInfiniteFoodSteward),
+        foodRationCyclesLeft: formatCyclesLeft(totalFoodReserve, foodDrainPerDay, hasInfiniteFoodSteward),
+        waterCyclesLeft: formatCyclesLeft(totalWaterReserve, waterDrainPerDay, hasInfiniteWaterSteward),
+        waterRationCyclesLeft: formatCyclesLeft(totalWaterReserve, waterDrainPerDay, hasInfiniteWaterSteward),
+        pendingGatherFood,
+        pendingGatherWater,
+        autoUpkeepPromptLabel,
+        selectedBindingCount
+      },
+      upkeep,
+      encumbranceOptions: [
+        { value: "light", label: "Light", selected: (resourcesState.encumbrance ?? "light") === "light" },
+        { value: "moderate", label: "Moderate", selected: (resourcesState.encumbrance ?? "light") === "moderate" },
+        { value: "heavy", label: "Heavy", selected: (resourcesState.encumbrance ?? "light") === "heavy" },
+        { value: "overloaded", label: "Overloaded", selected: (resourcesState.encumbrance ?? "light") === "overloaded" }
+      ]
+    },
+    recon,
+    partyHealth: {
+      customModifiers: (partyHealthState.customModifiers ?? []).map((entry) => ({
+        ...entry,
+        modeLabel: getActiveEffectModeLabel(entry.mode),
+        keyHint: partyModifierKeyOptions.find((option) => option.value === entry.key)?.hint ?? "",
+        modeOptions: partyModifierModeOptions.map((option) => ({
+          ...option,
+          selected: Number(option.value) === Number(entry.mode)
+        })),
+        keyOptions: partyModifierKeyOptions
+      })),
+      modifierModeOptions: partyModifierModeOptions,
+      modifierKeyOptions: partyModifierKeyOptions,
+      modifierAddLog,
+      hasModifierAddLog: modifierAddLog.length > 0,
+      activeSyncEffects,
+      hasActiveSyncEffects: activeSyncEffects.length > 0,
+      activeSyncEffectsTab,
+      activeSyncEffectsTabActive: activeSyncEffectsTab === "active",
+      activeSyncEffectsTabArchived: activeSyncEffectsTab === "archived",
+      activeSyncEffectsCount: activeSyncEffects.length,
+      archivedSyncEffects,
+      hasArchivedSyncEffects: archivedSyncEffects.length > 0,
+      archivedSyncEffectsCount: archivedSyncEffects.length,
+      daeAvailable,
+      syncToSceneNonParty: Boolean(partyHealthState.syncToSceneNonParty),
+      nonPartySyncScope: nonPartySyncScope
+    },
+    lootSources,
+    lootClaims,
+    nonPartySync: {
+      sceneName: String(game.scenes?.current?.name ?? "No Active Scene"),
+      scope: nonPartySyncScope,
+      scopeLabel: nonPartySyncScopeLabel,
+      scopeOptions: nonPartySyncScopeOptions,
+      integrationMode: resolvedIntegrationMode,
+      integrationModeLabel,
+      syncGlobalEnabled: nonPartySyncGlobal,
+      syncEnvironmentEnabled: nonPartySyncEnvironment,
+      enabled: nonPartySyncEnabled,
+      enabledLabel: nonPartySyncEnabled ? "ON" : "OFF",
+      modeOff: resolvedIntegrationMode === INTEGRATION_MODES.OFF,
+      environmentPresetLabel: String(environmentPreset?.label ?? "None"),
+      actorCount: nonPartyRowsAll.length,
+      syncedCount: nonPartySyncedCount,
+      staleCount: nonPartyStaleCount,
+      visibleCount: nonPartyRows.length,
+      hasAnyTargets: nonPartyRowsAll.length > 0,
+      filter: {
+        keyword: nonPartyFilterKeyword,
+        active: nonPartyFilterActive
+      },
+      hasTargets: nonPartyRows.length > 0,
+      rows: nonPartyRows
+    },
+    environment: {
+      presetKey: environmentState.presetKey,
+      preset: environmentPreset,
+      actionKey: environmentAction.actionKey,
+      actionLabel: environmentAction.actionLabel,
+      actionDescription: environmentAction.actionDescription,
+      checkLabel: environmentCheck.checkLabel,
+      checkTrigger: environmentCheckTrigger.trigger,
+      checkTriggerLabel: environmentCheckTrigger.label,
+      movementDc: environmentState.movementDc,
+      note: environmentState.note,
+      syncToSceneNonParty: Boolean(environmentState.syncToSceneNonParty),
+      movementCheckActive: Boolean(environmentPreset.movementCheck),
+      canRequestChecks: Boolean(
+        environmentPreset.movementCheck && environmentTargets.some((target) => target.selected)
+      ),
+      outcomes: environmentOutcomes,
+      successiveConfig: {
+        ...environmentSuccessiveConfig,
+        daeAvailable,
+        statusOptions: statusEffectOptions,
+        damageTypeOptions,
+        daeModeOptions,
+        daeKeyOptions,
+        daeKeyHint: selectedEnvDaeHint
+      },
+      targetCount: environmentTargets.filter((target) => target.selected).length,
+      appliedActorIds: [...environmentState.appliedActorIds],
+      targets: environmentTargets,
+      logs: environmentLogs,
+      hasLogs: environmentLogs.length > 0,
+      checkResults: environmentCheckResults,
+      hasCheckResults: environmentCheckResults.length > 0,
+      presetOptions: environmentPresetCatalog.map((preset) => ({
+        key: preset.key,
+        label: preset.label,
+        selected: preset.key === environmentState.presetKey
+      })),
+      configure: {
+        presetCount: Math.max(0, environmentPresetCatalog.filter((preset) => preset.key !== "none").length),
+        customPresetCount: Math.max(
+          0,
+          environmentPresetCatalog.filter((preset) => preset.key !== "none" && !builtInPresetKeys.has(preset.key))
+            .length
+        ),
+        actionCount: environmentActionCatalog.length,
+        customActionCount: Math.max(
+          0,
+          environmentActionCatalog.filter((action) => !builtInActionKeys.has(action.key)).length
+        ),
+        presetOptions: environmentPresetCatalog
+          .filter((preset) => preset.key !== "none")
+          .map((preset) => ({
+            key: preset.key,
+            label: preset.label,
+            selected: preset.key === configurePreset.key
+          })),
+        preset: {
+          ...configurePreset,
+          isBuiltIn: builtInPresetKeys.has(configurePreset.key),
+          isCustom: !builtInPresetKeys.has(configurePreset.key),
+          actionLabel: configurePresetAction.actionLabel,
+          actionDescription: configurePresetAction.actionDescription,
+          checkTriggerLabel: configurePresetCheckTrigger.label,
+          checkTriggerOptions: buildEnvironmentCheckTriggerOptions(configurePreset.checkTrigger),
+          checkTypeOptions: buildEnvironmentCheckTypeOptions(configurePreset.checkType),
+          checkKeyOptions: buildEnvironmentCheckKeyOptions(configurePreset.checkType, configurePreset.checkKey),
+          alwaysStatusOptions: buildStatusEffectOptions(configurePreset.alwaysStatusId),
+          failStatusOptions: buildStatusEffectOptions(configurePreset.failStatusId),
+          failDamageTypeOptions: buildDamageTypeOptions(configurePreset.failDamageType),
+          failBy5StatusOptions: buildStatusEffectOptions(configurePreset.failBy5StatusId),
+          failBy5DamageTypeOptions: buildDamageTypeOptions(configurePreset.failBy5DamageType),
+          successiveFailStatusOptions: buildStatusEffectOptions(configurePreset.successiveFailStatusId),
+          successiveFailDamageTypeOptions: buildDamageTypeOptions(configurePreset.successiveFailDamageType),
+          successiveFailDaeModeOptions: Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+            .map(([label, value]) => ({
+              value: Number(value),
+              label,
+              selected: Number(value) === Number(configurePreset.successiveFailDaeChangeMode)
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+          successiveFailDaeKeyOptions: environmentDaeKeyCatalog.map((entry) => ({
+            value: entry.key,
+            label: entry.label,
+            hint: entry.hint,
+            selected: entry.key === configurePreset.successiveFailDaeChangeKey
+          })),
+          successiveFailDaeKeyHint: configurePresetDaeHint,
+          effectChanges: configurePresetEffectChanges,
+          hasEffectChanges: configurePresetEffectChanges.length > 0
+        },
+        actionOptions: environmentActionCatalog.map((action) => ({
+          key: action.key,
+          label: action.label,
+          selected: action.key === configurePreset.actionKey
+        })),
+        daeKeyOptions: environmentDaeKeyCatalog.map((entry) => ({
+          value: entry.key,
+          label: entry.label,
+          hint: entry.hint
+        })),
+        actionEditorOptions: environmentActionCatalog.map((action) => ({
+          key: action.key,
+          label: action.label,
+          selected: action.key === configureAction.key
+        })),
+        action: {
+          ...configureAction,
+          isBuiltIn: builtInActionKeys.has(configureAction.key),
+          isCustom: !builtInActionKeys.has(configureAction.key),
+          usedByPresetCount: configureActionUsage.length,
+          usedByPresetsText:
+            configureActionUsage.length > 0 ? configureActionUsage.join(", ") : "No presets currently use this action."
+        }
+      }
+    },
+    weather: {
+      current: currentWeather,
+      hasCurrent: Boolean(currentWeather),
+      currentLabel: String(currentWeather?.label ?? "Not logged"),
+      currentVisibilityModifier: Number(currentWeather?.visibilityModifier ?? 0),
+      currentDarkness: Number(currentWeather?.darkness ?? 0),
+      logs: weatherLogs,
+      hasLogs: weatherLogs.length > 0
+    },
+    gmQuickTools: {
+      activePanel: gmQuickPanel,
+      showFactionPanel: gmQuickPanel === "faction",
+      showModifierPanel: false,
+      showWeatherPanel: gmQuickPanel === "weather",
+      modifierModeOptions: partyModifierModeOptions,
+      stagedModifierQueue,
+      hasStagedModifierQueue: stagedModifierQueue.length > 0,
+      modifierAddLog,
+      hasModifierAddLog: modifierAddLog.length > 0,
+      weatherSceneSnapshot,
+      weatherOptions: weatherQuickOptions.map((option) => ({
+        key: option.key,
+        label: option.label,
+        weatherId: option.weatherId,
+        isBuiltIn: Boolean(option.isBuiltIn),
+        visibilityModifier: Number(option.visibilityModifier ?? 0),
+        visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
+        effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
+        selected: option.key === weatherQuickDraft.selectedKey
+      })),
+      weatherDraft: weatherQuickDraft
+    },
+    downtime,
+    operationsJournal,
+    globalLogs: {
+      entries: globalLogs,
+      hasEntries: globalLogs.length > 0
+    },
+    reputation,
+    baseOperations,
+    merchants,
+    summary: {
+      roleCoverage,
+      roleTotal: roles.length,
+      activeSops,
+      sopTotal: 0,
+      prepEdge: roleCoverage >= 3,
+      disorderRisk,
+      reconReadiness: recon.readinessLabel,
+      maintenancePressure: baseOperations.maintenancePressure,
+      effects
+    },
+    diagnostics: {
+      missingRoles: roles.filter((role) => !role.hasActor).map((role) => role.label),
+      inactiveSops: []
+    }
+  };
+}
+
+function getOperationalEffects(ledger, roles, sops) {
+  const roleCoverage = Array.isArray(roles) ? roles.filter((role) => role.hasActor).length : 0;
+  const activeSops = Array.isArray(sops) ? sops.filter((sop) => sop?.active).length : 0;
+  const recon = buildReconContext(ensureReconState(ledger));
+  const reputation = buildReputationContext(
+    ensureReputationState(ledger),
+    {},
+    {
+      scope: REPUTATION_VIEW_SCOPES.GM
+    }
+  );
+  const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
+  const prepEdge = false;
+
+  const bonuses = [];
+  const globalMinorBonuses = [];
+  const risks = [];
+  const globalModifiers = {
+    initiative: 0,
+    abilityChecks: 0,
+    perceptionChecks: 0,
+    savingThrows: 0
+  };
+  const worldGlobalModifiers = {
+    initiative: 0,
+    abilityChecks: 0,
+    perceptionChecks: 0,
+    savingThrows: 0
+  };
+  const globalModifierRows = [];
+
+  if (reputation.highStandingCount >= 2)
+    bonuses.push("Faction leverage active: ease one access or social gate this session.");
+  if (baseOperations.readiness)
+    bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
+
+  if (recon.tier === "blind") risks.push("Recon gaps: increase first-contact uncertainty by one step.");
+  if (reputation.hostileCount >= 1)
+    risks.push("Faction pressure: increase social or legal complication risk by one step.");
+  if (baseOperations.maintenancePressure >= 3)
+    risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
+
+  const pressurePenalty = baseOperations.maintenancePressure >= 4 ? 2 : baseOperations.maintenancePressure >= 3 ? 1 : 0;
+  const riskScore = activeSops - pressurePenalty;
+  const riskTier = riskScore >= 2 ? "low" : riskScore >= 0 ? "moderate" : "high";
+
+  return {
+    prepEdge,
+    riskTier,
+    bonuses,
+    globalMinorBonuses,
+    globalModifiers,
+    worldGlobalModifiers,
+    globalModifierRows,
+    derivedModifierRows: globalModifierRows,
+    customModifierRows: [],
+    hasGlobalModifiers: globalModifierRows.length > 0,
+    hasCustomModifiers: false,
+    customDaeChanges: [],
+    worldDaeChanges: [],
+    hasGlobalMinorBonuses: globalMinorBonuses.length > 0,
+    hasRisks: risks.length > 0,
+    risks
+  };
+}
+
+function getDefaultReputationFactions() {
+  return [
+    {
+      id: "religious",
+      label: "Religious Authority",
+      category: "Institution",
+      represents: "Temples, shrines, clergy, and sacred orders",
+      summary: "Track how the party is perceived by faith leaders and religious institutions.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      operationsVisible: true,
+      operationsSummary: "Faith leaders, temples, and sacred orders the party has dealt with openly.",
+      operationsNote: "",
+      noteLogs: [],
+      isCore: true
+    },
+    {
+      id: "nobility",
+      label: "Nobility",
+      category: "Power Bloc",
+      represents: "Courts, titled houses, heralds, and magistrates",
+      summary: "Track access to courts, patronage, and elite political leverage.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      operationsVisible: true,
+      operationsSummary: "Courts, titled houses, and political elites that visibly shape the party's access.",
+      operationsNote: "",
+      noteLogs: [],
+      isCore: true
+    },
+    {
+      id: "criminal",
+      label: "Criminal Factions",
+      category: "Network",
+      represents: "Smugglers, thieves, fences, and underground brokers",
+      summary: "Track street access, favors, and retaliation risk from the underworld.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      operationsVisible: true,
+      operationsSummary: "Underworld groups, fences, and brokers the party knows are in play.",
+      operationsNote: "",
+      noteLogs: [],
+      isCore: true
+    },
+    {
+      id: "commoners",
+      label: "Common Populace",
+      category: "Public",
+      represents: "Townsfolk, laborers, travelers, and day-to-day public sentiment",
+      summary: "Track public trust, rumor pressure, and how local communities react to the party.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      operationsVisible: true,
+      operationsSummary: "Public sentiment, local communities, and everyday rumor pressure around the party.",
+      operationsNote: "",
+      noteLogs: [],
+      isCore: true
+    }
+  ];
+}
+
+function normalizeReputationNoteLog(entry = {}) {
+  const loggedAt = Number(entry?.loggedAt ?? getCurrentWorldTimestamp());
+  return {
+    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    note: String(entry?.note ?? "").trim(),
+    score: Math.max(-5, Math.min(5, Math.floor(Number(entry?.score ?? 0) || 0))),
+    loggedAt: Number.isFinite(loggedAt) ? loggedAt : getCurrentWorldTimestamp(),
+    loggedBy: String(entry?.loggedBy ?? "GM").trim() || "GM",
+    dayLabel: String(entry?.dayLabel ?? "").trim(),
+    clockLabel: String(entry?.clockLabel ?? "").trim(),
+    calendarEntryId: String(entry?.calendarEntryId ?? "").trim(),
+    journalEntryId: String(entry?.journalEntryId ?? "").trim()
+  };
+}
+
+function normalizeReputationFaction(entry = {}) {
+  const noteLogs = Array.isArray(entry?.noteLogs)
+    ? entry.noteLogs
+        .map((row) => normalizeReputationNoteLog(row))
+        .filter((row) => row.note)
+        .sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0))
+        .slice(0, 100)
+    : [];
+  const playerImpacts = Array.isArray(entry?.playerImpacts)
+    ? entry.playerImpacts.map((row) => normalizeReputationPlayerImpact(row)).slice(0, 12)
+    : [];
+  const isCore = Boolean(entry.isCore);
+  const summary = String(entry.summary ?? "");
+  const operationsVisible =
+    entry?.operationsVisible === undefined
+      ? entry?.playerVisible === undefined
+        ? isCore
+        : entry.playerVisible !== false
+      : entry.operationsVisible !== false;
+  const operationsSummary =
+    entry?.operationsSummary !== undefined
+      ? String(entry.operationsSummary ?? "")
+      : entry?.playerSummary !== undefined
+        ? String(entry.playerSummary ?? "")
+        : isCore
+          ? summary
+          : "";
+  const operationsNote =
+    entry?.operationsNote !== undefined ? String(entry.operationsNote ?? "") : String(entry?.playerNote ?? "");
+  return {
+    id: String(entry.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    label: String(entry.label ?? "Faction").trim() || "Faction",
+    category: String(entry.category ?? "").trim(),
+    represents: String(entry.represents ?? "").trim(),
+    summary,
+    linkedActorId: String(entry.linkedActorId ?? entry.actorId ?? "").trim(),
+    score: clampReputationStandingValue(entry.score ?? 0),
+    note: String(entry.note ?? ""),
+    operationsVisible,
+    operationsSummary,
+    operationsNote,
+    noteLogs,
+    playerImpacts,
+    isCore
+  };
+}
+
+function ensureReputationState(ledger) {
+  if (!ledger.reputation || typeof ledger.reputation !== "object") ledger.reputation = {};
+  if (!Array.isArray(ledger.reputation.factions)) {
+    const defaults = getDefaultReputationFactions();
+    const legacyLookup = {
+      religious: ledger.reputation.religious,
+      nobility: ledger.reputation.nobility,
+      criminal: ledger.reputation.criminal,
+      commoners: ledger.reputation.commoners
+    };
+    ledger.reputation.factions = defaults.map((row) => {
+      const legacy = legacyLookup[row.id] ?? {};
+      return normalizeReputationFaction({
+        ...row,
+        score: Number(legacy?.score ?? row.score),
+        note: String(legacy?.note ?? row.note),
+        noteLogs: Array.isArray(legacy?.noteLogs) ? legacy.noteLogs : []
+      });
+    });
+  }
+  ledger.reputation.factions = ledger.reputation.factions
+    .map((entry) => normalizeReputationFaction(entry))
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+  return ledger.reputation;
+}
+
+function getReputationBand(score) {
+  const value = Number(score ?? 0);
+  if (value <= -3) return "hostile";
+  if (value <= -1) return "cold";
+  if (value >= 3) return "trusted";
+  if (value >= 1) return "favorable";
+  return "neutral";
+}
+
+function getReputationStandingClass(score) {
+  const value = Math.max(-5, Math.min(5, Math.floor(Number(score ?? 0) || 0)));
+  if (value >= 0) return `po-reputation-standing-p${value}`;
+  return `po-reputation-standing-n${Math.abs(value)}`;
+}
+
+function getReputationStandingStyle(score) {
+  const numeric = Number(score ?? 0);
+  const value = Math.max(-5, Math.min(5, Number.isFinite(numeric) ? numeric : 0));
+  const isPositive = value >= 0;
+  const intensity = isPositive ? value / 5 : Math.abs(value) / 5;
+
+  const hue = isPositive ? 212 + (148 - 212) * intensity : 34 + (2 - 34) * intensity;
+  const saturation = isPositive ? 30 + (58 - 30) * intensity : 48 + (76 - 48) * intensity;
+  const lightness = isPositive ? 54 + (46 - 54) * intensity : 54 + (44 - 54) * intensity;
+
+  const accent = `hsl(${Math.round(hue)} ${Math.round(saturation)}% ${Math.round(lightness)}%)`;
+  const bgMix = Math.round((isPositive ? 10 : 12) + (isPositive ? 16 : 24) * intensity);
+  const pillMix = Math.round((isPositive ? 16 : 20) + (isPositive ? 22 : 28) * intensity);
+  const pillText =
+    (isPositive && intensity >= 0.82) || (!isPositive && intensity >= 0.56)
+      ? "var(--po-accent-contrast)"
+      : "var(--po-text)";
+
+  return `--po-rep-accent:${accent};--po-rep-bg:color-mix(in srgb, ${accent} ${bgMix}%, var(--po-bg-alt));--po-rep-pill-bg:color-mix(in srgb, ${accent} ${pillMix}%, var(--po-bg-alt));--po-rep-pill-text:${pillText};`;
+}
+
+function getReputationAccessLabel(score) {
+  const value = Math.max(-5, Math.min(5, Math.floor(Number(score ?? 0) || 0)));
+  const map = {
+    "-5": "Nemesis",
+    "-4": "Hated",
+    "-3": "Hostile",
+    "-2": "Distrusted",
+    "-1": "Cold",
+    0: "Neutral",
+    1: "Noticed",
+    2: "Friendly",
+    3: "Favored",
+    4: "Allied",
+    5: "Exalted"
+  };
+  return map[String(value)] ?? "Neutral";
+}
+
+function buildReputationContext(reputationState, filters = {}, options = {}) {
+  const scope = normalizeReputationViewScope(options?.scope);
+  const isGmScope = scope === REPUTATION_VIEW_SCOPES.GM;
+  const noteLogSelections = isGmScope ? getReputationNoteLogSelections() : {};
+  const builder = buildReputationBuilderContext(getReputationBuilderState());
+  const rawFactions = Array.isArray(reputationState?.factions)
+    ? reputationState.factions.map((entry) => normalizeReputationFaction(entry))
+    : getDefaultReputationFactions().map((entry) => normalizeReputationFaction(entry));
+
+  const allFactions = rawFactions.map((faction) => {
+    const band = getReputationBand(faction.score);
+    const noteLogs =
+      isGmScope && Array.isArray(faction.noteLogs)
+        ? faction.noteLogs
+            .map((row) => normalizeReputationNoteLog(row))
+            .sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0))
+        : [];
+    let selectedNoteLogId = String(noteLogSelections[faction.id] ?? "").trim();
+    if (selectedNoteLogId && !noteLogs.some((row) => String(row.id ?? "") === selectedNoteLogId)) {
+      selectedNoteLogId = "";
+    }
+    const selectedNoteLog = selectedNoteLogId
+      ? (noteLogs.find((row) => String(row.id ?? "") === selectedNoteLogId) ?? null)
+      : null;
+    const noteLogOptions = noteLogs.slice(0, 50).map((row) => {
+      const signedScore = row.score > 0 ? `+${row.score}` : String(row.score);
+      const stamp = row.dayLabel || formatRecoveryDueLabel(Number(row.loggedAt ?? Date.now()));
+      const summary = row.note.length > 64 ? `${row.note.slice(0, 61)}...` : row.note;
+      return {
+        value: row.id,
+        label: `${stamp} - Rep ${signedScore} - ${summary}`,
+        note: row.note,
+        selected: selectedNoteLogId === String(row.id ?? "")
+      };
+    });
+    const selectedScore = Number(selectedNoteLog?.score ?? 0);
+    const selectedScoreLabel = selectedScore > 0 ? `+${selectedScore}` : String(selectedScore);
+    const selectedDayLabel =
+      String(selectedNoteLog?.dayLabel ?? "").trim() ||
+      formatRecoveryDueLabel(Number(selectedNoteLog?.loggedAt ?? getCurrentWorldTimestamp()));
+    const selectedNoteLogText = String(selectedNoteLog?.note ?? "").trim();
+    const selectedPreviewSource = String(selectedNoteLog?.note ?? "").trim();
+    const selectedPreview =
+      selectedPreviewSource.length > 160 ? `${selectedPreviewSource.slice(0, 157)}...` : selectedPreviewSource;
+    const linkedActorName = isGmScope ? getReputationActorName(faction.linkedActorId) : "";
+    const playerImpacts = isGmScope ? buildReputationPlayerImpactRows(faction.playerImpacts) : [];
+    const configuredPlayerImpacts = isGmScope ? playerImpacts.filter((entry) => entry.configured) : [];
+    const playerImpactTotal = configuredPlayerImpacts.reduce((sum, entry) => sum + Number(entry.delta ?? 0), 0);
+    return {
+      ...faction,
+      key: faction.id,
+      band,
+      standingClass: getReputationStandingClass(faction.score),
+      standingStyle: getReputationStandingStyle(faction.score),
+      access: getReputationAccessLabel(faction.score),
+      categoryLabel: String(faction.category ?? "").trim() || "Unspecified",
+      linkedActorName,
+      hasLinkedActor: isGmScope && Boolean(linkedActorName),
+      linkedActorOptions: isGmScope ? buildReputationActorOptions(faction.linkedActorId) : [],
+      hasCategory: Boolean(String(faction.category ?? "").trim()),
+      hasRepresents: Boolean(String(faction.represents ?? "").trim()),
+      hasSummary: isGmScope && Boolean(String(faction.summary ?? "").trim()),
+      hasOperationsSummary: Boolean(String(faction.operationsSummary ?? "").trim()),
+      hasOperationsNote: Boolean(String(faction.operationsNote ?? "").trim()),
+      visibleToOperations: faction.operationsVisible !== false,
+      operationsVisibilityLabel: faction.operationsVisible !== false ? "Operations: Revealed" : "Operations: Hidden",
+      playerImpacts,
+      configuredPlayerImpacts,
+      playerImpactCount: configuredPlayerImpacts.length,
+      hasPlayerImpacts: configuredPlayerImpacts.length > 0,
+      playerImpactTotal,
+      playerImpactTotalLabel: formatReputationDeltaLabel(playerImpactTotal),
+      playerImpactToneClass:
+        playerImpactTotal > 0 ? "is-positive" : playerImpactTotal < 0 ? "is-negative" : "is-neutral",
+      noteLogs,
+      noteLogOptions,
+      hasNoteLogs: noteLogOptions.length > 0,
+      noteLogCount: noteLogOptions.length,
+      selectedNoteLogId,
+      selectedNoteLog,
+      hasSelectedNoteLog: Boolean(selectedNoteLog),
+      selectedNoteLogScoreLabel: selectedScoreLabel,
+      selectedNoteLogDayLabel: selectedDayLabel,
+      selectedNoteLogPreview: selectedPreview,
+      selectedNoteLogText,
+      selectedNoteLogClockLabel: String(selectedNoteLog?.clockLabel ?? "").trim(),
+      selectedNoteLogLoggedBy: String(selectedNoteLog?.loggedBy ?? "GM").trim() || "GM",
+      selectedNoteLogJournalEntryId: String(selectedNoteLog?.journalEntryId ?? "").trim(),
+      selectedNoteLogCalendarEntryId: String(selectedNoteLog?.calendarEntryId ?? "").trim(),
+      hasSelectedNoteLogJournal: Boolean(String(selectedNoteLog?.journalEntryId ?? "").trim()),
+      hasSelectedNoteLogCalendar: Boolean(String(selectedNoteLog?.calendarEntryId ?? "").trim()),
+      summary: isGmScope ? String(faction.summary ?? "") : "",
+      note: isGmScope ? String(faction.note ?? "") : "",
+      linkedActorId: isGmScope ? String(faction.linkedActorId ?? "") : ""
+    };
+  });
+
+  const scopedFactions = isGmScope ? allFactions : allFactions.filter((faction) => faction.visibleToOperations);
+  const filterKeyword = String(filters?.keyword ?? "")
+    .trim()
+    .toLowerCase();
+  const filterStanding = String(filters?.standing ?? "all")
+    .trim()
+    .toLowerCase();
+  const filteredFactions = scopedFactions.filter((faction) => {
+    const numericStanding = Number(filterStanding);
+    const filterAsExactScore =
+      Number.isFinite(numericStanding) && String(Math.floor(numericStanding)) === filterStanding;
+    const standingMatch =
+      filterStanding === "all" ||
+      (filterAsExactScore && faction.score === Math.floor(numericStanding)) ||
+      faction.band === filterStanding;
+    if (!standingMatch) return false;
+    if (!filterKeyword) return true;
+    const historical = isGmScope ? (faction.noteLogs ?? []).map((row) => String(row.note ?? "")).join(" ") : "";
+    const playerDetails = isGmScope
+      ? (faction.configuredPlayerImpacts ?? []).map((row) => `${row.actorName} ${row.note} ${row.deltaLabel}`).join(" ")
+      : "";
+    const scopeSummary = isGmScope ? String(faction.summary ?? "") : String(faction.operationsSummary ?? "");
+    const scopeNote = isGmScope ? String(faction.note ?? "") : String(faction.operationsNote ?? "");
+    const linkedActorSearch = isGmScope ? String(faction.linkedActorName ?? "") : "";
+    const visibilitySearch = isGmScope ? faction.operationsVisibilityLabel : "";
+    const haystack =
+      `${faction.label} ${faction.category} ${faction.represents} ${scopeSummary} ${scopeNote} ${historical} ${faction.band} ${faction.access} ${faction.score} ${linkedActorSearch} ${playerDetails} ${visibilitySearch}`.toLowerCase();
+    return haystack.includes(filterKeyword);
+  });
+
+  const revealedCount = allFactions.filter((faction) => faction.visibleToOperations).length;
+  const hiddenCount = Math.max(0, allFactions.length - revealedCount);
+
+  return {
+    scope,
+    isGmScope,
+    builder,
+    factions: scopedFactions,
+    allFactions: isGmScope ? allFactions : scopedFactions,
+    filteredFactions,
+    coreCount: scopedFactions.filter((faction) => faction.isCore).length,
+    customCount: scopedFactions.filter((faction) => !faction.isCore).length,
+    totalCount: scopedFactions.length,
+    visibleCount: filteredFactions.length,
+    trackedCount: isGmScope ? allFactions.length : scopedFactions.length,
+    revealedCount: isGmScope ? revealedCount : scopedFactions.length,
+    hiddenCount: isGmScope ? hiddenCount : 0,
+    filters: {
+      keyword: String(filters?.keyword ?? ""),
+      standing: filterStanding || "all",
+      standingOptions: [
+        { value: "all", label: "All Standing", selected: (filterStanding || "all") === "all" },
+        { value: "5", label: "+5 Exalted", selected: filterStanding === "5" },
+        { value: "4", label: "+4 Allied", selected: filterStanding === "4" },
+        { value: "3", label: "+3 Favored", selected: filterStanding === "3" },
+        { value: "2", label: "+2 Friendly", selected: filterStanding === "2" },
+        { value: "1", label: "+1 Noticed", selected: filterStanding === "1" },
+        { value: "0", label: "0 Neutral", selected: filterStanding === "0" },
+        { value: "-1", label: "-1 Cold", selected: filterStanding === "-1" },
+        { value: "-2", label: "-2 Distrusted", selected: filterStanding === "-2" },
+        { value: "-3", label: "-3 Hostile", selected: filterStanding === "-3" },
+        { value: "-4", label: "-4 Hated", selected: filterStanding === "-4" },
+        { value: "-5", label: "-5 Nemesis", selected: filterStanding === "-5" }
+      ]
+    },
+    highStandingCount: scopedFactions.filter((faction) => ["favorable", "trusted"].includes(faction.band)).length,
+    hostileCount: scopedFactions.filter((faction) => faction.band === "hostile").length
+  };
+}
+
+function getBaseSiteTypeLabel(type) {
+  const map = {
+    safehouse: "Safehouse",
+    chapel: "Chapel",
+    watchtower: "Watchtower",
+    cell: "Underground Cell",
+    "storage-cache": "Storage Cache"
+  };
+  return map[type] ?? "Site";
+}
+
+function getBaseSiteStatusLabel(status) {
+  const map = {
+    secure: "Secure",
+    contested: "Contested",
+    compromised: "Compromised",
+    abandoned: "Abandoned"
+  };
+  return map[status] ?? "Secure";
+}
+
+function getItemWeightValue(itemLike) {
+  const direct = Number(itemLike?.weight);
+  if (Number.isFinite(direct)) return direct;
+  const systemWeight = Number(itemLike?.system?.weight?.value);
+  if (Number.isFinite(systemWeight)) return systemWeight;
+  const flatWeight = Number(itemLike?.system?.weight);
+  if (Number.isFinite(flatWeight)) return flatWeight;
+  const bulk = Number(itemLike?.system?.bulk);
+  if (Number.isFinite(bulk)) return bulk;
+  return 0;
+}
+
+function normalizeBaseSiteStorageItem(entry = {}) {
+  const quantityRaw = Number(entry?.quantity ?? 1);
+  const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
+  const weightRaw = Number(entry?.weight ?? 0);
+  const weight = Number.isFinite(weightRaw) ? Math.max(0, weightRaw) : 0;
+  return {
+    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    name: String(entry?.name ?? "Stored Item").trim() || "Stored Item",
+    type: String(entry?.type ?? "item").trim() || "item",
+    quantity,
+    weight,
+    note: String(entry?.note ?? ""),
+    img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
+    uuid: String(entry?.uuid ?? "")
+  };
+}
+
+function normalizeBaseSiteEntry(site = {}, index = 0) {
+  const storageRaw = site?.storage && typeof site.storage === "object" ? site.storage : {};
+  const maxWeightRaw = Number(storageRaw?.maxWeight ?? site?.maxWeight ?? 0);
+  const maxSpaceRaw = Number(storageRaw?.maxSpace ?? site?.maxSpace ?? 0);
+  const maxWeight = Number.isFinite(maxWeightRaw) ? Math.max(0, maxWeightRaw) : 0;
+  const maxSpace = Number.isFinite(maxSpaceRaw) ? Math.max(0, Math.floor(maxSpaceRaw)) : 0;
+  const items = Array.isArray(storageRaw?.items)
+    ? storageRaw.items.map((entry) => normalizeBaseSiteStorageItem(entry))
+    : [];
+  return {
+    id: site.id ?? `legacy-base-site-${index}`,
+    type: String(site.type ?? "safehouse"),
+    name: String(site.name ?? "Unnamed Site"),
+    status: String(site.status ?? "secure"),
+    risk: String(site.risk ?? "moderate"),
+    pressure: Math.max(0, Number(site.pressure ?? 0) || 0),
+    note: String(site.note ?? ""),
+    storage: {
+      maxWeight,
+      maxSpace,
+      items
+    }
+  };
+}
+
+function buildBaseOperationsContext(baseState) {
+  const sites = Array.isArray(baseState?.sites)
+    ? baseState.sites.map((site, index) => {
+        const normalizedSite = normalizeBaseSiteEntry(site, index);
+        const type = normalizedSite.type;
+        const status = normalizedSite.status;
+        const risk = normalizedSite.risk;
+        const pressure = normalizedSite.pressure;
+        const storageItems = normalizedSite.storage.items;
+        const storageItemCount = storageItems.reduce(
+          (sum, entry) => sum + Math.max(0, Number(entry.quantity ?? 0) || 0),
+          0
+        );
+        const storageWeightUsed = storageItems.reduce((sum, entry) => {
+          const quantity = Math.max(0, Number(entry.quantity ?? 0) || 0);
+          const weight = Math.max(0, Number(entry.weight ?? 0) || 0);
+          return sum + quantity * weight;
+        }, 0);
+        const maxWeight = Math.max(0, Number(normalizedSite.storage.maxWeight ?? 0) || 0);
+        const maxSpace = Math.max(0, Number(normalizedSite.storage.maxSpace ?? 0) || 0);
+        return {
+          id: normalizedSite.id,
+          type,
+          typeLabel: getBaseSiteTypeLabel(type),
+          name: normalizedSite.name,
+          status,
+          statusLabel: getBaseSiteStatusLabel(status),
+          risk,
+          pressure,
+          note: normalizedSite.note,
+          storageMaxWeight: maxWeight,
+          storageMaxSpace: maxSpace,
+          storageWeightUsed,
+          storageSpaceUsed: storageItemCount,
+          storageItemCount,
+          hasStorageCapacity: maxWeight > 0 || maxSpace > 0,
+          storageWeightSummary:
+            maxWeight > 0
+              ? `${storageWeightUsed.toFixed(1)} / ${maxWeight.toFixed(1)}`
+              : `${storageWeightUsed.toFixed(1)} / infinite`,
+          storageSpaceSummary: maxSpace > 0 ? `${storageItemCount} / ${maxSpace}` : `${storageItemCount} / infinite`
+        };
+      })
+    : [];
+
+  const activeSites = sites.filter((site) => site.status !== "abandoned").length;
+  const contestedSites = sites.filter((site) => ["contested", "compromised"].includes(site.status)).length;
+  const pressureSum = sites.reduce((sum, site) => sum + Number(site.pressure ?? 0), 0);
+  const maintenanceRisk = String(baseState?.maintenanceRisk ?? "moderate");
+  const riskBase = maintenanceRisk === "high" ? 2 : maintenanceRisk === "low" ? 0 : 1;
+  const maintenancePressure =
+    riskBase + (activeSites === 0 ? 2 : Math.max(0, activeSites - 2)) + Math.floor(pressureSum / 5) + contestedSites;
+  const readiness = activeSites >= 2 && maintenancePressure <= 3;
+
+  return {
+    sites,
+    maintenanceRisk,
+    maintenancePressure,
+    activeSites,
+    contestedSites,
+    readiness,
+    pressureSum,
+    riskOptions: [
+      { value: "low", label: "Low", selected: maintenanceRisk === "low" },
+      { value: "moderate", label: "Moderate", selected: maintenanceRisk === "moderate" },
+      { value: "high", label: "High", selected: maintenanceRisk === "high" }
+    ],
+    siteTypeOptions: [
+      { value: "safehouse", label: "Safehouse", selected: true },
+      { value: "chapel", label: "Chapel", selected: false },
+      { value: "watchtower", label: "Watchtower", selected: false },
+      { value: "cell", label: "Underground Cell", selected: false },
+      { value: "storage-cache", label: "Storage Cache", selected: false }
+    ],
+    statusOptions: [
+      { value: "secure", label: "Secure", selected: true },
+      { value: "contested", label: "Contested", selected: false },
+      { value: "compromised", label: "Compromised", selected: false },
+      { value: "abandoned", label: "Abandoned", selected: false }
+    ],
+    siteRiskOptions: [
+      { value: "low", label: "Low", selected: false },
+      { value: "moderate", label: "Moderate", selected: true },
+      { value: "high", label: "High", selected: false }
+    ]
+  };
+}
+
+function ensureBaseOperationsState(ledger) {
+  if (!ledger.baseOperations) {
+    ledger.baseOperations = {
+      maintenanceRisk: "moderate",
+      sites: []
+    };
+  }
+  if (!Array.isArray(ledger.baseOperations.sites)) ledger.baseOperations.sites = [];
+  ledger.baseOperations.sites = ledger.baseOperations.sites.map((site, index) => normalizeBaseSiteEntry(site, index));
+  if (!ledger.baseOperations.maintenanceRisk) ledger.baseOperations.maintenanceRisk = "moderate";
+  return ledger.baseOperations;
+}
+

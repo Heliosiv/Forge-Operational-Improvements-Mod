@@ -1,0 +1,2183 @@
+# Loot Source Registry
+
+Source: legacy/party-operations-monolith.js:14031-16204
+Feature IDs: loot
+Target Modules: scripts/features/loot-source-*
+
+Loot source normalization, manifest compendium folders, source documents, and source registry context.
+
+----- legacy source begins -----
+function normalizeLootKeywordTag(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeLootKeywordTagList(values = []) {
+  const source = Array.isArray(values) ? values : [values];
+  return source
+    .flatMap((entry) => String(entry ?? "").split(/[\n,;]+/))
+    .map((entry) => normalizeLootKeywordTag(entry))
+    .filter((entry, index, rows) => entry.length > 0 && rows.indexOf(entry) === index);
+}
+
+function normalizeLootKeywordIncludeMode(value, fallback = LOOT_KEYWORD_INCLUDE_MODES.ALL) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === LOOT_KEYWORD_INCLUDE_MODES.ANY) return LOOT_KEYWORD_INCLUDE_MODES.ANY;
+  if (normalized === LOOT_KEYWORD_INCLUDE_MODES.ALL) return LOOT_KEYWORD_INCLUDE_MODES.ALL;
+  return fallback;
+}
+
+function parseLootKeywordTagListFromInput(value) {
+  return normalizeLootKeywordTagList(String(value ?? "").split(/[\s,;\n]+/));
+}
+
+function formatLootKeywordTagListForInput(values = []) {
+  return normalizeLootKeywordTagList(values).join(", ");
+}
+
+function normalizeLootSourceClass(value = "", fallback = LOOT_SOURCE_CLASSES.GENERATED) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === LOOT_SOURCE_CLASSES.CURATED) return LOOT_SOURCE_CLASSES.CURATED;
+  if (normalized === LOOT_SOURCE_CLASSES.MANUAL) return LOOT_SOURCE_CLASSES.MANUAL;
+  if (normalized === LOOT_SOURCE_CLASSES.TABLE) return LOOT_SOURCE_CLASSES.TABLE;
+  if (normalized === LOOT_SOURCE_CLASSES.GENERATED) return LOOT_SOURCE_CLASSES.GENERATED;
+  return fallback;
+}
+
+function normalizeLootSourcePolicy(value = "", fallback = LOOT_SOURCE_POLICIES.NORMAL) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-");
+  if (normalized === LOOT_SOURCE_POLICIES.BONUS) return LOOT_SOURCE_POLICIES.BONUS;
+  if (normalized === LOOT_SOURCE_POLICIES.ANCHOR) return LOOT_SOURCE_POLICIES.ANCHOR;
+  if (normalized === LOOT_SOURCE_POLICIES.OUTSIDE_BUDGET || normalized === "outsidebudget")
+    return LOOT_SOURCE_POLICIES.OUTSIDE_BUDGET;
+  if (normalized === LOOT_SOURCE_POLICIES.NORMAL) return LOOT_SOURCE_POLICIES.NORMAL;
+  return fallback;
+}
+
+function isLootOutsideBudgetPolicy(entryOrPolicy = null) {
+  const policy =
+    entryOrPolicy && typeof entryOrPolicy === "object"
+      ? normalizeLootSourcePolicy(entryOrPolicy?.sourcePolicy ?? "")
+      : normalizeLootSourcePolicy(entryOrPolicy ?? "");
+  return policy === LOOT_SOURCE_POLICIES.BONUS || policy === LOOT_SOURCE_POLICIES.OUTSIDE_BUDGET;
+}
+
+function normalizeLootRarityValue(value) {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  const allowed = new Set(
+    LOOT_RARITY_OPTIONS.map((entry) =>
+      String(entry.value ?? "")
+        .trim()
+        .toLowerCase()
+    )
+  );
+  return allowed.has(raw) ? raw : "";
+}
+
+function buildLootItemTypeCatalog() {
+  const labels = CONFIG?.Item?.typeLabels && typeof CONFIG.Item.typeLabels === "object" ? CONFIG.Item.typeLabels : {};
+  const merged = new Map();
+  for (const [key, label] of Object.entries(LOOT_ITEM_TYPE_LABELS)) {
+    merged.set(String(key).trim(), String(label).trim() || String(key).trim());
+  }
+  for (const [key, label] of Object.entries(labels)) {
+    const id = String(key ?? "").trim();
+    if (!id) continue;
+    if (!merged.has(id)) merged.set(id, String(label ?? id).trim() || id);
+  }
+  return Array.from(merged.entries())
+    .map(([value, label]) => ({ value, label }))
+    .filter((entry) => entry.value)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function normalizeLootSourcePackEntry(entry = {}) {
+  const id = String(entry?.id ?? entry?.pack ?? "").trim();
+  if (!id) return null;
+  const weightRaw = Number(entry?.weight ?? 1);
+  const weight = Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1;
+  const sourceKindRaw = String(
+    entry?.sourceKind ?? (id === LOOT_WORLD_ITEMS_SOURCE_ID ? "world-items" : "compendium-pack")
+  )
+    .trim()
+    .toLowerCase();
+  const sourceKind = sourceKindRaw === "world-items" ? "world-items" : "compendium-pack";
+  return {
+    id,
+    label: String(entry?.label ?? "").trim(),
+    sourceKind,
+    enabled: entry?.enabled !== false,
+    weight
+  };
+}
+
+function normalizeLootSourceTableEntry(entry = {}) {
+  const id = String(entry?.id ?? entry?.tableRef ?? entry?.tableUuid ?? "").trim();
+  if (!id) return null;
+  const typeRaw = String(entry?.tableType ?? entry?.type ?? "currency")
+    .trim()
+    .toLowerCase();
+  const validTypes = new Set(LOOT_TABLE_TYPE_OPTIONS.map((option) => option.value));
+  const tableType = validTypes.has(typeRaw) ? typeRaw : "currency";
+  const sourceKindRaw = String(entry?.sourceKind ?? (id.startsWith("world-table:") ? "world-table" : "table-pack"))
+    .trim()
+    .toLowerCase();
+  const sourceKind = sourceKindRaw === "world-table" ? "world-table" : "table-pack";
+  return {
+    id,
+    label: String(entry?.label ?? "").trim(),
+    sourceKind,
+    enabled: entry?.enabled !== false,
+    tableType
+  };
+}
+
+function normalizeLootSourceConfig(config = {}) {
+  const fallback = buildDefaultLootSourceConfig();
+  const rawPacks = Array.isArray(config?.packs) ? config.packs : fallback.packs;
+  const rawTables = Array.isArray(config?.tables) ? config.tables : fallback.tables;
+  const validLootGenerationSourceIds = new Set(
+    getLootGenerationItemPackSources()
+      .map((entry) => String(entry?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  const packs = rawPacks
+    .map((entry) => normalizeLootSourcePackEntry(entry))
+    .filter((entry, index, rows) => {
+      if (!entry) return false;
+      if (!validLootGenerationSourceIds.has(String(entry.id ?? "").trim())) return false;
+      return rows.findIndex((candidate) => candidate?.id === entry.id) === index;
+    });
+  if (!packs.some((entry) => String(entry?.id ?? "").trim() === LOOT_WORLD_ITEMS_SOURCE_ID)) {
+    packs.unshift(buildLootWorldItemSourceEntry());
+  } else {
+    for (const entry of packs) {
+      if (String(entry?.id ?? "").trim() !== LOOT_WORLD_ITEMS_SOURCE_ID) continue;
+      entry.sourceKind = "world-items";
+      if (!String(entry?.label ?? "").trim()) entry.label = LOOT_WORLD_ITEMS_SOURCE_LABEL;
+      entry.weight = Math.max(1, Math.floor(Number(entry?.weight ?? 1) || 1));
+    }
+  }
+  const tables = rawTables
+    .map((entry) => normalizeLootSourceTableEntry(entry))
+    .filter((entry, index, rows) => entry && rows.findIndex((candidate) => candidate.id === entry.id) === index);
+
+  const itemTypeCatalog = new Set(buildLootItemTypeCatalog().map((entry) => entry.value));
+  const validPackIds = new Set(
+    getLootGenerationItemPackSources()
+      .map((entry) => String(entry?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  const rawAllowedTypes = Array.isArray(config?.filters?.allowedTypes)
+    ? config.filters.allowedTypes
+    : fallback.filters.allowedTypes;
+  const allowedTypes = rawAllowedTypes
+    .map((entry) => String(entry ?? "").trim())
+    .filter((entry, index, rows) => entry && itemTypeCatalog.has(entry) && rows.indexOf(entry) === index);
+
+  const updatedAtRaw = Number(config?.updatedAt ?? 0);
+  return {
+    packs,
+    tables,
+    filters: {
+      allowedTypes: allowedTypes.length > 0 ? allowedTypes : [...LOOT_DEFAULT_ITEM_TYPES],
+      rarityFloor: normalizeLootRarityValue(config?.filters?.rarityFloor),
+      rarityCeiling: normalizeLootRarityValue(config?.filters?.rarityCeiling),
+      manifestPackId: (() => {
+        const id = String(config?.filters?.manifestPackId ?? "").trim();
+        if (!id) return "";
+        if (validPackIds.has(id)) return id;
+        const selectedFolderId = parseLootWorldItemsFolderFilterId(id);
+        return selectedFolderId ? buildLootWorldItemsFolderFilterId(selectedFolderId) : "";
+      })(),
+      keywordIncludeMode: normalizeLootKeywordIncludeMode(
+        config?.filters?.keywordIncludeMode,
+        LOOT_KEYWORD_INCLUDE_MODES.ALL
+      ),
+      keywordIncludeTags: normalizeLootKeywordTagList(config?.filters?.keywordIncludeTags ?? []),
+      keywordExcludeTags: normalizeLootKeywordTagList(config?.filters?.keywordExcludeTags ?? [])
+    },
+    updatedAt: Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0,
+    updatedBy: String(config?.updatedBy ?? "")
+  };
+}
+
+function getLootSourceConfig() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.LOOT_SOURCE_CONFIG);
+  return normalizeLootSourceConfig(stored ?? buildDefaultLootSourceConfig());
+}
+
+async function updateLootSourceConfig(mutator, options = {}) {
+  if (typeof mutator !== "function") return;
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const config = getLootSourceConfig();
+  mutator(config);
+  const next = normalizeLootSourceConfig(config);
+  next.updatedAt = Date.now();
+  next.updatedBy = String(game.user?.name ?? "GM");
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.LOOT_SOURCE_CONFIG, next);
+  if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+}
+
+function getAllCompendiumPacks() {
+  if (!game?.packs) return [];
+  if (typeof game.packs.values === "function") return Array.from(game.packs.values());
+  const rows = [];
+  for (const entry of game.packs) {
+    if (Array.isArray(entry) && entry.length > 1) rows.push(entry[1]);
+    else rows.push(entry);
+  }
+  return rows;
+}
+
+function normalizeLootManifestItemType(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function getLootManifestFolderNameKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function getLootManifestFolderLabelForType(itemType = "") {
+  const normalizedType = normalizeLootManifestItemType(itemType);
+  if (!normalizedType) return LOOT_MANIFEST_FOLDER_LABELS.other;
+  const explicit = String(LOOT_MANIFEST_FOLDER_LABELS[normalizedType] ?? "").trim();
+  if (explicit) return explicit;
+  const fallback = String(LOOT_ITEM_TYPE_LABELS[normalizedType] ?? "").trim();
+  if (fallback) return fallback;
+  return normalizedType
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function getLootManifestFolderSortPriority(itemType = "") {
+  const normalizedType = normalizeLootManifestItemType(itemType) || "other";
+  const index = LOOT_MANIFEST_FOLDER_TYPE_PRIORITY.indexOf(normalizedType);
+  if (index >= 0) return index;
+  return LOOT_MANIFEST_FOLDER_TYPE_PRIORITY.length + 100;
+}
+
+function getLootManifestCompendiumPack() {
+  const allowedPackages = new Set([
+    String(PRIMARY_MODULE_ID).trim().toLowerCase(),
+    String(PREMIUM_MODULE_ID).trim().toLowerCase()
+  ]);
+  const targetName = String(LOOT_MANIFEST_PACK_NAME).trim().toLowerCase();
+  const targetLabel = String(LOOT_MANIFEST_PACK_LABEL).trim().toLowerCase();
+
+  const candidates = getAllCompendiumPacks().filter((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
+      .trim()
+      .toLowerCase();
+    if (documentName !== "item") return false;
+    const metadataName = String(pack?.metadata?.name ?? "")
+      .trim()
+      .toLowerCase();
+    return metadataName === targetName;
+  });
+
+  if (candidates.length > 0) {
+    const packageMatched = candidates.find((pack) => {
+      const packageName = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "")
+        .trim()
+        .toLowerCase();
+      if (!packageName) return false;
+      return allowedPackages.has(packageName);
+    });
+    if (packageMatched) return packageMatched;
+    return candidates[0];
+  }
+
+  const collectionMatched = getAllCompendiumPacks().find((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
+      .trim()
+      .toLowerCase();
+    if (documentName !== "item") return false;
+    const collection = String(pack?.collection ?? "")
+      .trim()
+      .toLowerCase();
+    return collection.endsWith(`.${targetName}`);
+  });
+  if (collectionMatched) return collectionMatched;
+
+  return (
+    getAllCompendiumPacks().find((pack) => {
+      const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
+        .trim()
+        .toLowerCase();
+      if (documentName !== "item") return false;
+      const label = String(pack?.metadata?.label ?? pack?.title ?? "")
+        .trim()
+        .toLowerCase();
+      return label === targetLabel;
+    }) ?? null
+  );
+}
+
+function getCompendiumFolderRows(pack) {
+  const folders = pack?.folders;
+  if (!folders) return [];
+  if (Array.isArray(folders?.contents)) return folders.contents;
+  if (typeof folders.values === "function") return Array.from(folders.values());
+  if (Array.isArray(folders)) return folders;
+  return [];
+}
+
+async function getLootManifestPackItemRows(pack) {
+  try {
+    if (typeof pack?.getIndex === "function") {
+      const index = await pack.getIndex({
+        fields: ["type", "folder", "name", "flags.party-operations.folder", "flags"]
+      });
+      const rows = [];
+      if (Array.isArray(index)) rows.push(...index);
+      else if (Array.isArray(index?.contents)) rows.push(...index.contents);
+      else if (typeof index?.values === "function") rows.push(...Array.from(index.values()));
+      if (rows.length > 0) {
+        return rows
+          .map((entry) => ({
+            id: String(entry?._id ?? entry?.id ?? "").trim(),
+            type: normalizeLootManifestItemType(entry?.type),
+            name: String(entry?.name ?? "").trim(),
+            folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim(),
+            folderMeta: getLootItemFolderProfileFromData(entry)
+          }))
+          .filter((entry) => entry.id);
+      }
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read loot manifest compendium index`, error);
+  }
+
+  try {
+    const docs = typeof pack?.getDocuments === "function" ? await pack.getDocuments() : [];
+    return (Array.isArray(docs) ? docs : [])
+      .map((entry) => ({
+        id: String(entry?.id ?? entry?._id ?? "").trim(),
+        type: normalizeLootManifestItemType(entry?.type),
+        name: String(entry?.name ?? "").trim(),
+        folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim(),
+        folderMeta: getLootItemFolderProfileFromData(entry)
+      }))
+      .filter((entry) => entry.id);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read loot manifest compendium documents`, error);
+  }
+
+  return [];
+}
+
+function isLockedCompendiumMutationError(error) {
+  const message = String(error?.message ?? error ?? "").toLowerCase();
+  if (!message) return false;
+  if (!message.includes("compendium")) return false;
+  if (!message.includes("locked")) return false;
+  return (
+    message.includes("may not modify") || message.includes("cannot modify") || message.includes("you may not modify")
+  );
+}
+
+function getCompendiumPackageType(pack) {
+  return String(pack?.metadata?.packageType ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function isReadOnlyCompendiumPackForFolderSync(pack) {
+  const packageType = getCompendiumPackageType(pack);
+  if (packageType && packageType !== "world") return true;
+  const collection = String(pack?.collection ?? "")
+    .trim()
+    .toLowerCase();
+  if (collection.startsWith(`${String(MODULE_ID).trim().toLowerCase()}.`)) return true;
+  if (Boolean(pack?.locked) && typeof pack?.configure !== "function") return true;
+  return false;
+}
+
+function isMonksTokenBarCompendiumUpdateCompatibilityMode(pack) {
+  const monksTokenBarActive = game.modules?.get("monks-tokenbar")?.active === true;
+  if (!monksTokenBarActive) return false;
+  const packageType = getCompendiumPackageType(pack);
+  return packageType === "module" || packageType === "system";
+}
+
+function disableLootManifestFolderSync(reason = "pack-locked", error = null) {
+  if (!lootManifestFolderSyncDisabledReason) {
+    lootManifestFolderSyncDisabledReason = String(reason ?? "").trim() || "pack-locked";
+  }
+  if (!lootManifestFolderSyncDisabledNotified) {
+    lootManifestFolderSyncDisabledNotified = true;
+    ui.notifications?.warn(
+      "Party Operations: loot manifest folder sync disabled because the compendium is locked or read-only."
+    );
+  }
+  if (error) {
+    console.warn(`${MODULE_ID}: loot manifest folder sync disabled (${lootManifestFolderSyncDisabledReason})`, error);
+  } else {
+    console.warn(`${MODULE_ID}: loot manifest folder sync disabled (${lootManifestFolderSyncDisabledReason})`);
+  }
+}
+
+async function updateLootManifestPackItemFolders(pack, updates = []) {
+  if (isMonksTokenBarCompendiumUpdateCompatibilityMode(pack)) {
+    if (!lootManifestMonksCompatNotified) {
+      lootManifestMonksCompatNotified = true;
+      ui.notifications?.warn(
+        "Party Operations: skipped manifest item-folder updates while Monks TokenBar is active (compatibility workaround)."
+      );
+      console.warn(`${MODULE_ID}: skipping loot manifest item-folder updates while monks-tokenbar is active`, {
+        packId: String(pack?.collection ?? "")
+      });
+    }
+    return 0;
+  }
+
+  const normalizedUpdates = (Array.isArray(updates) ? updates : [])
+    .map((entry) => {
+      const id = String(entry?._id ?? entry?.id ?? "").trim();
+      const folderId = String(entry?.folder ?? "").trim();
+      if (!id) return null;
+      return { _id: id, folder: folderId || null };
+    })
+    .filter(Boolean);
+  if (normalizedUpdates.length <= 0) return 0;
+
+  if (typeof Item?.updateDocuments === "function") {
+    try {
+      await Item.updateDocuments(normalizedUpdates, { pack: pack.collection });
+    } catch (error) {
+      if (isLockedCompendiumMutationError(error)) {
+        disableLootManifestFolderSync("pack-locked", error);
+        return 0;
+      }
+      throw error;
+    }
+    return normalizedUpdates.length;
+  }
+
+  let applied = 0;
+  for (const entry of normalizedUpdates) {
+    try {
+      const document = typeof pack?.getDocument === "function" ? await pack.getDocument(entry._id) : null;
+      if (!document || typeof document.update !== "function") continue;
+      await document.update({ folder: entry.folder });
+      applied += 1;
+    } catch (error) {
+      if (isLockedCompendiumMutationError(error)) {
+        disableLootManifestFolderSync("pack-locked", error);
+        return applied;
+      }
+      console.warn(`${MODULE_ID}: failed to update loot manifest item folder`, entry?._id, error);
+    }
+  }
+  return applied;
+}
+
+async function ensureLootManifestCompendiumTypeFolders(options = {}) {
+  if (!game.user?.isGM) return { ok: false, reason: "not-gm" };
+  if (lootManifestFolderSyncDisabledReason) {
+    return { ok: false, reason: lootManifestFolderSyncDisabledReason };
+  }
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) return { ok: false, reason: "pack-missing" };
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? ""),
+    createdFolders: 0,
+    updatedItems: 0
+  };
+
+  if (isReadOnlyCompendiumPackForFolderSync(pack)) {
+    report.ok = false;
+    report.reason = "pack-read-only";
+    disableLootManifestFolderSync("pack-read-only");
+    return report;
+  }
+
+  const originalLocked = Boolean(pack?.locked);
+  const mustUnlock = originalLocked && typeof pack?.configure === "function";
+  try {
+    if (mustUnlock) await pack.configure({ locked: false });
+    if (mustUnlock && Boolean(pack?.locked)) {
+      report.ok = false;
+      report.reason = "pack-locked";
+      disableLootManifestFolderSync("pack-locked");
+      return report;
+    }
+  } catch (error) {
+    report.ok = false;
+    report.reason = "unlock-failed";
+    if (isLockedCompendiumMutationError(error)) {
+      disableLootManifestFolderSync("unlock-failed", error);
+    }
+    console.warn(`${MODULE_ID}: unable to unlock loot manifest compendium for folder sync`, error);
+    return report;
+  }
+
+  try {
+    const items = await getLootManifestPackItemRows(pack);
+    if (items.length <= 0) return report;
+
+    const folderRequestsByType = new Map();
+    for (const item of items) {
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      if (!folderRequestsByType.has(normalizedType)) {
+        folderRequestsByType.set(normalizedType, {
+          type: normalizedType,
+          label: getLootManifestFolderLabelForType(normalizedType),
+          priority: getLootManifestFolderSortPriority(normalizedType)
+        });
+      }
+    }
+
+    if (typeof pack?.getFolders === "function") {
+      await pack.getFolders();
+    }
+    let folders = getCompendiumFolderRows(pack);
+    const folderByName = new Map(
+      folders.map((folder) => [getLootManifestFolderNameKey(folder?.name), folder]).filter(([key]) => key)
+    );
+
+    const foldersToCreate = Array.from(folderRequestsByType.values())
+      .filter((entry) => !folderByName.has(getLootManifestFolderNameKey(entry.label)))
+      .sort((left, right) => {
+        const byPriority = Number(left?.priority ?? 0) - Number(right?.priority ?? 0);
+        if (byPriority !== 0) return byPriority;
+        return String(left?.label ?? "").localeCompare(String(right?.label ?? ""));
+      })
+      .map((entry, index) => ({
+        name: String(entry.label ?? "Other"),
+        type: "Item",
+        folder: null,
+        sorting: "a",
+        color: null,
+        sort: (index + 1) * 1000
+      }));
+
+    if (foldersToCreate.length > 0) {
+      if (typeof Folder?.createDocuments === "function") {
+        try {
+          await Folder.createDocuments(foldersToCreate, { pack: pack.collection });
+        } catch (error) {
+          if (isLockedCompendiumMutationError(error)) {
+            report.ok = false;
+            report.reason = "pack-locked";
+            disableLootManifestFolderSync("pack-locked", error);
+            return report;
+          }
+          throw error;
+        }
+        report.createdFolders = foldersToCreate.length;
+      } else if (typeof pack?.createFolder === "function") {
+        for (const folderData of foldersToCreate) {
+          try {
+            await pack.createFolder(folderData);
+          } catch (error) {
+            if (isLockedCompendiumMutationError(error)) {
+              report.ok = false;
+              report.reason = "pack-locked";
+              disableLootManifestFolderSync("pack-locked", error);
+              return report;
+            }
+            throw error;
+          }
+          report.createdFolders += 1;
+        }
+      }
+      if (typeof pack?.getFolders === "function") {
+        await pack.getFolders();
+      }
+      folders = getCompendiumFolderRows(pack);
+      folderByName.clear();
+      for (const folder of folders) {
+        const key = getLootManifestFolderNameKey(folder?.name);
+        if (!key) continue;
+        folderByName.set(key, folder);
+      }
+    }
+
+    const itemUpdates = [];
+    for (const item of items) {
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      const folderLabel = getLootManifestFolderLabelForType(normalizedType);
+      const folder = folderByName.get(getLootManifestFolderNameKey(folderLabel));
+      const folderId = String(folder?.id ?? "").trim();
+      if (!folderId) continue;
+      if (String(item.folderId ?? "").trim() === folderId) continue;
+      itemUpdates.push({
+        _id: item.id,
+        folder: folderId
+      });
+    }
+
+    report.updatedItems = await updateLootManifestPackItemFolders(pack, itemUpdates);
+
+    if (isModuleDebugEnabled()) {
+      console.log(`${MODULE_ID}: loot manifest compendium folder sync`, {
+        reason: String(options?.reason ?? ""),
+        ...report
+      });
+    }
+
+    return report;
+  } catch (error) {
+    report.ok = false;
+    report.reason = "sync-failed";
+    console.warn(`${MODULE_ID}: failed to sync loot manifest compendium folders`, error);
+    return report;
+  } finally {
+    if (mustUnlock) {
+      try {
+        await pack.configure({ locked: true });
+      } catch (error) {
+        console.warn(`${MODULE_ID}: failed to restore loot manifest compendium lock`, error);
+      }
+    }
+  }
+}
+
+function scheduleLootManifestCompendiumTypeFolderSync(reason = "") {
+  if (!game.user?.isGM) return Promise.resolve({ ok: false, reason: "not-gm" });
+  if (lootManifestFolderSyncDisabledReason) {
+    return Promise.resolve({ ok: false, reason: lootManifestFolderSyncDisabledReason });
+  }
+  if (lootManifestFolderSyncPromise) return lootManifestFolderSyncPromise;
+
+  lootManifestFolderSyncPromise = ensureLootManifestCompendiumTypeFolders({ reason })
+    .catch((error) => {
+      console.warn(`${MODULE_ID}: unexpected loot manifest folder sync failure`, error);
+      return { ok: false, reason: "unexpected-error" };
+    })
+    .finally(() => {
+      lootManifestFolderSyncPromise = null;
+    });
+  return lootManifestFolderSyncPromise;
+}
+
+function getDocumentFolderParentId(entry) {
+  return String(entry?.folder?.id ?? entry?.folder ?? entry?.parent?.id ?? entry?.parent ?? "").trim();
+}
+
+function getLootManifestImportFlag(entry = {}) {
+  const primary = entry?.flags?.[MODULE_ID]?.lootManifestImport;
+  if (primary && typeof primary === "object") return primary;
+  const legacy = entry?.flags?.["party-operations"]?.lootManifestImport;
+  if (legacy && typeof legacy === "object") return legacy;
+  return {};
+}
+
+function parseCompendiumItemSourceReference(value = "") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^Compendium\.(.+)\.Item\.([^.]+)$/i);
+  if (!match) return null;
+  return {
+    packId: String(match[1] ?? "").trim(),
+    itemId: String(match[2] ?? "").trim()
+  };
+}
+
+function buildLootManifestImportSourceKey(packId = "", itemId = "") {
+  const normalizedPackId = String(packId ?? "").trim();
+  const normalizedItemId = String(itemId ?? "").trim();
+  if (!normalizedPackId || !normalizedItemId) return "";
+  return `${normalizedPackId}:${normalizedItemId}`;
+}
+
+function getLootManifestImportedSourceKey(entry = {}) {
+  const importFlag = getLootManifestImportFlag(entry);
+  const flaggedKey = buildLootManifestImportSourceKey(importFlag?.sourcePackId, importFlag?.sourceItemId);
+  if (flaggedKey) return flaggedKey;
+
+  const sourceCandidates = [
+    entry?.flags?.core?.sourceId,
+    entry?._stats?.compendiumSource,
+    entry?.flags?.[MODULE_ID]?.core?.sourceId,
+    entry?.flags?.["party-operations"]?.core?.sourceId
+  ];
+  for (const candidate of sourceCandidates) {
+    const parsed = parseCompendiumItemSourceReference(candidate);
+    const key = buildLootManifestImportSourceKey(parsed?.packId, parsed?.itemId);
+    if (key) return key;
+  }
+  return "";
+}
+
+function buildLootManifestCompendiumFolderDescriptors(pack, itemRows = []) {
+  const descriptorMap = new Map();
+  let usedMetadata = false;
+
+  for (const item of Array.isArray(itemRows) ? itemRows : []) {
+    const folderMeta = item?.folderMeta;
+    const path = Array.isArray(folderMeta?.path) ? folderMeta.path : [];
+    if (path.length <= 0) continue;
+    usedMetadata = true;
+
+    let parentKey = "";
+    const pathKeys = [];
+    for (const segment of path) {
+      const segmentKey = String(segment?.key ?? "")
+        .trim()
+        .toLowerCase();
+      const segmentLabel = String(segment?.label ?? "").trim();
+      if (!segmentKey || !segmentLabel) continue;
+      pathKeys.push(segmentKey);
+      const descriptorKey = `meta:${pathKeys.join("/")}`;
+      if (!descriptorMap.has(descriptorKey)) {
+        descriptorMap.set(descriptorKey, {
+          key: descriptorKey,
+          sourceFolderId: "",
+          name: segmentLabel,
+          parentKey,
+          sort: Number(segment?.sort ?? pathKeys.length * 1000) || pathKeys.length * 1000
+        });
+      }
+      parentKey = descriptorKey;
+    }
+  }
+
+  if (!usedMetadata) {
+    const actualFolders = getCompendiumFolderRows(pack)
+      .map((folder) => {
+        const id = String(folder?.id ?? folder?._id ?? "").trim();
+        if (!id) return null;
+        return {
+          key: `folder:${id}`,
+          sourceFolderId: id,
+          name: String(folder?.name ?? "").trim() || "Other",
+          parentKey: (() => {
+            const parentId = getDocumentFolderParentId(folder);
+            return parentId ? `folder:${parentId}` : "";
+          })(),
+          sort: Number(folder?.sort ?? 0) || 0
+        };
+      })
+      .filter(Boolean);
+
+    for (const descriptor of actualFolders) {
+      descriptorMap.set(descriptor.key, descriptor);
+    }
+
+    const rootDescriptorByName = new Map(
+      Array.from(descriptorMap.values())
+        .filter((descriptor) => !descriptor.parentKey)
+        .map((descriptor) => [getLootManifestFolderNameKey(descriptor.name), descriptor.key])
+    );
+
+    for (const item of Array.isArray(itemRows) ? itemRows : []) {
+      const sourceFolderId = String(item?.folderId ?? "").trim();
+      if (sourceFolderId && descriptorMap.has(`folder:${sourceFolderId}`)) continue;
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      const label = getLootManifestFolderLabelForType(normalizedType);
+      const existingRootKey = rootDescriptorByName.get(getLootManifestFolderNameKey(label));
+      if (existingRootKey) continue;
+      const key = `type:${normalizedType}`;
+      if (descriptorMap.has(key)) continue;
+      descriptorMap.set(key, {
+        key,
+        sourceFolderId: "",
+        name: label,
+        parentKey: "",
+        sort: getLootManifestFolderSortPriority(normalizedType) * 1000
+      });
+      rootDescriptorByName.set(getLootManifestFolderNameKey(label), key);
+    }
+  }
+
+  const getDepth = (descriptor) => {
+    let depth = 0;
+    let currentKey = String(descriptor?.parentKey ?? "").trim();
+    const visited = new Set([String(descriptor?.key ?? "").trim()]);
+    while (currentKey && depth < 20) {
+      if (visited.has(currentKey)) break;
+      visited.add(currentKey);
+      const current = descriptorMap.get(currentKey);
+      if (!current) break;
+      depth += 1;
+      currentKey = String(current?.parentKey ?? "").trim();
+    }
+    return depth;
+  };
+
+  return Array.from(descriptorMap.values()).sort((left, right) => {
+    const depthDelta = getDepth(left) - getDepth(right);
+    if (depthDelta !== 0) return depthDelta;
+    const sortDelta = Number(left?.sort ?? 0) - Number(right?.sort ?? 0);
+    if (sortDelta !== 0) return sortDelta;
+    return String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
+  });
+}
+
+async function ensureLootManifestWorldImportRootFolder(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  const preferredName =
+    String(pack?.metadata?.label ?? pack?.title ?? LOOT_MANIFEST_PACK_LABEL).trim() || LOOT_MANIFEST_PACK_LABEL;
+  const itemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "")
+      .trim()
+      .toLowerCase();
+    return type === "item";
+  });
+
+  let rootFolder =
+    itemFolders.find((folder) => {
+      const importFlag = getLootManifestImportFlag(folder);
+      return importFlag?.isRoot === true && String(importFlag?.sourcePackId ?? "").trim() === packId;
+    }) ?? null;
+
+  if (!rootFolder) {
+    rootFolder =
+      itemFolders.find((folder) => {
+        if (getDocumentFolderParentId(folder)) return false;
+        return String(folder?.name ?? "").trim() === preferredName;
+      }) ?? null;
+  }
+
+  const flagData = {
+    managed: true,
+    isRoot: true,
+    sourcePackId: packId,
+    importedAt: Date.now()
+  };
+
+  if (!rootFolder) {
+    return Folder.create({
+      name: preferredName,
+      type: "Item",
+      folder: null,
+      sorting: "a",
+      color: null,
+      sort: -1000,
+      flags: {
+        [MODULE_ID]: {
+          lootManifestImport: flagData
+        }
+      }
+    });
+  }
+
+  const needsUpdate =
+    String(rootFolder?.name ?? "").trim() !== preferredName ||
+    getDocumentFolderParentId(rootFolder) ||
+    getLootManifestImportFlag(rootFolder)?.isRoot !== true ||
+    String(getLootManifestImportFlag(rootFolder)?.sourcePackId ?? "").trim() !== packId;
+  if (needsUpdate) {
+    await rootFolder.update({
+      name: preferredName,
+      folder: null,
+      flags: {
+        [MODULE_ID]: {
+          lootManifestImport: flagData
+        }
+      }
+    });
+  }
+  return rootFolder;
+}
+
+async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows = []) {
+  const descriptors = buildLootManifestCompendiumFolderDescriptors(pack, itemRows);
+  const packId = String(pack?.collection ?? "").trim();
+  const worldItemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "")
+      .trim()
+      .toLowerCase();
+    return type === "item";
+  });
+  const descriptorFolderMap = new Map();
+  const existingBySourceFolderId = new Map();
+  const existingBySourceFolderKey = new Map();
+  const existingByParentAndName = new Map();
+
+  for (const folder of worldItemFolders) {
+    const importFlag = getLootManifestImportFlag(folder);
+    if (importFlag?.isRoot === true && String(importFlag?.sourcePackId ?? "").trim() === packId) continue;
+    const sourceFolderId = String(importFlag?.sourceFolderId ?? "").trim();
+    if (sourceFolderId && String(importFlag?.sourcePackId ?? "").trim() === packId) {
+      existingBySourceFolderId.set(sourceFolderId, folder);
+    }
+    const sourceFolderKey = String(importFlag?.sourceFolderKey ?? "").trim();
+    if (sourceFolderKey && String(importFlag?.sourcePackId ?? "").trim() === packId) {
+      existingBySourceFolderKey.set(sourceFolderKey, folder);
+    }
+    const parentId = getDocumentFolderParentId(folder) || rootFolder.id;
+    const nameKey = getLootManifestFolderNameKey(folder?.name);
+    if (nameKey) existingByParentAndName.set(`${parentId}::${nameKey}`, folder);
+  }
+
+  let createdFolders = 0;
+  let updatedFolders = 0;
+
+  for (const descriptor of descriptors) {
+    const parentFolderId = descriptor.parentKey
+      ? (descriptorFolderMap.get(descriptor.parentKey)?.id ?? rootFolder.id)
+      : rootFolder.id;
+    const sourceFolderId = String(descriptor?.sourceFolderId ?? "").trim();
+    const sourceFolderKey = String(descriptor?.key ?? "").trim();
+    const nameKey = getLootManifestFolderNameKey(descriptor?.name);
+    let folder = sourceFolderKey ? (existingBySourceFolderKey.get(sourceFolderKey) ?? null) : null;
+    if (!folder) folder = sourceFolderId ? (existingBySourceFolderId.get(sourceFolderId) ?? null) : null;
+    if (!folder) folder = existingByParentAndName.get(`${parentFolderId}::${nameKey}`) ?? null;
+
+    const flagData = {
+      managed: true,
+      isRoot: false,
+      sourcePackId: packId,
+      sourceFolderId,
+      sourceFolderKey,
+      importedAt: Date.now()
+    };
+
+    if (!folder) {
+      folder = await Folder.create({
+        name: String(descriptor?.name ?? "Other"),
+        type: "Item",
+        folder: parentFolderId,
+        sorting: "a",
+        color: null,
+        sort: Number(descriptor?.sort ?? 0) || 0,
+        flags: {
+          [MODULE_ID]: {
+            lootManifestImport: flagData
+          }
+        }
+      });
+      createdFolders += 1;
+    } else {
+      const currentImportFlag = getLootManifestImportFlag(folder);
+      const needsUpdate =
+        String(folder?.name ?? "").trim() !== String(descriptor?.name ?? "").trim() ||
+        String(getDocumentFolderParentId(folder) || rootFolder.id).trim() !== String(parentFolderId).trim() ||
+        String(currentImportFlag?.sourcePackId ?? "").trim() !== packId ||
+        String(currentImportFlag?.sourceFolderId ?? "").trim() !== sourceFolderId ||
+        String(currentImportFlag?.sourceFolderKey ?? "").trim() !== sourceFolderKey ||
+        currentImportFlag?.isRoot === true;
+      if (needsUpdate) {
+        await folder.update({
+          name: String(descriptor?.name ?? "Other"),
+          folder: parentFolderId,
+          sort: Number(descriptor?.sort ?? 0) || 0,
+          flags: {
+            [MODULE_ID]: {
+              lootManifestImport: flagData
+            }
+          }
+        });
+        updatedFolders += 1;
+      }
+    }
+
+    descriptorFolderMap.set(String(descriptor?.key ?? "").trim(), folder);
+    const folderParentId = getDocumentFolderParentId(folder) || rootFolder.id;
+    existingByParentAndName.set(`${folderParentId}::${nameKey}`, folder);
+    if (sourceFolderId) existingBySourceFolderId.set(sourceFolderId, folder);
+    if (sourceFolderKey) existingBySourceFolderKey.set(sourceFolderKey, folder);
+  }
+
+  return {
+    descriptorFolderMap,
+    createdFolders,
+    updatedFolders
+  };
+}
+
+function chunkDocumentRows(rows = [], size = 50) {
+  const source = Array.isArray(rows) ? rows : [];
+  const chunkSize = Math.max(1, Math.floor(Number(size) || 50));
+  const chunks = [];
+  for (let index = 0; index < source.length; index += chunkSize) {
+    chunks.push(source.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function buildFolderTreeScopeIds(folders = []) {
+  const seedFolders = Array.isArray(folders) ? folders : [];
+  const allItemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "")
+      .trim()
+      .toLowerCase();
+    return type === "item";
+  });
+  const childrenByParentId = new Map();
+  for (const folder of allItemFolders) {
+    const parentId = getDocumentFolderParentId(folder);
+    if (!parentId) continue;
+    if (!childrenByParentId.has(parentId)) childrenByParentId.set(parentId, []);
+    childrenByParentId.get(parentId).push(folder);
+  }
+
+  const scopedIds = new Set();
+  const pending = [...seedFolders];
+  while (pending.length > 0) {
+    const folder = pending.pop();
+    const folderId = String(folder?.id ?? "").trim();
+    if (!folderId || scopedIds.has(folderId)) continue;
+    scopedIds.add(folderId);
+    for (const child of childrenByParentId.get(folderId) ?? []) pending.push(child);
+  }
+  return scopedIds;
+}
+
+function getLootManifestImportedWorldItems(pack, options = {}) {
+  const packId = String(pack?.collection ?? "").trim();
+  if (!packId) return [];
+  const managedFolderIds = options?.managedFolderIds instanceof Set ? options.managedFolderIds : new Set();
+  return (game.items?.contents ?? []).filter((item) => {
+    const folderId = String(item?.folder?.id ?? item?.folder ?? item?.folderId ?? "").trim();
+    if (folderId && managedFolderIds.has(folderId)) return true;
+    const importFlag = getLootManifestImportFlag(item);
+    if (String(importFlag?.sourcePackId ?? "").trim() === packId) return true;
+    const sourceKey = getLootManifestImportedSourceKey(item);
+    return sourceKey.startsWith(`${packId}:`);
+  });
+}
+
+function getLootManifestManagedWorldFolders(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  if (!packId) return [];
+  return (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "")
+      .trim()
+      .toLowerCase();
+    if (type !== "item") return false;
+    const importFlag = getLootManifestImportFlag(folder);
+    return String(importFlag?.sourcePackId ?? "").trim() === packId;
+  });
+}
+
+function sortFoldersDeepestFirst(folders = []) {
+  const rows = Array.isArray(folders) ? folders : [];
+  const byId = new Map(rows.map((folder) => [String(folder?.id ?? "").trim(), folder]));
+  const getDepth = (folder) => {
+    let depth = 0;
+    let parentId = getDocumentFolderParentId(folder);
+    const visited = new Set([String(folder?.id ?? "").trim()]);
+    while (parentId && depth < 30) {
+      if (visited.has(parentId)) break;
+      visited.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      depth += 1;
+      parentId = getDocumentFolderParentId(parent);
+    }
+    return depth;
+  };
+  return [...rows].sort((left, right) => getDepth(right) - getDepth(left));
+}
+
+async function clearLootManifestImportedWorldItems() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear imported built loot items.");
+    return { ok: false, reason: "not-gm" };
+  }
+
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) {
+    ui.notifications?.warn("Party Operations built-items compendium was not found.");
+    return { ok: false, reason: "pack-missing" };
+  }
+
+  const managedFolders = getLootManifestManagedWorldFolders(pack);
+  const managedFolderIds = buildFolderTreeScopeIds(managedFolders);
+  const importedItems = getLootManifestImportedWorldItems(pack, { managedFolderIds });
+  if (importedItems.length <= 0 && managedFolders.length <= 0) {
+    ui.notifications?.info("No imported built items were found in the world.");
+    return { ok: true, packId: String(pack?.collection ?? "").trim(), deletedItems: 0, deletedFolders: 0 };
+  }
+
+  const confirmed = await Dialog.confirm({
+    title: "Clear Imported Built Items",
+    content: `
+      <p>This will remove imported Party Operations built items from the world.</p>
+      <p><strong>Items:</strong> ${importedItems.length}</p>
+      <p><strong>Managed folders:</strong> ${managedFolders.length}</p>
+      <p>This does not modify the source compendium.</p>
+    `,
+    yes: () => true,
+    no: () => false,
+    defaultYes: false
+  });
+  if (!confirmed) return { ok: false, reason: "cancelled" };
+
+  for (const batch of chunkDocumentRows(
+    importedItems.map((item) => String(item?.id ?? "").trim()).filter(Boolean),
+    50
+  )) {
+    if (batch.length <= 0) continue;
+    await Item.deleteDocuments(batch);
+  }
+
+  const remainingScopedItems = getLootManifestImportedWorldItems(pack, { managedFolderIds });
+  let deletedFolders = 0;
+  for (const folder of sortFoldersDeepestFirst(managedFolders)) {
+    const folderId = String(folder?.id ?? "").trim();
+    if (!folderId) continue;
+    const folderStillHasItems = (game.items?.contents ?? []).some((item) => {
+      const itemFolderId = String(item?.folder?.id ?? item?.folder ?? item?.folderId ?? "").trim();
+      return itemFolderId === folderId;
+    });
+    if (folderStillHasItems) continue;
+    try {
+      await folder.delete();
+      deletedFolders += 1;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to delete managed loot import folder`, folder, error);
+    }
+  }
+
+  await updateLootSourceConfig(
+    (config) => {
+      if (!config.filters || typeof config.filters !== "object") config.filters = {};
+      const currentManifestId = String(config.filters.manifestPackId ?? "").trim();
+      const selectedFolderId = parseLootWorldItemsFolderFilterId(currentManifestId);
+      const deletedFolderIds = new Set(managedFolders.map((folder) => String(folder?.id ?? "").trim()).filter(Boolean));
+      if (selectedFolderId && deletedFolderIds.has(selectedFolderId)) {
+        config.filters.manifestPackId = "";
+      }
+    },
+    { skipLocalRefresh: true }
+  );
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? "").trim(),
+    deletedItems: importedItems.length,
+    deletedFolders
+  };
+  if (remainingScopedItems.length > 0) {
+    ui.notifications?.warn(
+      `Cleared ${report.deletedItems} imported built item(s). ` +
+        `${remainingScopedItems.length} item(s) still remain in the managed folder tree, so folders were left in place.`
+    );
+  } else {
+    ui.notifications?.info(
+      `Cleared ${report.deletedItems} imported built item(s) and ${report.deletedFolders} folder(s).`
+    );
+  }
+  return report;
+}
+
+async function importLootManifestCompendiumToWorld() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can import built loot items.");
+    return { ok: false, reason: "not-gm" };
+  }
+
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) {
+    ui.notifications?.warn("Party Operations built-items compendium was not found.");
+    return { ok: false, reason: "pack-missing" };
+  }
+
+  const syncReport = await scheduleLootManifestCompendiumTypeFolderSync("world-import").catch(() => null);
+  if (syncReport?.ok === false && isModuleDebugEnabled()) {
+    console.warn(`${MODULE_ID}: proceeding with loot manifest world import after folder sync warning`, syncReport);
+  }
+
+  if (typeof pack?.getFolders === "function") {
+    try {
+      await pack.getFolders();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to preload loot manifest compendium folders`, error);
+    }
+  }
+
+  const documents = typeof pack?.getDocuments === "function" ? await pack.getDocuments() : [];
+  if (!Array.isArray(documents) || documents.length <= 0) {
+    ui.notifications?.warn("The built-items compendium is empty.");
+    return { ok: false, reason: "pack-empty" };
+  }
+  const indexedRows = await getLootManifestPackItemRows(pack);
+  const indexedRowMap = new Map(
+    (Array.isArray(indexedRows) ? indexedRows : []).map((row) => [String(row?.id ?? "").trim(), row])
+  );
+  const itemRows = documents
+    .map((entry) => {
+      const id = String(entry?.id ?? entry?._id ?? "").trim();
+      const indexed = indexedRowMap.get(id) ?? {};
+      return {
+        id,
+        type: normalizeLootManifestItemType(entry?.type ?? indexed?.type),
+        name: String(entry?.name ?? indexed?.name ?? "").trim(),
+        folderId: String(entry?.folder?.id ?? entry?.folder ?? indexed?.folderId ?? "").trim(),
+        folderMeta: getLootItemFolderProfileFromData(entry) ?? indexed?.folderMeta ?? null
+      };
+    })
+    .filter((entry) => entry.id);
+
+  const rootFolder = await ensureLootManifestWorldImportRootFolder(pack);
+  const { descriptorFolderMap, createdFolders, updatedFolders } = await ensureLootManifestWorldImportFolders(
+    pack,
+    rootFolder,
+    itemRows
+  );
+  const itemRowById = new Map(
+    (Array.isArray(itemRows) ? itemRows : []).map((row) => [String(row?.id ?? "").trim(), row])
+  );
+  const rootDescriptorByName = new Map(
+    Array.from(descriptorFolderMap.entries())
+      .filter(
+        ([, folder]) =>
+          String(getDocumentFolderParentId(folder) || rootFolder.id).trim() === String(rootFolder.id).trim()
+      )
+      .map(([key, folder]) => [getLootManifestFolderNameKey(folder?.name), key])
+  );
+  const importedItemMap = new Map(
+    (game.items?.contents ?? []).map((item) => [getLootManifestImportedSourceKey(item), item]).filter(([key]) => key)
+  );
+
+  const createData = [];
+  const updateData = [];
+  const timestamp = Date.now();
+
+  for (const documentRef of documents) {
+    const sourceItemId = String(documentRef?.id ?? documentRef?._id ?? "").trim();
+    if (!sourceItemId) continue;
+    const sourceKey = buildLootManifestImportSourceKey(pack.collection, sourceItemId);
+    if (!sourceKey) continue;
+    const row = itemRowById.get(sourceItemId) ?? {};
+    const folderMeta = getLootItemFolderProfileFromData(documentRef) ?? row?.folderMeta ?? null;
+    const sourceFolderId = String(documentRef?.folder?.id ?? documentRef?.folder ?? row?.folderId ?? "").trim();
+    let descriptorKey = String(folderMeta?.pathKey ?? "").trim();
+    if (descriptorKey) descriptorKey = `meta:${descriptorKey}`;
+    if (!descriptorKey) descriptorKey = sourceFolderId ? `folder:${sourceFolderId}` : "";
+    if (!descriptorFolderMap.has(descriptorKey)) {
+      const typeLabel = getLootManifestFolderLabelForType(documentRef?.type ?? row?.type ?? "other");
+      descriptorKey = rootDescriptorByName.get(getLootManifestFolderNameKey(typeLabel)) ?? "";
+    }
+    const targetFolderId = descriptorFolderMap.get(descriptorKey)?.id ?? rootFolder.id;
+    const sourceUuid = String(documentRef?.uuid ?? `Compendium.${pack.collection}.Item.${sourceItemId}`).trim();
+    const data =
+      typeof documentRef?.toObject === "function" ? documentRef.toObject() : foundry.utils.deepClone(documentRef);
+    if (data && typeof data === "object" && "_id" in data) delete data._id;
+    data.folder = targetFolderId;
+    data.flags = data.flags && typeof data.flags === "object" ? data.flags : {};
+    data.flags.core = data.flags.core && typeof data.flags.core === "object" ? data.flags.core : {};
+    data.flags.core.sourceId = sourceUuid;
+    data.flags[MODULE_ID] =
+      data.flags[MODULE_ID] && typeof data.flags[MODULE_ID] === "object" ? data.flags[MODULE_ID] : {};
+    data.flags[MODULE_ID].lootManifestImport = {
+      managed: true,
+      sourcePackId: pack.collection,
+      sourceItemId,
+      sourceUuid,
+      sourceFolderId,
+      sourceFolderPathKey: String(folderMeta?.pathKey ?? "").trim(),
+      sourceFolderKey: descriptorKey,
+      importedAt: timestamp
+    };
+
+    const existing = importedItemMap.get(sourceKey) ?? null;
+    if (existing) {
+      updateData.push({
+        _id: existing.id,
+        ...data
+      });
+      continue;
+    }
+    createData.push(data);
+  }
+
+  for (const batch of chunkDocumentRows(updateData, 50)) {
+    if (batch.length <= 0) continue;
+    await Item.updateDocuments(batch);
+  }
+  for (const batch of chunkDocumentRows(createData, 50)) {
+    if (batch.length <= 0) continue;
+    await Item.createDocuments(batch);
+  }
+
+  await updateLootSourceConfig(
+    (config) => {
+      if (!Array.isArray(config.packs)) config.packs = [];
+      let worldSource = config.packs.find((entry) => String(entry?.id ?? "").trim() === LOOT_WORLD_ITEMS_SOURCE_ID);
+      if (!worldSource) {
+        config.packs.unshift(buildLootWorldItemSourceEntry({ enabled: true }));
+        worldSource = config.packs[0];
+      }
+      worldSource.enabled = true;
+      if (!config.filters || typeof config.filters !== "object") config.filters = {};
+      config.filters.manifestPackId = buildLootWorldItemsFolderFilterId(rootFolder.id);
+    },
+    { skipLocalRefresh: true }
+  );
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? "").trim(),
+    rootFolderId: String(rootFolder?.id ?? "").trim(),
+    createdFolders,
+    updatedFolders,
+    createdItems: createData.length,
+    updatedItems: updateData.length
+  };
+  const importedItemCount = report.createdItems + report.updatedItems;
+  const touchedFolderCount = report.createdFolders + report.updatedFolders;
+  const sourceCompendiumFlat = syncReport?.reason === "pack-read-only" || syncReport?.reason === "pack-locked";
+  ui.notifications?.info(
+    `Imported ${importedItemCount} built item(s) into organized world folders ` +
+      `(${touchedFolderCount} folder ${touchedFolderCount === 1 ? "change" : "changes"}).` +
+      (sourceCompendiumFlat ? " The source compendium stays flat because that pack is read-only." : "")
+  );
+  return report;
+}
+
+function getAvailableLootItemPackSources() {
+  const rows = [
+    {
+      id: LOOT_WORLD_ITEMS_SOURCE_ID,
+      label: "World Item Directory",
+      sourceKind: "world-items"
+    }
+  ];
+  for (const pack of getAllCompendiumPacks()) {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
+      .trim()
+      .toLowerCase();
+    if (documentName !== "item") continue;
+    const id = String(pack?.collection ?? "").trim();
+    if (!id) continue;
+    const packageLabel = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim();
+    const baseLabel = String(pack?.metadata?.label ?? pack?.title ?? id).trim() || id;
+    rows.push({
+      id,
+      label: packageLabel ? `${baseLabel} (${packageLabel})` : baseLabel,
+      sourceKind: "compendium-pack"
+    });
+  }
+  return rows
+    .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function getAvailableLootTableSources() {
+  const rows = [];
+
+  for (const table of game.tables?.contents ?? []) {
+    const uuid = String(table?.uuid ?? "").trim();
+    if (!uuid) continue;
+    const name = String(table?.name ?? "World Roll Table").trim() || "World Roll Table";
+    rows.push({
+      id: `world-table:${uuid}`,
+      label: `${name} (World Table)`,
+      sourceKind: "world-table"
+    });
+  }
+
+  for (const pack of getAllCompendiumPacks()) {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
+      .trim()
+      .toLowerCase();
+    if (documentName !== "rolltable") continue;
+    const id = String(pack?.collection ?? "").trim();
+    if (!id) continue;
+    const packageLabel = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim();
+    const baseLabel = String(pack?.metadata?.label ?? pack?.title ?? id).trim() || id;
+    rows.push({
+      id: `table-pack:${id}`,
+      label: packageLabel ? `${baseLabel} (${packageLabel})` : baseLabel,
+      sourceKind: "table-pack"
+    });
+  }
+
+  return rows
+    .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function normalizeLootSourceSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeLootSourceSearchText(value) {
+  const normalized = normalizeLootSourceSearchText(value);
+  return normalized ? normalized.split(" ") : [];
+}
+
+function hasEditDistanceWithin(sourceToken, queryToken, maxDistance = 1) {
+  if (sourceToken === queryToken) return true;
+  const sourceLength = sourceToken.length;
+  const queryLength = queryToken.length;
+  if (!sourceLength || !queryLength) return false;
+  if (Math.abs(sourceLength - queryLength) > maxDistance) return false;
+
+  let previousRow = Array.from({ length: queryLength + 1 }, (_entry, index) => index);
+  for (let rowIndex = 1; rowIndex <= sourceLength; rowIndex += 1) {
+    const currentRow = [rowIndex];
+    let rowMin = currentRow[0];
+    for (let colIndex = 1; colIndex <= queryLength; colIndex += 1) {
+      const substitutionCost = sourceToken[rowIndex - 1] === queryToken[colIndex - 1] ? 0 : 1;
+      const value = Math.min(
+        previousRow[colIndex] + 1,
+        currentRow[colIndex - 1] + 1,
+        previousRow[colIndex - 1] + substitutionCost
+      );
+      currentRow[colIndex] = value;
+      if (value < rowMin) rowMin = value;
+    }
+    if (rowMin > maxDistance) return false;
+    previousRow = currentRow;
+  }
+  return previousRow[queryLength] <= maxDistance;
+}
+
+function doesLootSourceTokenMatch(queryToken, candidateToken) {
+  if (!queryToken || !candidateToken) return false;
+  if (candidateToken.includes(queryToken) || queryToken.includes(candidateToken)) return true;
+
+  const queryStem = queryToken.length > 4 && queryToken.endsWith("s") ? queryToken.slice(0, -1) : queryToken;
+  const candidateStem =
+    candidateToken.length > 4 && candidateToken.endsWith("s") ? candidateToken.slice(0, -1) : candidateToken;
+  if (candidateStem.includes(queryStem) || queryStem.includes(candidateStem)) return true;
+
+  const queryPrefix = queryStem.slice(0, Math.min(4, queryStem.length));
+  const candidatePrefix = candidateStem.slice(0, Math.min(4, candidateStem.length));
+  if (queryPrefix.length >= 3 && candidateStem.startsWith(queryPrefix)) return true;
+  if (candidatePrefix.length >= 3 && queryStem.startsWith(candidatePrefix)) return true;
+
+  const maxDistance = queryStem.length >= 6 ? 2 : 1;
+  return hasEditDistanceWithin(candidateStem, queryStem, maxDistance);
+}
+
+function matchesLootSourceSearchQuery(query, source = {}) {
+  const normalizedQuery = normalizeLootSourceSearchText(query);
+  if (!normalizedQuery) return true;
+  const queryTokens = tokenizeLootSourceSearchText(normalizedQuery);
+  if (queryTokens.length === 0) return true;
+
+  const searchableText = normalizeLootSourceSearchText(
+    [
+      source.label,
+      source.id,
+      source.sourceKind,
+      source.available ? "available" : "unavailable",
+      source.enabled ? "enabled" : "disabled"
+    ].join(" ")
+  );
+
+  if (!searchableText) return false;
+  if (searchableText.includes(normalizedQuery)) return true;
+
+  const searchableTokens = tokenizeLootSourceSearchText(searchableText);
+  return queryTokens.every((queryToken) => {
+    if (searchableText.includes(queryToken)) return true;
+    return searchableTokens.some((candidateToken) => doesLootSourceTokenMatch(queryToken, candidateToken));
+  });
+}
+
+function getLootSourceDocumentsForEditor(config = getLootSourceConfig()) {
+  const enabledSourceIds = new Set(
+    (Array.isArray(config?.packs) ? config.packs : [])
+      .filter((entry) => entry?.enabled !== false)
+      .map((entry) => String(entry?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  if (!enabledSourceIds.has(LOOT_WORLD_ITEMS_SOURCE_ID)) return [];
+  return (game.items?.contents ?? []).filter((item) => {
+    const itemType = String(item?.type ?? "")
+      .trim()
+      .toLowerCase();
+    if (!itemType) return false;
+    const data = getMerchantItemData(item);
+    const poFlags = getPartyOperationsItemFlags(data);
+    return poFlags?.lootEligible !== false;
+  });
+}
+
+function buildLootTagCatalogForEditor(config = getLootSourceConfig()) {
+  const tags = new Set();
+  const documents = getLootSourceDocumentsForEditor(config);
+  for (const documentRef of documents) {
+    const data = getMerchantItemData(documentRef);
+    const keywords = getLootKeywordsFromData(data);
+    for (const keyword of keywords) {
+      const normalized = String(keyword ?? "")
+        .trim()
+        .toLowerCase();
+      if (!normalized) continue;
+      tags.add(normalized);
+    }
+  }
+  return Array.from(tags)
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .slice(0, 400);
+}
+
+function buildLootSourceRegistryContext() {
+  const config = getLootSourceConfig();
+  const availablePacks = getLootGenerationItemPackSources();
+  const availableTables = getAvailableLootTableSources();
+  const packLookup = new Map((config.packs ?? []).map((entry) => [entry.id, entry]));
+  const tableLookup = new Map((config.tables ?? []).map((entry) => [entry.id, entry]));
+
+  const itemPackOptions = availablePacks.map((source) => {
+    const stored = packLookup.get(source.id);
+    const weightRaw = Number(stored?.weight ?? 1);
+    return {
+      id: source.id,
+      label: source.label,
+      sourceKind: source.sourceKind,
+      available: true,
+      enabled: Boolean(stored?.enabled),
+      weight: Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1
+    };
+  });
+
+  for (const stored of config.packs ?? []) {
+    if (itemPackOptions.some((entry) => entry.id === stored.id)) continue;
+    const weightRaw = Number(stored?.weight ?? 1);
+    itemPackOptions.push({
+      id: stored.id,
+      label: stored.label || `${stored.id} (Unavailable)`,
+      sourceKind: stored.sourceKind,
+      available: false,
+      enabled: Boolean(stored.enabled),
+      weight: Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1
+    });
+  }
+
+  const tableOptions = availableTables.map((source) => {
+    const stored = tableLookup.get(source.id);
+    const currentType = String(stored?.tableType ?? "currency");
+    return {
+      id: source.id,
+      label: source.label,
+      sourceKind: source.sourceKind,
+      available: true,
+      enabled: Boolean(stored?.enabled),
+      tableType: currentType,
+      typeOptions: LOOT_TABLE_TYPE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        selected: option.value === currentType
+      }))
+    };
+  });
+
+  for (const stored of config.tables ?? []) {
+    if (tableOptions.some((entry) => entry.id === stored.id)) continue;
+    const currentType = String(stored?.tableType ?? "currency");
+    tableOptions.push({
+      id: stored.id,
+      label: stored.label || `${stored.id} (Unavailable)`,
+      sourceKind: stored.sourceKind,
+      available: false,
+      enabled: Boolean(stored.enabled),
+      tableType: currentType,
+      typeOptions: LOOT_TABLE_TYPE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        selected: option.value === currentType
+      }))
+    });
+  }
+
+  itemPackOptions.sort((a, b) => {
+    const enabledDelta = Number(Boolean(b.enabled)) - Number(Boolean(a.enabled));
+    if (enabledDelta !== 0) return enabledDelta;
+    return a.label.localeCompare(b.label);
+  });
+  tableOptions.sort((a, b) => {
+    const enabledDelta = Number(Boolean(b.enabled)) - Number(Boolean(a.enabled));
+    if (enabledDelta !== 0) return enabledDelta;
+    return a.label.localeCompare(b.label);
+  });
+
+  const itemPackUi = getLootPackSourcesUiState();
+  const itemPackFilter = normalizeLootPackSourcesFilter(itemPackUi.filter);
+  const itemPackVisibleOptions = itemPackOptions.filter((entry) => matchesLootSourceSearchQuery(itemPackFilter, entry));
+  const itemPackCollapsed = Boolean(itemPackUi.collapsed);
+
+  const selectedTypes = new Set(config.filters?.allowedTypes ?? []);
+  const itemTypeOptions = buildLootItemTypeCatalog().map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: selectedTypes.has(entry.value)
+  }));
+
+  const rarityFloor = normalizeLootRarityValue(config.filters?.rarityFloor);
+  const rarityCeiling = normalizeLootRarityValue(config.filters?.rarityCeiling);
+  const manifestPackId = String(config.filters?.manifestPackId ?? "").trim();
+  const manifestPackOptions = buildLootManifestPackOptions(manifestPackId, itemPackOptions);
+  const tagCatalog = buildLootTagCatalogForEditor(config);
+  const includeTagOptions = buildMerchantTagOptionsForEditor(tagCatalog, config.filters?.keywordIncludeTags ?? []);
+  const excludeTagOptions = buildMerchantTagOptionsForEditor(tagCatalog, config.filters?.keywordExcludeTags ?? []);
+  const includeTagGroups = buildMerchantTagGroupsForEditor(includeTagOptions);
+  const excludeTagGroups = buildMerchantTagGroupsForEditor(excludeTagOptions);
+  const taxonomySummary = buildPartyOperationsTaxonomySummaryFromDocuments(getLootSourceDocumentsForEditor(config));
+  const keywordIncludeMode = normalizeLootKeywordIncludeMode(
+    config.filters?.keywordIncludeMode,
+    LOOT_KEYWORD_INCLUDE_MODES.ALL
+  );
+  const keywordIncludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordIncludeTags ?? []);
+  const keywordExcludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordExcludeTags ?? []);
+  const updatedAt = Number(config.updatedAt ?? 0);
+  const updatedAtLabel = updatedAt > 0 ? new Date(updatedAt).toLocaleString() : "Not set";
+  return {
+    itemPackOptions,
+    itemPackVisibleOptions,
+    itemPackCollapsed,
+    itemPackToggleLabel: itemPackCollapsed ? "Expand" : "Collapse",
+    itemPackToggleIcon: itemPackCollapsed ? "fa-chevron-down" : "fa-chevron-up",
+    itemPackFilter,
+    itemPackFilterActive: itemPackFilter.length > 0,
+    itemPackVisibleCount: itemPackVisibleOptions.length,
+    tableOptions,
+    itemTypeOptions,
+    rarityFloorOptions: LOOT_RARITY_OPTIONS.map((entry) => ({
+      value: entry.value,
+      label: entry.label,
+      selected: entry.value === rarityFloor
+    })),
+    rarityCeilingOptions: LOOT_RARITY_OPTIONS.map((entry) => ({
+      value: entry.value,
+      label: entry.label,
+      selected: entry.value === rarityCeiling
+    })),
+    tagCatalogCount: tagCatalog.length,
+    hasTagCatalog: tagCatalog.length > 0,
+    includeTagOptions,
+    excludeTagOptions,
+    includeTagGroups,
+    excludeTagGroups,
+    hasIncludeTagGroups: includeTagGroups.length > 0,
+    hasExcludeTagGroups: excludeTagGroups.length > 0,
+    includeTagSelectedCount: includeTagOptions.filter((entry) => entry?.selected).length,
+    excludeTagSelectedCount: excludeTagOptions.filter((entry) => entry?.selected).length,
+    keywordIncludeMode,
+    keywordIncludeModeAll: keywordIncludeMode === LOOT_KEYWORD_INCLUDE_MODES.ALL,
+    keywordIncludeModeAny: keywordIncludeMode === LOOT_KEYWORD_INCLUDE_MODES.ANY,
+    taxonomySummary,
+    manifestPackOptions,
+    manifestPackId,
+    keywordIncludeTagsInput,
+    keywordExcludeTagsInput,
+    keywordIncludeTagCount: normalizeLootKeywordTagList(config.filters?.keywordIncludeTags ?? []).length,
+    keywordExcludeTagCount: normalizeLootKeywordTagList(config.filters?.keywordExcludeTags ?? []).length,
+    summary: {
+      enabledItemPacks: itemPackOptions.filter((entry) => entry.enabled).length,
+      totalItemPacks: itemPackOptions.length,
+      enabledTables: tableOptions.filter((entry) => entry.enabled).length,
+      totalTables: tableOptions.length,
+      enabledItemTypes: itemTypeOptions.filter((entry) => entry.selected).length,
+      totalItemTypes: itemTypeOptions.length,
+      sourceItemCount: taxonomySummary.itemCount,
+      tagSchemaLabel: taxonomySummary.schemaLabel,
+      merchantCategoryCount: taxonomySummary.categoryRows.length,
+      updatedAtLabel,
+      updatedBy: String(config.updatedBy ?? "").trim() || "GM"
+    }
+  };
+}
+
+function getCollectionValues(collectionLike) {
+  if (!collectionLike) return [];
+  if (Array.isArray(collectionLike)) return collectionLike;
+  if (typeof collectionLike.values === "function") return Array.from(collectionLike.values());
+  if (Array.isArray(collectionLike.contents)) return collectionLike.contents;
+  return [];
+}
+
+function logAutoInventoryDebug(message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  if (details === null) {
+    console.debug(`[${MODULE_ID}][auto-inv] ${message}`);
+    return;
+  }
+  console.debug(`[${MODULE_ID}][auto-inv] ${message}`, details);
+}
+
+function normalizeAutoInventoryName(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function parseAutoInventoryCrValue(rawValue) {
+  if (rawValue === null || rawValue === undefined) return 0;
+  if (typeof rawValue === "number") return Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
+
+  const raw = String(rawValue).trim().toLowerCase();
+  if (!raw) return 0;
+  if (raw.includes("/")) {
+    const [leftRaw, rightRaw] = raw.split("/", 2);
+    const left = Number(leftRaw);
+    const right = Number(rightRaw);
+    if (Number.isFinite(left) && Number.isFinite(right) && right !== 0) {
+      return Math.max(0, left / right);
+    }
+  }
+
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed)) return Math.max(0, parsed);
+  return 0;
+}
+
+function getActorCrForAutoInventory(actor) {
+  if (!actor) return 0;
+  const details = actor.system?.details ?? {};
+  const candidates = [details?.cr, details?.cr?.value, details?.challengeRating, details?.challenge?.rating];
+  for (const candidate of candidates) {
+    const parsed = parseAutoInventoryCrValue(candidate);
+    if (parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+function normalizeAutoInventoryCreatureType(rawType) {
+  const normalized = normalizeAutoInventoryName(rawType);
+  if (!normalized) return "unknown";
+  const rules = [
+    ["humanoid", "humanoid"],
+    ["beast", "beast"],
+    ["undead", "undead"],
+    ["construct", "construct"],
+    ["elemental", "elemental"],
+    ["ooze", "ooze"],
+    ["dragon", "dragon"],
+    ["fiend", "fiend"],
+    ["celestial", "celestial"],
+    ["aberration", "aberration"],
+    ["fey", "fey"],
+    ["giant", "giant"],
+    ["monstrosity", "monstrosity"],
+    ["plant", "plant"],
+    ["swarm", "swarm"]
+  ];
+  for (const [needle, value] of rules) {
+    if (normalized.includes(needle)) return value;
+  }
+  return "unknown";
+}
+
+function getActorCreatureTypeForAutoInventory(actor) {
+  if (!actor) return "unknown";
+  const detailsType = actor.system?.details?.type;
+  if (detailsType && typeof detailsType === "object") {
+    const fromObject = normalizeAutoInventoryCreatureType(
+      detailsType?.value ?? detailsType?.subtype ?? detailsType?.custom ?? detailsType?.type ?? detailsType?.label ?? ""
+    );
+    if (fromObject !== "unknown") return fromObject;
+  }
+  const fromDirect = normalizeAutoInventoryCreatureType(detailsType);
+  if (fromDirect !== "unknown") return fromDirect;
+  return normalizeAutoInventoryCreatureType(actor.system?.details?.race ?? "");
+}
+
+function getActorAbilityScore(actor, abilityKey) {
+  const key = String(abilityKey ?? "")
+    .trim()
+    .toLowerCase();
+  if (!key) return 0;
+  const node = actor?.system?.abilities?.[key];
+  const value = Number(node?.value ?? node?.mod ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function actorHasFeatureName(actor, pattern) {
+  const regex = pattern instanceof RegExp ? pattern : null;
+  if (!regex || !actor?.items) return false;
+  for (const item of actor.items) {
+    const name = String(item?.name ?? "").trim();
+    if (!name) continue;
+    if (regex.test(name)) return true;
+  }
+  return false;
+}
+
+function inferRole(actor) {
+  if (!actor) return "none";
+  const hasSpellItems =
+    actor.items?.some(
+      (item) =>
+        String(item?.type ?? "")
+          .trim()
+          .toLowerCase() === "spell"
+    ) ?? false;
+  const spellSlots = actor.system?.spells ?? {};
+  const hasSpellSlots = Object.values(spellSlots).some((slot) => {
+    const max = Number(slot?.max ?? 0);
+    return Number.isFinite(max) && max > 0;
+  });
+  const hasSpellcastingFeature = actorHasFeatureName(actor, /(spellcasting|innate spellcasting)/i);
+  if (hasSpellItems || hasSpellSlots || hasSpellcastingFeature) return "caster";
+
+  if (actorHasFeatureName(actor, /(sneak|stealth|cunning|scout|skirmish)/i)) return "scout";
+  if (actorHasFeatureName(actor, /(rage|frenzy|brutal|reckless|berserk)/i)) return "brute";
+
+  const str = getActorAbilityScore(actor, "str");
+  const dex = getActorAbilityScore(actor, "dex");
+  const con = getActorAbilityScore(actor, "con");
+  const int = getActorAbilityScore(actor, "int");
+  const wis = getActorAbilityScore(actor, "wis");
+  const cha = getActorAbilityScore(actor, "cha");
+  const martialTop = Math.max(str, dex);
+  const casterTop = Math.max(int, wis, cha);
+
+  if (str >= 16 && con >= 14) return "brute";
+  if (dex >= 15 && dex > str + 1) return "scout";
+  if (martialTop >= casterTop) return "martial";
+  return "none";
+}
+
+function isLikelyIntelligentCreature(actor) {
+  const intScore = getActorAbilityScore(actor, "int");
+  if (intScore >= 8) return true;
+  const languages = actor?.system?.traits?.languages;
+  const languageValue = String(languages?.value ?? "").trim();
+  if (languageValue.length > 0) return true;
+  return actorHasFeatureName(actor, /(speak|spellcasting|command|tactics)/i);
+}
+
+function getAutoInventoryCrBand(crValue = 0) {
+  const cr = Math.max(0, Number(crValue) || 0);
+  if (cr <= 1) return "cr-0-1";
+  if (cr <= 4) return "cr-2-4";
+  if (cr <= 8) return "cr-5-8";
+  if (cr <= 12) return "cr-9-12";
+  return "cr-13+";
+}
+
+function getAutoInventoryChallengeFromCr(crValue = 0) {
+  const cr = Math.max(0, Number(crValue) || 0);
+  if (cr <= 4) return "low";
+  if (cr <= 10) return "mid";
+  if (cr <= 16) return "high";
+  return "epic";
+}
+
+function shiftAutoInventoryCrBand(crBand = "cr-0-1", shift = 0) {
+  const current = String(crBand ?? "cr-0-1").trim();
+  const currentIndex = UNLINKED_TOKEN_AUTO_INV_BAND_ORDER.indexOf(current);
+  const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+  const delta = Math.max(-2, Math.min(2, Math.floor(Number(shift) || 0)));
+  const targetIndex = Math.max(0, Math.min(UNLINKED_TOKEN_AUTO_INV_BAND_ORDER.length - 1, baseIndex + delta));
+  return UNLINKED_TOKEN_AUTO_INV_BAND_ORDER[targetIndex] ?? "cr-0-1";
+}
+
+function rollChance(probability = 0) {
+  const chance = Math.max(0, Math.min(1, Number(probability) || 0));
+  return Math.random() < chance;
+}
+
+function autoInventoryPercentSettingToScale(value, fallback = 100) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : Number(fallback);
+  return Math.max(0, Math.min(3, resolved / 100));
+}
+
+function scaleAutoInventoryChance(baseChance, scalarPercent = 100) {
+  const base = Math.max(0, Math.min(1, Number(baseChance) || 0));
+  const scale = autoInventoryPercentSettingToScale(scalarPercent, 100);
+  return Math.max(0, Math.min(1, base * scale));
+}
+
+function rollIntRange(min, max) {
+  const low = Math.ceil(Math.min(min, max));
+  const high = Math.floor(Math.max(min, max));
+  if (low === high) return low;
+  return Math.floor(Math.random() * (high - low + 1)) + low;
+}
+
+function pickWeightedEntryName(entries = []) {
+  if (!Array.isArray(entries) || entries.length === 0) return "";
+  const pool = entries
+    .map((entry) => ({
+      name: String(entry?.name ?? "").trim(),
+      weight: Math.max(0, Number(entry?.weight ?? 0) || 0)
+    }))
+    .filter((entry) => entry.name.length > 0 && entry.weight > 0);
+  if (pool.length === 0) return "";
+  const totalWeight = pool.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) return pool[0].name;
+  let cursor = Math.random() * totalWeight;
+  for (const row of pool) {
+    cursor -= row.weight;
+    if (cursor <= 0) return row.name;
+  }
+  return pool[pool.length - 1]?.name ?? "";
+}
+
+function getDefaultAutoInventoryPackId() {
+  const packs = getAllCompendiumPacks();
+  const dnd5eItems = packs.find((pack) => {
+    const id = String(pack?.collection ?? "").trim();
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
+      .trim()
+      .toLowerCase();
+    return documentName === "item" && id === "dnd5e.items";
+  });
+  if (dnd5eItems) return "dnd5e.items";
+
+  const fallback = packs.find(
+    (pack) =>
+      String(pack?.documentName ?? pack?.metadata?.type ?? "")
+        .trim()
+        .toLowerCase() === "item"
+  );
+  return String(fallback?.collection ?? "").trim();
+}
+
+function resolveAutoInventoryPackId(packIdValue) {
+  const requested = String(packIdValue ?? "").trim();
+  if (requested && game.packs?.get(requested)) return requested;
+  const fallback = getDefaultAutoInventoryPackId();
+  return fallback || requested;
+}
+
+function getAutoInventorySettingsSnapshot() {
+  return {
+    enabled: Boolean(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_ENABLED) ?? true),
+    currencyEnabled: Boolean(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_ENABLED) ?? true),
+    weaponPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_WEAPON_PACK)),
+    armorPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_ARMOR_PACK)),
+    gearPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_GEAR_PACK)),
+    consumablesPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLES_PACK)),
+    itemChanceScalar: Number(
+      game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_ITEM_CHANCE_SCALAR) ?? AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR
+    ),
+    consumableChanceScalar: Number(
+      game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLE_CHANCE_SCALAR) ??
+        AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR
+    ),
+    currencyScalar: Number(
+      game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_SCALAR) ?? AUTO_INV_DEFAULT_CURRENCY_SCALAR
+    ),
+    qualityShift: Math.max(
+      -2,
+      Math.min(
+        2,
+        Math.floor(
+          Number(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_QUALITY_SHIFT) ?? AUTO_INV_DEFAULT_QUALITY_SHIFT) || 0
+        )
+      )
+    )
+  };
+}
+
+function isAutoInventoryArmorIndexRow(row) {
+  const type = String(row?.type ?? "")
+    .trim()
+    .toLowerCase();
+  if (type !== "equipment") return false;
+  const subtype = String(row?.subtype ?? "")
+    .trim()
+    .toLowerCase();
+  if (["light", "medium", "heavy", "shield"].includes(subtype)) return true;
+  const name = normalizeAutoInventoryName(row?.name ?? "");
+  return name.includes("armor") || name.includes("mail") || name.includes("plate") || name.includes("shield");
+}
+
+function matchesAutoInventoryCategory(row, category = "gear") {
+  const normalizedCategory = String(category ?? "gear")
+    .trim()
+    .toLowerCase();
+  const type = String(row?.type ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalizedCategory === "weapon") return type === "weapon";
+  if (normalizedCategory === "armor") return isAutoInventoryArmorIndexRow(row);
+  if (normalizedCategory === "consumable") return type === "consumable";
+  if (normalizedCategory === "gear") {
+    if (type === "weapon" || type === "spell") return false;
+    if (isAutoInventoryArmorIndexRow(row)) return false;
+    return UNLINKED_TOKEN_AUTO_LOOT_ITEM_TYPES.has(type);
+  }
+  return true;
+}
+
+async function getAutoInventoryPackIndexRows(packId) {
+  const id = String(packId ?? "").trim();
+  if (!id) return [];
+  if (autoInventoryPackIndexCache.has(id)) return autoInventoryPackIndexCache.get(id) ?? [];
+
+  const pack = game.packs?.get(id);
+  if (!pack) return [];
+  try {
+    const index = await pack.getIndex({ fields: ["name", "type", "system.type.value"] });
+    const rows = getCollectionValues(index)
+      .map((entry) => (Array.isArray(entry) ? entry[1] : entry))
+      .map((entry) => {
+        const rowId = String(entry?._id ?? entry?.id ?? "").trim();
+        const rowName = String(entry?.name ?? "").trim();
+        if (!rowId || !rowName) return null;
+        return {
+          id: rowId,
+          name: rowName,
+          type: String(entry?.type ?? "")
+            .trim()
+            .toLowerCase(),
+          subtype: String(foundry.utils.getProperty(entry, "system.type.value") ?? "")
+            .trim()
+            .toLowerCase(),
+          search: normalizeAutoInventoryName(rowName)
+        };
+      })
+      .filter(Boolean);
+    autoInventoryPackIndexCache.set(id, rows);
+    return rows;
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read auto-inventory pack index`, { packId: id, error });
+    return [];
+  }
+}
+
+function findAutoInventoryIndexRowByName(indexRows = [], targetName = "", category = "gear") {
+  const needle = normalizeAutoInventoryName(targetName);
+  if (!needle) return null;
+  const categoryRows = (Array.isArray(indexRows) ? indexRows : []).filter((row) =>
+    matchesAutoInventoryCategory(row, category)
+  );
+  const needsEnhancedItem = /\+\s*[123]/i.test(String(targetName ?? ""));
+  const nonEnhancedRows = categoryRows.filter((row) => !/\+\s*[123]/i.test(String(row?.name ?? "")));
+  const rows = !needsEnhancedItem && nonEnhancedRows.length > 0 ? nonEnhancedRows : categoryRows;
+  const exact = rows.find((row) => row.search === needle);
+  if (exact) return exact;
+
+  const needleTokens = needle.split(" ").filter(Boolean);
+  const startsWith = rows.find((row) => row.search.startsWith(needle));
+  if (startsWith) return startsWith;
+  const containsTokens = rows.find((row) => needleTokens.every((token) => row.search.includes(token)));
+  if (containsTokens) return containsTokens;
+  return rows.find((row) => row.search.includes(needle)) ?? null;
+}
+
+async function resolveAutoInventoryItemData(packId, itemName, category = "gear") {
+  const id = String(packId ?? "").trim();
+  if (!id) return null;
+  const pack = game.packs?.get(id);
+  if (!pack) return null;
+  const rows = await getAutoInventoryPackIndexRows(id);
+  const match = findAutoInventoryIndexRowByName(rows, itemName, category);
+  if (!match) return null;
+  try {
+    const document = await pack.getDocument(match.id);
+    if (!document || document.documentName !== "Item") return null;
+    const data = document.toObject();
+    if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
+    return data;
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed loading auto-inventory item`, { packId: id, itemName, error });
+    return null;
+  }
+}
+
+function setAutoInventoryItemQuantity(itemData, quantity = 1) {
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (!itemData || typeof itemData !== "object") return itemData;
+  if (!itemData.system || typeof itemData.system !== "object") itemData.system = {};
+  const quantityNode = itemData.system.quantity;
+  if (quantityNode && typeof quantityNode === "object") {
+    quantityNode.value = qty;
+  } else {
+    itemData.system.quantity = qty;
+  }
+  return itemData;
+}
+
+async function resolveTokenActorForAutoInventory(tokenDoc) {
+  if (!tokenDoc) return null;
+  const sleep = foundry.utils?.sleep
+    ? (ms) => foundry.utils.sleep(ms)
+    : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const actor = tokenDoc?.actor ?? tokenDoc?.object?.actor ?? tokenDoc?.getActor?.();
+    if (actor?.documentName === "Actor") return actor;
+    if (attempt < 9) await sleep(75);
+  }
+  return null;
+}
+
+function isPrimaryActiveGmClient() {
+  const activeGms = (game.users ?? [])
+    .filter((user) => Boolean(user?.active) && Boolean(user?.isGM))
+    .sort((left, right) => String(left?.id ?? "").localeCompare(String(right?.id ?? "")));
+  if (activeGms.length === 0) return Boolean(canAccessAllPlayerOps());
+  return String(activeGms[0]?.id ?? "") === String(game.user?.id ?? "");
+}
+
+function isPrimaryActiveGmForAutoInventory() {
+  return isPrimaryActiveGmClient();
+}
+
+function actorHasUsableInventory(actor) {
+  if (!actor?.items) return false;
+  return actor.items.some((item) =>
+    UNLINKED_TOKEN_AUTO_LOOT_ITEM_TYPES.has(
+      String(item?.type ?? "")
+        .trim()
+        .toLowerCase()
+    )
+  );
+}
+
+function shouldAutoInventoryApplyForCreature(actor, creatureType, role) {
+  const type = String(creatureType ?? "unknown");
+  if (["construct", "elemental", "ooze"].includes(type)) return false;
+  if (type === "beast") return false;
+  if (type === "undead") {
+    if (!isLikelyIntelligentCreature(actor) && role === "none") return false;
+  }
+  return true;
+}
+
+function buildAutoInventoryTypeWeights(creatureType, role) {
+  const type = String(creatureType ?? "unknown")
+    .trim()
+    .toLowerCase();
+  const roleValue = String(role ?? "none")
+    .trim()
+    .toLowerCase();
+  const base = {
+    ...(UNLINKED_TOKEN_AUTO_LOOT_TYPE_WEIGHTS.default ?? {})
+  };
+  const creatureWeights = UNLINKED_TOKEN_AUTO_LOOT_TYPE_WEIGHTS[type] ?? {};
+  const merged = { ...base, ...creatureWeights };
+  if (roleValue === "caster") {
+    merged.weapon = Math.max(0, Number(merged.weapon ?? 1) * 0.72);
+    merged.consumable = Math.max(0, Number(merged.consumable ?? 1) * 1.35);
+    merged.tool = Math.max(0, Number(merged.tool ?? 1) * 1.2);
+  } else if (roleValue === "scout") {
+    merged.weapon = Math.max(0, Number(merged.weapon ?? 1) * 1.1);
+    merged.armor = Math.max(0, Number(merged.armor ?? 1) * 0.75);
+    merged.consumable = Math.max(0, Number(merged.consumable ?? 1) * 1.2);
+  } else if (roleValue === "brute") {
+    merged.weapon = Math.max(0, Number(merged.weapon ?? 1) * 1.2);
+    merged.armor = Math.max(0, Number(merged.armor ?? 1) * 1.25);
+    merged.consumable = Math.max(0, Number(merged.consumable ?? 1) * 0.8);
+  }
+  merged.default = Math.max(0.01, Number(merged.default ?? 1) || 1);
+  return merged;
+}
+

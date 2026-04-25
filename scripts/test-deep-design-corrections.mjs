@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
@@ -20,15 +21,9 @@ function log(message) {
   if (verbose) process.stdout.write(`${message}\n`);
 }
 
-const partyOpsContent = readFileSync(
-  join(rootDir, "scripts", "party-operations.js"),
-  "utf-8"
-);
+const partyOpsContent = readLegacyRuntimeSource(["merchants", "downtime-operations-actions"]);
 
-const downtimeDataContent = readFileSync(
-  join(rootDir, "scripts", "features", "downtime-phase1-data.js"),
-  "utf-8"
-);
+const downtimeDataContent = readFileSync(join(rootDir, "scripts", "features", "downtime-phase1-data.js"), "utf-8");
 
 log("Checking GM reward controls");
 assert(
@@ -42,19 +37,16 @@ assert(
 
 log("Checking profession identities");
 for (const profession of ["street-thief", "performer", "merchant-broker"]) {
-  assert(
-    downtimeDataContent.includes(`"${profession}"`),
-    `Expected profession ${profession} to exist.`
-  );
+  assert(downtimeDataContent.includes(`"${profession}"`), `Expected profession ${profession} to exist.`);
 }
 
 log("Checking complication auto-assignment");
 assert(
-  partyOpsContent.includes("function getRandomDowntimeComplication(actionKey = \"\", riskLevel = \"standard\")"),
+  partyOpsContent.includes('function getRandomDowntimeComplication(actionKey = "", riskLevel = "standard")'),
   "Expected getRandomDowntimeComplication to accept a riskLevel parameter."
 );
 assert(
-  partyOpsContent.includes("shouldRollComplication = riskLevel === \"high\""),
+  partyOpsContent.includes('shouldRollComplication = riskLevel === "high"'),
   "Expected high risk rolls to auto-trigger complications."
 );
 assert(
