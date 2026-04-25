@@ -36,6 +36,22 @@ async function validateManifestPaths(manifest, listKey, mapper = (value) => valu
   return errors;
 }
 
+async function validatePackAssetPaths(manifest) {
+  const errors = [];
+  const packs = Array.isArray(manifest?.packs) ? manifest.packs : [];
+  for (const pack of packs) {
+    const relativePath = String(pack?.path ?? "").trim();
+    if (!relativePath) continue;
+    const absolutePath = path.resolve(repoRoot, relativePath);
+    if (!(await pathExists(absolutePath))) continue;
+    const text = await readFile(absolutePath, "utf8");
+    if (text.includes("https://assets.forge-vtt.com/")) {
+      errors.push(`Pack contains direct Forge asset URLs: ${relativePath}`);
+    }
+  }
+  return errors;
+}
+
 async function main() {
   const manifestPath = path.join(repoRoot, "module.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -47,12 +63,15 @@ async function main() {
     errors.push("Manifest must declare at least one esmodule.");
   }
 
-  errors.push(...await validateManifestPaths(manifest, "esmodules"));
-  errors.push(...await validateManifestPaths(manifest, "styles"));
-  errors.push(...await validateManifestPaths(manifest, "templates"));
-  errors.push(...await validateManifestPaths(manifest, "packs", (entry) => entry?.path));
+  errors.push(...(await validateManifestPaths(manifest, "esmodules")));
+  errors.push(...(await validateManifestPaths(manifest, "styles")));
+  errors.push(...(await validateManifestPaths(manifest, "templates")));
+  errors.push(...(await validateManifestPaths(manifest, "packs", (entry) => entry?.path)));
+  errors.push(...(await validatePackAssetPaths(manifest)));
 
-  const declaredTemplates = new Set((Array.isArray(manifest?.templates) ? manifest.templates : []).map((entry) => String(entry)));
+  const declaredTemplates = new Set(
+    (Array.isArray(manifest?.templates) ? manifest.templates : []).map((entry) => String(entry))
+  );
   const topLevelTemplates = await collectTopLevelTemplates();
   for (const templatePath of topLevelTemplates) {
     if (!declaredTemplates.has(templatePath)) {

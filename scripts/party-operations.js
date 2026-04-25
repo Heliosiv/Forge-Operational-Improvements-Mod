@@ -23010,7 +23010,7 @@ function buildLootPreviewContext() {
         ),
         uuid: String(entry?.uuid ?? "").trim(),
         name: String(entry?.name ?? "Item"),
-        img: String(entry?.img ?? "icons/svg/item-bag.svg"),
+        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
         quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
         itemType: String(entry?.itemType ?? ""),
         rarity: String(entry?.rarity ?? ""),
@@ -23311,9 +23311,9 @@ function buildLootClaimsContext(user = game.user) {
     const actorName = String(actor.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`;
     const actorType = String(actor.type ?? "npc").trim() || "npc";
     const actorTypeLabel = actorType.charAt(0).toUpperCase() + actorType.slice(1);
-    const actorImage =
-      String(actor.img ?? actor.prototypeToken?.texture?.src ?? "icons/svg/mystery-man.svg").trim() ||
-      "icons/svg/mystery-man.svg";
+    const actorImage = normalizeFoundryAssetImagePath(actor.img ?? actor.prototypeToken?.texture?.src, {
+      fallback: "icons/svg/mystery-man.svg"
+    });
     const isStashLike = actorType !== "character";
     const sys = actor.system?.currency ?? {};
     const cPp = Math.max(0, Math.floor(Number(sys.pp ?? 0) || 0));
@@ -24439,7 +24439,7 @@ function buildOperationsContext() {
     .map((actor) => ({
       actorId: actor.id,
       actorName: actor.name,
-      actorImg: actor.img,
+      actorImg: normalizeFoundryAssetImagePath(actor.img, { fallback: "icons/svg/mystery-man.svg" }),
       selected: environmentState.appliedActorIds.includes(actor.id),
       failureStreak: Math.max(0, Number(environmentState.failureStreaks?.[actor.id] ?? 0) || 0)
     }));
@@ -25586,7 +25586,7 @@ function normalizeBaseSiteStorageItem(entry = {}) {
     quantity,
     weight,
     note: String(entry?.note ?? ""),
-    img: String(entry?.img ?? "icons/svg/item-bag.svg"),
+    img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
     uuid: String(entry?.uuid ?? "")
   };
 }
@@ -27323,7 +27323,7 @@ function getMerchantPresetSourceDocumentsSync() {
       documents.push({
         uuid: `Compendium.${packId}.Item.${docId}`,
         name: String(entry?.name ?? docId).trim() || docId,
-        img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
         type: String(entry?.type ?? "").trim(),
         flags: foundry.utils.deepClone(entry?.flags ?? {}),
         system: foundry.utils.deepClone(entry?.system ?? {}),
@@ -27923,7 +27923,7 @@ function getMerchantSourceDocumentsSync(merchant = {}) {
         documents.push({
           uuid: `Compendium.${packId}.Item.${docId}`,
           name: String(entry?.name ?? docId).trim() || docId,
-          img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+          img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
           type: String(entry?.type ?? "").trim(),
           flags: foundry.utils.deepClone(entry?.flags ?? {}),
           system: foundry.utils.deepClone(entry?.system ?? {}),
@@ -29697,7 +29697,7 @@ async function ensureMerchantActor(merchantInput, options = {}) {
   if (!canAccessGmPage()) return null;
 
   const actorName = String(merchant.name ?? "Merchant").trim() || "Merchant";
-  const actorImg = String(merchant.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
+  const actorImg = normalizeFoundryAssetImagePath(merchant.img, { fallback: "icons/svg/item-bag.svg" });
   const actorData = {
     name: `Merchant Stock: ${actorName}`,
     type: "npc",
@@ -32662,7 +32662,7 @@ function buildDowntimeItemRewardDropFromDocument(documentRef) {
     id: foundry.utils.randomID(),
     uuid: String(documentRef.uuid ?? "").trim(),
     name: String(documentRef.name ?? "Item").trim() || "Item",
-    img: String(documentRef.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    img: normalizeFoundryAssetImagePath(documentRef.img, { fallback: "icons/svg/item-bag.svg" }),
     itemType: String(documentRef.type ?? "loot").trim() || "loot",
     quantity: 1
   });
@@ -33118,7 +33118,7 @@ function normalizeLootClaimItemsList(values = []) {
         id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
         uuid: String(entry?.uuid ?? "").trim(),
         name: String(entry?.name ?? "Item").trim() || "Item",
-        img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
         quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
         itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
         itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
@@ -43128,7 +43128,7 @@ async function publishLootPreviewToClaims() {
         id: foundry.utils.randomID(),
         uuid: String(entry?.uuid ?? "").trim(),
         name: String(entry?.name ?? "Item").trim() || "Item",
-        img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
         quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
         itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
         itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
@@ -44550,13 +44550,13 @@ async function postLootItemClaimToChat(outcome = {}) {
   const itemUuid = String(outcome?.itemUuid ?? "").trim();
   const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
   const actor = actorId ? game.actors.get(actorId) : null;
-  const actorImg = String(actor?.img ?? "icons/svg/item-bag.svg");
+  const actorImg = normalizeFoundryAssetImagePath(actor?.img, { fallback: "icons/svg/item-bag.svg" });
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
       <div class="po-chat-claim">
         <p><strong>Loot Claimed</strong></p>
-        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemLabel)}</strong>.</p>
+        <p><img src="${poEscapeHtml(actorImg)}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemLabel)}</strong>.</p>
         <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
       </div>
     `
@@ -44580,13 +44580,13 @@ async function postLootCurrencyClaimToChat(outcome = {}) {
   const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
   const shareLabel = formatLootCurrencyBundleLabel(outcome?.share ?? {});
   const actor = actorId ? game.actors.get(actorId) : null;
-  const actorImg = String(actor?.img ?? "icons/svg/coins.svg");
+  const actorImg = normalizeFoundryAssetImagePath(actor?.img, { fallback: "icons/svg/coins.svg" });
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
       <div class="po-chat-claim">
         <p><strong>Currency Deposited</strong></p>
-        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(shareLabel)}</strong>.</p>
+        <p><img src="${poEscapeHtml(actorImg)}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(shareLabel)}</strong>.</p>
         <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
       </div>
     `
@@ -47104,7 +47104,7 @@ function buildPlayerActorSelectorContext(user = game.user) {
       return {
         id,
         name: String(actor?.name ?? "Unknown").trim() || "Unknown",
-        img: String(actor?.img ?? "").trim(),
+        img: normalizeFoundryAssetImagePath(actor?.img, { fallback: "" }),
         selected: id === activeActorId
       };
     })
@@ -49335,7 +49335,7 @@ function buildPlayerCharacterSelector(slots) {
       return {
         id: actorId,
         name: actor?.name ?? "Unknown",
-        img: actor?.img ?? "",
+        img: normalizeFoundryAssetImagePath(actor?.img, { fallback: "" }),
         isActive: actorId === activeActorId
       };
     })
@@ -50025,7 +50025,9 @@ function buildMarchSpacingGridContext(state, formationBoard) {
 }
 
 function getActorTokenImage(actor) {
-  return actor?.prototypeToken?.texture?.src || actor?.img || "icons/svg/mystery-man.svg";
+  return normalizeFoundryAssetImagePath(actor?.prototypeToken?.texture?.src || actor?.img, {
+    fallback: "icons/svg/mystery-man.svg"
+  });
 }
 
 function formatClockLabel(hours24, minutes) {
@@ -50587,7 +50589,7 @@ function buildActorView(actor, isGM, visibility) {
   const data = {
     id: actor.id,
     name: actor.name,
-    img: actor.img,
+    img: normalizeFoundryAssetImagePath(actor.img, { fallback: "icons/svg/mystery-man.svg" }),
     passivePerception: getPassive(actor, "prc"),
     passiveInsight: getPassive(actor, "ins"),
     passiveInvestigation: getPassive(actor, "inv"),
@@ -50897,6 +50899,7 @@ mainTabNavigator = createMainTabNavigator({
   MarchingOrderApp,
   getResponsiveWindowOptions,
   setActiveRestMainTab,
+  setPlayerHubTab,
   queueManagedAudioMixPlaybackResync,
   openRestWatchPlayerApp
 });
@@ -51535,14 +51538,17 @@ function refreshOpenApps(options = {}) {
   return refreshOpenAppsController(options);
 }
 
-function openRestWatchPlayerApp() {
+function openRestWatchPlayerApp(options = {}) {
   if (canAccessAllPlayerOps()) {
     const app = openMainTab("rest-watch", { force: true });
     app?.bringToTop?.();
     return app;
   }
+  const requestedHubTab = normalizePlayerHubTab(options?.hubTab, "");
+  if (requestedHubTab) setPlayerHubTab(requestedHubTab);
   const existing = Object.values(ui.windows).find((app) => app instanceof RestWatchPlayerApp);
   if (existing) {
+    existing.render?.({ force: true, parts: ["main"] });
     existing.bringToTop?.();
     return existing;
   }

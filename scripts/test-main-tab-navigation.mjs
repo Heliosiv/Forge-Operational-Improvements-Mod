@@ -107,9 +107,14 @@ function createApp(label) {
 {
   const warnings = [];
   const playerApp = createApp("player-nongm");
+  const restApp = createApp("rest-nongm");
+  const opsApp = createApp("ops-nongm");
+  const marchApp = createApp("march-nongm");
   const history = [];
   const activeTabs = [];
+  const playerHubTabs = [];
   const queueSignals = [];
+  const playerOpenOptions = [];
   let playerOpenCalls = 0;
   const navigator = createMainTabNavigator({
     normalizeMainTabId: (value, fallback) =>
@@ -119,17 +124,28 @@ function createApp(label) {
     canAccessAllPlayerOps: () => false,
     canAccessGmPage: () => false,
     notifyUiWarnThrottled: (message) => warnings.push(message),
-    getAppInstance: () => null,
-    appInstanceKeys: {},
+    getAppInstance(key) {
+      if (key === "rest") return restApp;
+      if (key === "operations") return opsApp;
+      if (key === "march") return marchApp;
+      return null;
+    },
+    appInstanceKeys: {
+      REST_WATCH: "rest",
+      OPERATIONS_SHELL: "operations",
+      MARCHING_ORDER: "march"
+    },
     RestWatchApp: class {},
     OperationsShellApp: class {},
     MarchingOrderApp: class {},
     getResponsiveWindowOptions: () => ({}),
     setActiveRestMainTab: (tabId) => activeTabs.push(tabId),
+    setPlayerHubTab: (tabId) => playerHubTabs.push(tabId),
     queueManagedAudioMixPlaybackResync: () => queueSignals.push("queued"),
     writePoBrowserHistoryEntry: (entry) => history.push(entry),
-    openRestWatchPlayerApp: () => {
+    openRestWatchPlayerApp: (options) => {
       playerOpenCalls += 1;
+      playerOpenOptions.push(options);
       return playerApp;
     }
   });
@@ -139,6 +155,20 @@ function createApp(label) {
   assert.equal(navigator.openMainTab("rest-watch"), playerApp);
   assert.equal(playerOpenCalls, 1);
   assert.deepEqual(activeTabs.at(-1), "rest-watch");
-  assert.deepEqual(history.at(-1), { type: "player", tab: "rest-watch" });
+  assert.deepEqual(playerHubTabs.at(-1), "watch");
+  assert.deepEqual(playerOpenOptions.at(-1), { force: true, hubTab: "watch" });
+  assert.deepEqual(history.at(-1), { type: "player", tab: "watch" });
   assert.equal(queueSignals.length, 1);
+  assert.equal(navigator.openMainTab("marching-order"), playerApp);
+  assert.equal(playerOpenCalls, 2);
+  assert.equal(marchApp.closeCalls, 1);
+  assert.deepEqual(playerHubTabs.at(-1), "march");
+  assert.deepEqual(playerOpenOptions.at(-1), { force: true, hubTab: "march" });
+  assert.deepEqual(history.at(-1), { type: "player", tab: "march" });
+  assert.equal(navigator.openMainTab("operations"), playerApp);
+  assert.equal(playerOpenCalls, 3);
+  assert.equal(opsApp.closeCalls, 1);
+  assert.deepEqual(playerHubTabs.at(-1), "downtime");
+  assert.deepEqual(playerOpenOptions.at(-1), { force: true, hubTab: "downtime" });
+  assert.deepEqual(history.at(-1), { type: "player", tab: "downtime" });
 }
