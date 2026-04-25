@@ -20897,11 +20897,45 @@ function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spen
   const weightedPool = buildWeightedPool(selectionPool, (entry) =>
     getLootBudgetPhaseCandidateWeight(entry, state, phase)
   );
-  const pickedRow = chooseWeightedEntry(
-    weightedPool,
-    (entry) => Number(entry?.weight ?? 0),
-    state?.random ?? Math.random
+  const budgetContext = state?.budgetContext ?? {};
+  const targetTotalGp = Math.max(
+    0,
+    Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 0) || 0
   );
+  const selectedTotalGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
+  const currentDeltaGp = Math.abs(targetTotalGp - selectedTotalGp);
+  const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
+  const focusedChance = phase === "fill" ? 0.9 : 0.72;
+  const random = state?.random ?? Math.random;
+  if (targetTotalGp > 0 && weightedPool.length > 1 && currentDeltaGp > toleranceGp && random() < focusedChance) {
+    const ranked = weightedPool
+      .map((row) => {
+        const valueGp = Math.max(0, Number(row?.item?.itemValueGp ?? 0) || 0);
+        return {
+          ...row,
+          projectedDeltaGp: Math.abs(targetTotalGp - (selectedTotalGp + valueGp))
+        };
+      })
+      .filter((row) => row.projectedDeltaGp < currentDeltaGp)
+      .sort((left, right) => {
+        if (left.projectedDeltaGp !== right.projectedDeltaGp) return left.projectedDeltaGp - right.projectedDeltaGp;
+        return Number(right?.weight ?? 0) - Number(left?.weight ?? 0);
+      });
+    if (ranked.length > 0) {
+      const bestDeltaGp = ranked[0].projectedDeltaGp;
+      const nearBestLimitGp = Math.max(bestDeltaGp + toleranceGp * 0.35, bestDeltaGp * 1.25 + 1);
+      const focusedPool = ranked
+        .filter((row) => row.projectedDeltaGp <= nearBestLimitGp)
+        .slice(0, Math.max(4, Math.min(10, Math.ceil(weightedPool.length * 0.18))));
+      const focusedRow = chooseWeightedEntry(
+        focusedPool,
+        (entry) => Math.max(0.000001, Number(entry?.weight ?? 0) || 0),
+        random
+      );
+      if (focusedRow?.item) return focusedRow.item;
+    }
+  }
+  const pickedRow = chooseWeightedEntry(weightedPool, (entry) => Number(entry?.weight ?? 0), random);
   return pickedRow?.item ?? null;
 }
 
@@ -50863,7 +50897,8 @@ mainTabNavigator = createMainTabNavigator({
   MarchingOrderApp,
   getResponsiveWindowOptions,
   setActiveRestMainTab,
-  queueManagedAudioMixPlaybackResync
+  queueManagedAudioMixPlaybackResync,
+  openRestWatchPlayerApp
 });
 
 launcherUiController = createLauncherUiController({

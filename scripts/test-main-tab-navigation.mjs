@@ -34,7 +34,10 @@ function createApp(label) {
   let createdOpsApp = null;
   let createdMarchApp = null;
   const navigator = createMainTabNavigator({
-    normalizeMainTabId: (value, fallback) => String(value ?? fallback).trim().toLowerCase(),
+    normalizeMainTabId: (value, fallback) =>
+      String(value ?? fallback)
+        .trim()
+        .toLowerCase(),
     logUiDebug: () => {},
     getTemplateForMainTab: (tabId) => `template:${tabId}`,
     canAccessAllPlayerOps: () => true,
@@ -97,14 +100,22 @@ function createApp(label) {
 
   navigator.openMainTab("rest-watch");
   assert.deepEqual(activeTabs.at(-1), "rest-watch");
-  assert.equal((apps.rest.renderCalls.length + (createdRestApp?.renderCalls.length ?? 0)), 1);
+  assert.equal(apps.rest.renderCalls.length + (createdRestApp?.renderCalls.length ?? 0), 1);
   assert.equal(queueSignals.length, 4);
 }
 
 {
   const warnings = [];
+  const playerApp = createApp("player-nongm");
+  const history = [];
+  const activeTabs = [];
+  const queueSignals = [];
+  let playerOpenCalls = 0;
   const navigator = createMainTabNavigator({
-    normalizeMainTabId: (value, fallback) => String(value ?? fallback).trim().toLowerCase(),
+    normalizeMainTabId: (value, fallback) =>
+      String(value ?? fallback)
+        .trim()
+        .toLowerCase(),
     canAccessAllPlayerOps: () => false,
     canAccessGmPage: () => false,
     notifyUiWarnThrottled: (message) => warnings.push(message),
@@ -114,11 +125,20 @@ function createApp(label) {
     OperationsShellApp: class {},
     MarchingOrderApp: class {},
     getResponsiveWindowOptions: () => ({}),
-    setActiveRestMainTab: () => {},
-    queueManagedAudioMixPlaybackResync: () => {},
-    writePoBrowserHistoryEntry: () => {}
+    setActiveRestMainTab: (tabId) => activeTabs.push(tabId),
+    queueManagedAudioMixPlaybackResync: () => queueSignals.push("queued"),
+    writePoBrowserHistoryEntry: (entry) => history.push(entry),
+    openRestWatchPlayerApp: () => {
+      playerOpenCalls += 1;
+      return playerApp;
+    }
   });
 
   assert.equal(navigator.openMainTab("gm"), null);
   assert.equal(warnings.length, 1);
+  assert.equal(navigator.openMainTab("rest-watch"), playerApp);
+  assert.equal(playerOpenCalls, 1);
+  assert.deepEqual(activeTabs.at(-1), "rest-watch");
+  assert.deepEqual(history.at(-1), { type: "player", tab: "rest-watch" });
+  assert.equal(queueSignals.length, 1);
 }

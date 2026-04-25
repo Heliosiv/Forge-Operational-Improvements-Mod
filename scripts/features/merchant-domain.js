@@ -1996,19 +1996,20 @@ function chooseWeightedRow(entries = [], weightAccessor = () => 1, randomFn = Ma
   if (!Array.isArray(entries) || entries.length <= 0) return null;
   const random = typeof randomFn === "function" ? randomFn : Math.random;
   let total = 0;
-  const weighted = entries.map((entry) => {
+  for (const entry of entries) {
     const weightRaw = Number(weightAccessor(entry));
     const weight = Number.isFinite(weightRaw) ? Math.max(0, weightRaw) : 0;
     total += weight;
-    return { entry, weight };
-  });
+  }
   if (total <= 0) return entries[0] ?? null;
   let cursor = random() * total;
-  for (const row of weighted) {
-    cursor -= row.weight;
-    if (cursor <= 0) return row.entry;
+  for (const entry of entries) {
+    const weightRaw = Number(weightAccessor(entry));
+    const weight = Number.isFinite(weightRaw) ? Math.max(0, weightRaw) : 0;
+    cursor -= weight;
+    if (cursor <= 0) return entry;
   }
-  return weighted[weighted.length - 1]?.entry ?? entries[0] ?? null;
+  return entries[entries.length - 1] ?? entries[0] ?? null;
 }
 
 function isAmmoCandidate(candidate = {}) {

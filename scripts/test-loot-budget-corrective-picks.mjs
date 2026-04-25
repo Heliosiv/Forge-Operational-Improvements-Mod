@@ -19,6 +19,7 @@ const functionBlock = [
   extractFunctionBlock(moduleSource, "resolveLootBudgetEnforcementTolerance", "isLootCorrectiveOvershootEntry"),
   extractFunctionBlock(moduleSource, "isLootCorrectiveOvershootEntry", "getLootBudgetItemCap"),
   extractFunctionBlock(moduleSource, "getLootBudgetPhaseCandidateWeight", "chooseLootBudgetCandidate"),
+  extractFunctionBlock(moduleSource, "chooseLootBudgetCandidate", "commitLootBudgetPick"),
   extractFunctionBlock(moduleSource, "buildLootPhaseSelectionPool", "spendBudgetLoop")
 ].join("\n\n");
 
@@ -26,33 +27,65 @@ const context = vm.createContext({
   Math,
   result: {},
   getLootRarityBucket(rarity = "") {
-    const normalized = String(rarity ?? "").trim().toLowerCase();
+    const normalized = String(rarity ?? "")
+      .trim()
+      .toLowerCase();
     if (normalized === "legendary") return "legendary";
     if (normalized === "very-rare" || normalized === "very rare" || normalized === "veryrare") return "very-rare";
     if (normalized === "rare") return "rare";
     if (normalized === "uncommon") return "uncommon";
     return "common";
   },
-  isLootOutsideBudgetPolicy: (entry = {}) => String(entry?.sourcePolicy ?? "").trim().toLowerCase() === "outside-budget",
+  isLootOutsideBudgetPolicy: (entry = {}) =>
+    String(entry?.sourcePolicy ?? "")
+      .trim()
+      .toLowerCase() === "outside-budget",
   canSelectLootRarityWithCaps: () => true,
   getLootCombatantRarityWeightModifier: () => 1,
   getLootBuilderItemTypeWeight: () => 1,
   getLootBudgetDrivenValueWeight: () => 1,
   getLootTreasureKindWeightModifier: () => 1,
   getLootChallengeAvailabilityWeight: () => 1,
-  getLootSelectionIntelligenceWeight
+  getLootSelectionIntelligenceWeight,
+  buildWeightedPool(items, weightFn) {
+    return (Array.isArray(items) ? items : [])
+      .map((item) => ({ item, weight: Math.max(0, Number(weightFn(item)) || 0) }))
+      .filter((row) => row.weight > 0);
+  },
+  chooseWeightedEntry(entries, weightAccessor, randomFn = Math.random) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    const random = typeof randomFn === "function" ? randomFn : Math.random;
+    let total = 0;
+    const weighted = entries.map((entry) => {
+      const weight = Math.max(0, Number(weightAccessor(entry)) || 0);
+      total += weight;
+      return { entry, weight };
+    });
+    if (total <= 0) return entries[0] ?? null;
+    let cursor = random() * total;
+    for (const row of weighted) {
+      cursor -= row.weight;
+      if (cursor <= 0) return row.entry;
+    }
+    return weighted.at(-1)?.entry ?? null;
+  }
 });
 
-vm.runInContext(`${functionBlock}
+vm.runInContext(
+  `${functionBlock}
 result.resolveLootBudgetEnforcementTolerance = resolveLootBudgetEnforcementTolerance;
 result.isLootCorrectiveOvershootEntry = isLootCorrectiveOvershootEntry;
 result.getLootBudgetPhaseCandidateWeight = getLootBudgetPhaseCandidateWeight;
-result.buildLootPhaseSelectionPool = buildLootPhaseSelectionPool;`, context);
+result.chooseLootBudgetCandidate = chooseLootBudgetCandidate;
+result.buildLootPhaseSelectionPool = buildLootPhaseSelectionPool;`,
+  context
+);
 
 const {
   resolveLootBudgetEnforcementTolerance,
   isLootCorrectiveOvershootEntry,
   getLootBudgetPhaseCandidateWeight,
+  chooseLootBudgetCandidate,
   buildLootPhaseSelectionPool
 } = context.result;
 
@@ -198,20 +231,46 @@ const usefulnessState = {
   ]
 };
 
-const usefulCandidateWeight = getLootBudgetPhaseCandidateWeight(
-  usefulnessState.pool[0],
-  usefulnessState,
-  "spend"
-);
-const fillerCandidateWeight = getLootBudgetPhaseCandidateWeight(
-  usefulnessState.pool[1],
-  usefulnessState,
-  "spend"
-);
+const usefulCandidateWeight = getLootBudgetPhaseCandidateWeight(usefulnessState.pool[0], usefulnessState, "spend");
+const fillerCandidateWeight = getLootBudgetPhaseCandidateWeight(usefulnessState.pool[1], usefulnessState, "spend");
 
 assert.ok(
   usefulCandidateWeight > fillerCandidateWeight,
   "Budget-phase weighting should inherit the practical usefulness bias instead of treating decorative filler as equivalent."
+);
+
+const focusedPickState = {
+  budgetContext: {
+    targetItemBudgetGp: 500,
+    targetCount: 2,
+    itemToleranceGp: 50,
+    toleranceGp: 50,
+    overshootAllowanceRatio: 0.2,
+    effectiveMaxItemValueGp: 999
+  },
+  selectedTotalValueGp: 180,
+  selected: [{ quantity: 1 }],
+  selectedByRarity: {},
+  rarityCaps: {},
+  draft: { mode: "horde" },
+  random: (() => {
+    const rolls = [0.1, 0.05];
+    return () => rolls.shift() ?? 0.5;
+  })()
+};
+const focusedPick = chooseLootBudgetCandidate(
+  [
+    { name: "Low Filler", itemValueGp: 40, rarity: "common", lootWeight: 100 },
+    { name: "Budget Closer", itemValueGp: 300, rarity: "common", lootWeight: 1 },
+    { name: "Overreach", itemValueGp: 700, rarity: "common", lootWeight: 100 }
+  ],
+  focusedPickState,
+  "spend"
+);
+assert.equal(
+  focusedPick?.name,
+  "Budget Closer",
+  "When the result is still outside tolerance, budget-focused choice should prefer a near-target closer over high-weight filler."
 );
 
 const jackpotState = {

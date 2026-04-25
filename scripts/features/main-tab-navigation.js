@@ -13,7 +13,8 @@ export function createMainTabNavigator({
   getResponsiveWindowOptions,
   setActiveRestMainTab,
   queueManagedAudioMixPlaybackResync,
-  writePoBrowserHistoryEntry
+  writePoBrowserHistoryEntry,
+  openRestWatchPlayerApp
 } = {}) {
   function openMainTab(tabId, renderOptions = { force: true }) {
     const normalized = normalizeMainTabId(tabId, "rest-watch");
@@ -22,7 +23,7 @@ export function createMainTabNavigator({
       tabId,
       normalized,
       template: getTemplateForMainTab?.(normalized),
-      isActualGM: Boolean(typeof game !== "undefined" && game.user?.isGM),  // Actual GM status; canAccessGmPage for permissions
+      isActualGM: Boolean(typeof game !== "undefined" && game.user?.isGM), // Actual GM status; canAccessGmPage for permissions
       canAccessGmPage: Boolean(canAccessGmPage?.())
     });
 
@@ -72,6 +73,16 @@ export function createMainTabNavigator({
     }
 
     if (operationsShellApp?.element?.isConnected) void operationsShellApp.close();
+
+    if (!canAccessAllPlayerOps?.() && typeof openRestWatchPlayerApp === "function") {
+      const restWatchApp = getAppInstance?.(appInstanceKeys?.REST_WATCH);
+      if (restWatchApp?.element?.isConnected) void restWatchApp.close();
+      setActiveRestMainTab?.("rest-watch");
+      const app = openRestWatchPlayerApp();
+      queueManagedAudioMixPlaybackResync?.();
+      if (!suppressHistory) writePoBrowserHistoryEntry?.({ type: "player", tab: "rest-watch" });
+      return app;
+    }
 
     setActiveRestMainTab?.("rest-watch");
     const restWatchApp = getAppInstance?.(appInstanceKeys?.REST_WATCH);
