@@ -17,6 +17,7 @@ export function createAudioStore({
   refreshScopeKeys = {},
   audioLibraryUiState,
   audioLibraryDefaultSource = "data",
+  audioLibraryBlockedSources = [],
   audioLibraryVersion = 1,
   audioLibraryHiddenTrackStoreVersion = 1,
   audioLibraryExtensions = [],
@@ -84,6 +85,17 @@ export function createAudioStore({
 
   function normalizeAudioLibrarySource(value) {
     const normalized = String(value ?? "").trim();
+    const normalizedKey = normalized.toLowerCase();
+    if (
+      audioLibraryBlockedSources.some(
+        (source) =>
+          String(source ?? "")
+            .trim()
+            .toLowerCase() === normalizedKey
+      )
+    ) {
+      return audioLibraryDefaultSource;
+    }
     return normalized || audioLibraryDefaultSource;
   }
 
@@ -98,7 +110,7 @@ export function createAudioStore({
     const normalizedStore = normalizeStoredAudioLibraryValue(store, { allowArray: true });
     const trackIdsSource = Array.isArray(normalizedStore)
       ? normalizedStore
-      : normalizedStore?.trackIds ?? normalizedStore?.hiddenTrackIds ?? normalizedStore?.ids ?? [];
+      : (normalizedStore?.trackIds ?? normalizedStore?.hiddenTrackIds ?? normalizedStore?.ids ?? []);
     return {
       version: audioLibraryHiddenTrackStoreVersion,
       trackIds: normalizeAudioMixPresetTrackIds(trackIdsSource)
@@ -118,7 +130,9 @@ export function createAudioStore({
     const usageFocus = isCustom
       ? normalizeAudioLibraryUsage(input.usageFocus ?? preferredUsage[0] ?? "general")
       : normalizeAudioLibraryUsage(preferredUsage[0] ?? "all");
-    const playbackMode = normalizeAudioMixPlaybackMode(input.playbackMode ?? (Boolean(input.repeat) ? "repeat" : "single"));
+    const playbackMode = normalizeAudioMixPlaybackMode(
+      input.playbackMode ?? (Boolean(input.repeat) ? "repeat" : "single")
+    );
     const channel = normalizeAudioMixChannel(input.channel ?? inferAudioMixChannelForKind(kindFocus));
     const volumeRaw = Number(input.volume ?? 0.5);
     const fadeRaw = Number(input.fade ?? 1200);
@@ -127,8 +141,8 @@ export function createAudioStore({
       id: String(input.id ?? "").trim() || (typeof randomId === "function" ? randomId() : `audio-${Date.now()}`),
       label: String(input.label ?? "").trim() || "New Mix",
       description: String(input.description ?? "").trim() || "Custom ambient playlist.",
-      preferredKinds: preferredKinds.length > 0 ? preferredKinds : (kindFocus !== "all" ? [kindFocus] : []),
-      preferredUsage: preferredUsage.length > 0 ? preferredUsage : (usageFocus !== "all" ? [usageFocus] : []),
+      preferredKinds: preferredKinds.length > 0 ? preferredKinds : kindFocus !== "all" ? [kindFocus] : [],
+      preferredUsage: preferredUsage.length > 0 ? preferredUsage : usageFocus !== "all" ? [usageFocus] : [],
       kindFocus,
       usageFocus,
       searchTokens: normalizeAudioMixPresetSearchTokens(input.searchTokens),
@@ -138,7 +152,7 @@ export function createAudioStore({
       repeat: playbackMode === "repeat",
       playbackMode,
       isCustom,
-      trackIds: (isCustom || allowTrackIds) ? normalizeAudioMixPresetTrackIds(input.trackIds) : []
+      trackIds: isCustom || allowTrackIds ? normalizeAudioMixPresetTrackIds(input.trackIds) : []
     };
   }
 
@@ -172,28 +186,30 @@ export function createAudioStore({
     const normalizedStore = normalizeStoredAudioLibraryValue(store, { allowArray: true });
     const presetSource = Array.isArray(normalizedStore)
       ? normalizedStore
-      : normalizedStore?.presets ?? normalizedStore?.customPresets ?? [];
+      : (normalizedStore?.presets ?? normalizedStore?.customPresets ?? []);
     const presets = Array.isArray(presetSource)
-      ? presetSource
-        .map((entry) => normalizeAudioMixPresetDefinition(entry, { isCustom: true }))
-        .filter(Boolean)
+      ? presetSource.map((entry) => normalizeAudioMixPresetDefinition(entry, { isCustom: true })).filter(Boolean)
       : [];
     const overrideCandidate = Array.isArray(normalizedStore)
       ? null
-      : normalizedStore?.overrides ?? normalizedStore?.builtInOverrides ?? null;
-    const overrideSource = (overrideCandidate && typeof overrideCandidate === "object" && !Array.isArray(overrideCandidate))
-      ? overrideCandidate
-      : {};
+      : (normalizedStore?.overrides ?? normalizedStore?.builtInOverrides ?? null);
+    const overrideSource =
+      overrideCandidate && typeof overrideCandidate === "object" && !Array.isArray(overrideCandidate)
+        ? overrideCandidate
+        : {};
     const overrides = {};
     for (const preset of audioMixBuiltInPresets) {
       const entry = overrideSource?.[preset.id];
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      const normalized = normalizeAudioMixPresetDefinition({
-        ...preset,
-        ...entry,
-        id: preset.id,
-        label: preset.label
-      }, { isCustom: false, allowTrackIds: true });
+      const normalized = normalizeAudioMixPresetDefinition(
+        {
+          ...preset,
+          ...entry,
+          id: preset.id,
+          label: preset.label
+        },
+        { isCustom: false, allowTrackIds: true }
+      );
       overrides[preset.id] = serializeAudioMixPresetForStore(normalized, { includeIdentity: false });
     }
     return {
@@ -213,26 +229,24 @@ export function createAudioStore({
     return {
       version: 1,
       catalog: normalizeAudioLibraryCatalog(
-        normalizedValue?.catalog
-        ?? normalizedValue?.audioLibraryCatalog
-        ?? normalizedValue?.libraryCatalog
-        ?? buildDefaultAudioLibraryCatalog()
+        normalizedValue?.catalog ??
+          normalizedValue?.audioLibraryCatalog ??
+          normalizedValue?.libraryCatalog ??
+          buildDefaultAudioLibraryCatalog()
       ),
       hiddenTracks: normalizeAudioLibraryHiddenTrackStore(
-        normalizedValue?.hiddenTracks
-        ?? normalizedValue?.audioLibraryHiddenTracks
-        ?? buildDefaultAudioLibraryHiddenTrackStore()
+        normalizedValue?.hiddenTracks ??
+          normalizedValue?.audioLibraryHiddenTracks ??
+          buildDefaultAudioLibraryHiddenTrackStore()
       ),
       mixPresets: normalizeAudioMixPresetStore(
-        normalizedValue?.mixPresets
-        ?? normalizedValue?.audioMixPresets
-        ?? normalizedValue?.presetStore
-        ?? buildDefaultAudioMixPresetStore()
+        normalizedValue?.mixPresets ??
+          normalizedValue?.audioMixPresets ??
+          normalizedValue?.presetStore ??
+          buildDefaultAudioMixPresetStore()
       ),
       selectedMixPresetId: String(
-        normalizedValue?.selectedMixPresetId
-        ?? normalizedValue?.selectedPresetId
-        ?? ""
+        normalizedValue?.selectedMixPresetId ?? normalizedValue?.selectedPresetId ?? ""
       ).trim()
     };
   }
@@ -259,9 +273,9 @@ export function createAudioStore({
 
   function updateSharedAudioState(mutator) {
     const current = readSharedAudioState();
-    const next = normalizeSharedAudioState(typeof mutator === "function"
-      ? (mutator(deepCloneValue(current, foundryRef)) ?? current)
-      : current);
+    const next = normalizeSharedAudioState(
+      typeof mutator === "function" ? (mutator(deepCloneValue(current, foundryRef)) ?? current) : current
+    );
     return writeSharedAudioState(next);
   }
 
@@ -296,10 +310,7 @@ export function createAudioStore({
     const secondary = normalizeAudioLibraryHiddenTrackStore(secondaryStore);
     return {
       version: audioLibraryHiddenTrackStoreVersion,
-      trackIds: normalizeAudioMixPresetTrackIds([
-        ...secondary.trackIds,
-        ...primary.trackIds
-      ])
+      trackIds: normalizeAudioMixPresetTrackIds([...secondary.trackIds, ...primary.trackIds])
     };
   }
 
@@ -361,68 +372,67 @@ export function createAudioStore({
     const store = getStoredAudioMixPresetStore();
     return audioMixBuiltInPresets.map((preset) => {
       const override = store?.overrides?.[preset.id] ?? {};
-      return normalizeAudioMixPresetDefinition({
-        ...preset,
-        ...override,
-        id: preset.id,
-        label: preset.label
-      }, { isCustom: false, allowTrackIds: true });
+      return normalizeAudioMixPresetDefinition(
+        {
+          ...preset,
+          ...override,
+          id: preset.id,
+          label: preset.label
+        },
+        { isCustom: false, allowTrackIds: true }
+      );
     });
   }
 
   function normalizeAudioLibraryItem(entry = {}) {
     const normalizedEntry = normalizeStoredAudioLibraryValue(entry);
     const path = normalizeAudioLibraryRootPath(
-      normalizedEntry.path
-      ?? normalizedEntry.file
-      ?? normalizedEntry.src
-      ?? normalizedEntry.url
-      ?? normalizedEntry.relativePath
+      normalizedEntry.path ??
+        normalizedEntry.file ??
+        normalizedEntry.src ??
+        normalizedEntry.url ??
+        normalizedEntry.relativePath
     );
     if (!path) return null;
     const id = normalizeAudioLibraryRootPath(normalizedEntry.id ?? normalizedEntry.trackId ?? path) || path;
-    const name = safeDecodeAudioText(String(
-      normalizedEntry.name
-      ?? normalizedEntry.label
-      ?? normalizedEntry.title
-      ?? ""
-    ).trim() || String(path.split("/").pop() ?? path).trim());
-    const category = safeDecodeAudioText(String(
-      normalizedEntry.category
-      ?? normalizedEntry.group
-      ?? normalizedEntry.folder
-      ?? "Uncategorized"
-    ).trim() || "Uncategorized");
-    const subcategory = safeDecodeAudioText(String(
-      normalizedEntry.subcategory
-      ?? normalizedEntry.subCategory
-      ?? normalizedEntry.collection
-      ?? ""
-    ).trim());
+    const name = safeDecodeAudioText(
+      String(normalizedEntry.name ?? normalizedEntry.label ?? normalizedEntry.title ?? "").trim() ||
+        String(path.split("/").pop() ?? path).trim()
+    );
+    const category = safeDecodeAudioText(
+      String(normalizedEntry.category ?? normalizedEntry.group ?? normalizedEntry.folder ?? "Uncategorized").trim() ||
+        "Uncategorized"
+    );
+    const subcategory = safeDecodeAudioText(
+      String(normalizedEntry.subcategory ?? normalizedEntry.subCategory ?? normalizedEntry.collection ?? "").trim()
+    );
     const kind = normalizeAudioLibraryKind(normalizedEntry.kind === "all" ? "" : normalizedEntry.kind);
     const usage = normalizeAudioLibraryUsage(normalizedEntry.usage === "all" ? "" : normalizedEntry.usage);
-    const extensionRaw = String(normalizedEntry.extension ?? normalizedEntry.ext ?? "").trim().replace(/^\./, "").toLowerCase();
+    const extensionRaw = String(normalizedEntry.extension ?? normalizedEntry.ext ?? "")
+      .trim()
+      .replace(/^\./, "")
+      .toLowerCase();
     const extension = audioLibraryExtensions.includes(extensionRaw)
       ? extensionRaw
-      : String(path.split(".").pop() ?? "mp3").trim().toLowerCase() || "mp3";
+      : String(path.split(".").pop() ?? "mp3")
+          .trim()
+          .toLowerCase() || "mp3";
     const durationSeconds = normalizeAudioLibraryDurationSeconds(
-      normalizedEntry.durationSeconds
-      ?? normalizedEntry.duration
-      ?? normalizedEntry.metadata?.durationSeconds
-      ?? normalizedEntry.metadata?.duration
-      ?? 0
+      normalizedEntry.durationSeconds ??
+        normalizedEntry.duration ??
+        normalizedEntry.metadata?.durationSeconds ??
+        normalizedEntry.metadata?.duration ??
+        0
     );
     const durationResolvedAt = normalizeAudioLibraryDurationResolvedAt(
-      normalizedEntry.durationResolvedAt
-      ?? normalizedEntry.metadata?.durationResolvedAt
-      ?? 0
+      normalizedEntry.durationResolvedAt ?? normalizedEntry.metadata?.durationResolvedAt ?? 0
     );
     const tagSource = normalizedEntry.tags ?? normalizedEntry.keywords ?? normalizedEntry.labels ?? [];
     const tags = Array.isArray(tagSource)
       ? tagSource
-        .map((tag) => safeDecodeAudioText(String(tag ?? "").trim()))
-        .filter((tag, index, rows) => tag && rows.indexOf(tag) === index)
-        .slice(0, 12)
+          .map((tag) => safeDecodeAudioText(String(tag ?? "").trim()))
+          .filter((tag, index, rows) => tag && rows.indexOf(tag) === index)
+          .slice(0, 12)
       : [];
     return {
       id,
@@ -443,39 +453,39 @@ export function createAudioStore({
     const normalizedCatalog = normalizeStoredAudioLibraryValue(catalog, { allowArray: true });
     const itemSource = Array.isArray(normalizedCatalog)
       ? normalizedCatalog
-      : normalizedCatalog?.items
-        ?? normalizedCatalog?.tracks
-        ?? normalizedCatalog?.entries
-        ?? normalizedCatalog?.catalog
-        ?? [];
+      : (normalizedCatalog?.items ??
+        normalizedCatalog?.tracks ??
+        normalizedCatalog?.entries ??
+        normalizedCatalog?.catalog ??
+        []);
     const items = Array.isArray(itemSource)
       ? itemSource.map((entry) => normalizeAudioLibraryItem(entry)).filter(Boolean)
       : [];
     const scannedAtRaw = Number(
       Array.isArray(normalizedCatalog)
         ? 0
-        : normalizedCatalog?.scannedAt
-          ?? normalizedCatalog?.updatedAt
-          ?? normalizedCatalog?.lastScannedAt
-          ?? 0
+        : (normalizedCatalog?.scannedAt ?? normalizedCatalog?.updatedAt ?? normalizedCatalog?.lastScannedAt ?? 0)
     );
     return {
       version: audioLibraryVersion,
       source: normalizeAudioLibrarySource(
         Array.isArray(normalizedCatalog)
           ? ""
-          : normalizedCatalog?.source ?? normalizedCatalog?.activeSource ?? normalizedCatalog?.fileSource
+          : (normalizedCatalog?.source ?? normalizedCatalog?.activeSource ?? normalizedCatalog?.fileSource)
       ),
       rootPath: normalizeAudioLibraryRootPath(
         Array.isArray(normalizedCatalog)
           ? ""
-          : normalizedCatalog?.rootPath ?? normalizedCatalog?.path ?? normalizedCatalog?.basePath ?? normalizedCatalog?.libraryRoot
+          : (normalizedCatalog?.rootPath ??
+              normalizedCatalog?.path ??
+              normalizedCatalog?.basePath ??
+              normalizedCatalog?.libraryRoot)
       ),
       scannedAt: Number.isFinite(scannedAtRaw) ? scannedAtRaw : 0,
       scannedBy: String(
         Array.isArray(normalizedCatalog)
           ? ""
-          : normalizedCatalog?.scannedBy ?? normalizedCatalog?.updatedBy ?? normalizedCatalog?.lastScannedBy ?? ""
+          : (normalizedCatalog?.scannedBy ?? normalizedCatalog?.updatedBy ?? normalizedCatalog?.lastScannedBy ?? "")
       ).trim(),
       items
     };
@@ -489,18 +499,22 @@ export function createAudioStore({
   }
 
   function getAllAudioMixPresets() {
-    return [
-      ...getBuiltInAudioMixPresets(),
-      ...getStoredAudioMixPresetStore().presets
-    ];
+    return [...getBuiltInAudioMixPresets(), ...getStoredAudioMixPresetStore().presets];
   }
 
   function getAudioMixPresetById(value) {
     const normalized = String(value ?? "").trim();
     const presets = getAllAudioMixPresets();
-    return presets.find((preset) => String(preset.id ?? "").trim() === normalized)
-      ?? presets.find((preset) => String(preset.id ?? "").trim().toLowerCase() === normalized.toLowerCase())
-      ?? presets[0];
+    return (
+      presets.find((preset) => String(preset.id ?? "").trim() === normalized) ??
+      presets.find(
+        (preset) =>
+          String(preset.id ?? "")
+            .trim()
+            .toLowerCase() === normalized.toLowerCase()
+      ) ??
+      presets[0]
+    );
   }
 
   function getSelectedAudioMixPreset() {
@@ -533,7 +547,8 @@ export function createAudioStore({
     audioLibraryUiState.draft.rootPath = getAudioLibraryRootSetting();
     const sharedSelectedPresetId = String(sharedState.selectedMixPresetId ?? "").trim();
     if (sharedSelectedPresetId) {
-      audioLibraryUiState.selectedMixPresetId = getAudioMixPresetById(sharedSelectedPresetId)?.id ?? audioMixPresetDefaultId;
+      audioLibraryUiState.selectedMixPresetId =
+        getAudioMixPresetById(sharedSelectedPresetId)?.id ?? audioMixPresetDefaultId;
     }
   }
 
@@ -633,18 +648,18 @@ export function createAudioStore({
 
   async function updateStoredAudioLibraryHiddenTracks(mutator) {
     const current = getStoredAudioLibraryHiddenTrackStore();
-    const next = normalizeAudioLibraryHiddenTrackStore(typeof mutator === "function"
-      ? (mutator(deepCloneValue(current, foundryRef)) ?? current)
-      : current);
+    const next = normalizeAudioLibraryHiddenTrackStore(
+      typeof mutator === "function" ? (mutator(deepCloneValue(current, foundryRef)) ?? current) : current
+    );
     await saveAudioLibraryHiddenTrackStore(next);
     return next;
   }
 
   async function updateStoredAudioMixPresets(mutator) {
     const current = getStoredAudioMixPresetStore();
-    const next = normalizeAudioMixPresetStore(typeof mutator === "function"
-      ? (mutator(deepCloneValue(current, foundryRef)) ?? current)
-      : current);
+    const next = normalizeAudioMixPresetStore(
+      typeof mutator === "function" ? (mutator(deepCloneValue(current, foundryRef)) ?? current) : current
+    );
     await saveAudioMixPresetStore(next);
     const selectedId = String(audioLibraryUiState?.selectedMixPresetId ?? "").trim();
     const nextPresetIds = [

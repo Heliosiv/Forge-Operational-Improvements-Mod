@@ -11230,6 +11230,7 @@ const audioStore = createAudioStore({
   refreshScopeKeys: REFRESH_SCOPE_KEYS,
   audioLibraryUiState,
   audioLibraryDefaultSource: AUDIO_LIBRARY_DEFAULT_SOURCE,
+  audioLibraryBlockedSources: [AUDIO_LIBRARY_FORGE_SOURCE],
   audioLibraryVersion: AUDIO_LIBRARY_VERSION,
   audioLibraryHiddenTrackStoreVersion: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
   audioLibraryExtensions: AUDIO_LIBRARY_EXTENSIONS,

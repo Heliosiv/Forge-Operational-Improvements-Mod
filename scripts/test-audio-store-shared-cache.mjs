@@ -33,11 +33,13 @@ function createStore({
     selectedMixPresetId: "travel"
   }
 } = {}) {
-  const storageRef = createStorageRef(sharedState == null
-    ? {}
-    : {
-      "party-operations.sharedAudioState": JSON.stringify(sharedState)
-    });
+  const storageRef = createStorageRef(
+    sharedState == null
+      ? {}
+      : {
+          "party-operations.sharedAudioState": JSON.stringify(sharedState)
+        }
+  );
 
   const store = createAudioStore({
     storageRef,
@@ -55,20 +57,39 @@ function createStore({
     refreshScopeKeys: {},
     audioLibraryUiState,
     audioLibraryDefaultSource: "data",
+    audioLibraryBlockedSources: ["forgevtt"],
     audioLibraryVersion: 1,
     audioLibraryHiddenTrackStoreVersion: 1,
     audioLibraryExtensions: ["mp3", "ogg"],
     audioMixPresetStoreVersion: 1,
     audioMixBuiltInPresets: [
-      { id: "travel", label: "Travel", description: "Travel mix.", preferredKinds: ["music"], preferredUsage: ["travel"], repeat: true },
-      { id: "night", label: "Night", description: "Night mix.", preferredKinds: ["music"], preferredUsage: ["rest"], repeat: true }
+      {
+        id: "travel",
+        label: "Travel",
+        description: "Travel mix.",
+        preferredKinds: ["music"],
+        preferredUsage: ["travel"],
+        repeat: true
+      },
+      {
+        id: "night",
+        label: "Night",
+        description: "Night mix.",
+        preferredKinds: ["music"],
+        preferredUsage: ["rest"],
+        repeat: true
+      }
     ],
     audioMixPresetDefaultId: "travel",
     normalizeAudioMixChannel(value) {
       return String(value ?? "music").trim() || "music";
     },
     normalizeAudioMixPlaybackMode(value) {
-      return String(value ?? "").trim().toLowerCase() === "single" ? "single" : "repeat";
+      return String(value ?? "")
+        .trim()
+        .toLowerCase() === "single"
+        ? "single"
+        : "repeat";
     },
     inferAudioMixChannelForKind() {
       return "music";
@@ -76,17 +97,26 @@ function createStore({
     normalizeAudioMixPresetSearchTokens(value) {
       return Array.isArray(value)
         ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean)
-        : String(value ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+        : String(value ?? "")
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean);
     },
     normalizeAudioLibraryRootPath(value) {
-      return String(value ?? "").trim().replace(/\\/g, "/");
+      return String(value ?? "")
+        .trim()
+        .replace(/\\/g, "/");
     },
     normalizeAudioLibraryKind(value) {
-      const normalized = String(value ?? "").trim().toLowerCase();
+      const normalized = String(value ?? "")
+        .trim()
+        .toLowerCase();
       return normalized || "all";
     },
     normalizeAudioLibraryUsage(value) {
-      const normalized = String(value ?? "").trim().toLowerCase();
+      const normalized = String(value ?? "")
+        .trim()
+        .toLowerCase();
       return normalized || "all";
     },
     normalizeAudioLibraryDurationSeconds(value) {
@@ -206,6 +236,31 @@ function createStore({
   assert.equal(sharedState.mixPresets.presets[0].id, "world-custom");
   assert.equal(sharedState.selectedMixPresetId, "world-custom");
   assert.equal(audioLibraryUiState.draft.rootPath, "assets/audio/world-pack");
+}
+
+{
+  const { store, audioLibraryUiState } = createStore({
+    worldValues: {
+      "party-operations.audioLibrarySource": "forgevtt"
+    },
+    sharedState: {
+      catalog: {
+        source: "forgevtt",
+        rootPath: "music/forge-pack",
+        items: []
+      }
+    },
+    audioLibraryUiState: {
+      draft: { source: "forgevtt", rootPath: "" },
+      selectedMixPresetId: "travel"
+    }
+  });
+
+  assert.equal(store.normalizeAudioLibrarySource("forgevtt"), "data");
+  assert.equal(store.getAudioLibraryDraftState().source, "data");
+
+  store.syncAudioLibraryDraftFromSettings();
+  assert.equal(audioLibraryUiState.draft.source, "data");
 }
 
 process.stdout.write("audio store shared-cache validation passed\n");
