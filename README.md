@@ -79,6 +79,18 @@ The release-readiness workflow inspects versioning, packaging tasks, release art
 
 For stable versions, release-readiness now applies stricter blocking rules by default for dirty worktrees and missing packaging artifacts.
 
+## Official Package Listing
+
+Forge Bazaar uses the official Foundry package listing, not only the GitHub `latest` release asset. After publishing a GitHub release, submit the same version to Foundry's Package Release API so Forge can see the update:
+
+```powershell
+$env:FOUNDRY_PACKAGE_RELEASE_TOKEN = "<package release token>"
+npm run publish:foundry:dry-run
+npm run publish:foundry
+```
+
+The Foundry package version entry should use the version-specific manifest URL, for example `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/download/v2.2.11/module.json`.
+
 ## Repository Release Flow
 
 Every deployment must update this README before publishing:

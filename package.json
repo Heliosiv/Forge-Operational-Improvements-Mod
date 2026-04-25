@@ -105,7 +105,9 @@
     "loot:audit-manifest:open": "npm run loot:audit-manifest && start \"\" reports\\loot-manifest-duplicates.csv",
     "loot:dedupe-manifest": "python scripts/loot-manifest-audit.py --dedupe --write --report reports/loot-manifest-audit.json --duplicates-csv reports/loot-manifest-duplicates.csv",
     "prepare:package": "node scripts/prepare-package.mjs --output dist/staging-public",
-    "prepare:release": "node scripts/build-release-package.mjs --output release"
+    "prepare:release": "node scripts/build-release-package.mjs --output release",
+    "publish:foundry": "node scripts/publish-foundry-package-release.mjs",
+    "publish:foundry:dry-run": "node scripts/publish-foundry-package-release.mjs --dry-run"
   },
   "repository": {
     "type": "git",
