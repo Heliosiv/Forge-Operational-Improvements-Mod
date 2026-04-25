@@ -4,7 +4,7 @@ Party Operations is a Foundry VTT module for running the table-facing logistics 
 
 ## Current Build
 
-The current repository manifest version is `2.2.8`.
+The current repository manifest version is `2.2.9`.
 
 ## What This Module Covers
 
@@ -20,7 +20,7 @@ The current repository manifest version is `2.2.8`.
 - Manifest: `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json`
 - Download: `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip`
 
-Install the manifest in Foundry or Forge, enable the module in your world, then open Party Operations from the scene controls or launcher.
+Install or update from the GitHub release manifest above. In Foundry or Forge, use the manifest URL for `Forge-Operational-Improvements-Mod`; do not install from a local zip unless you are testing an unpublished build. Enable the module in your world, then open Party Operations from the scene controls or launcher.
 
 ## Quick Start
 
@@ -81,6 +81,12 @@ For stable versions, release-readiness now applies stricter blocking rules by de
 
 ## Repository Release Flow
 
+Every deployment must update this README before publishing:
+
+- Update `Current Build` to match the `module.json` release version.
+- Keep the install/update instructions pointed at the GitHub release manifest for `Forge-Operational-Improvements-Mod`.
+- Treat `release/module.zip` as a generated release artifact. The live install/update path is the GitHub release asset, not a manually shared local zip.
+
 Validate the module before publishing:
 
 ```powershell
@@ -96,7 +102,7 @@ npm run check:baseline
 Create a release with the helper script:
 
 ```powershell
-./scripts/release.ps1 -Version 2.2.7 -Message "Release"
+./scripts/release.ps1 -Version 2.2.9 -Message "Release"
 ```
 
 GitHub Actions runs full validation on pull requests to `main`. Tagged stable releases matching `v*.*.*` rebuild `release/module.zip` and publish the GitHub Release assets used by the manifest URLs above. Pushes to `main` still validate and package, but they no longer publish test-channel artifacts as the stable release.

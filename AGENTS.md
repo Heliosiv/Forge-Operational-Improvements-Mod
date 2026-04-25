@@ -11,6 +11,7 @@ Run these tools automatically when they apply:
 - After any JavaScript change, run `npm run lint` and the closest focused `npm run check:*` script for the touched feature.
 - After touching `module.json`, templates, styles, pack paths, or release metadata, run `npm run check:baseline`.
 - Before release/package work, run `npm run check` and then `npm run prepare:release`.
+- For every deployment/release, update `README.md` so `Current Build` matches `module.json` and the install/update path stays pointed at the GitHub release manifest for `Forge-Operational-Improvements-Mod`, not a manually shared local zip.
 - For formatting-supported files you touched (`.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.css`), run `npm run format:check -- <touched-files>`. Use `npm run format -- <touched-files>` to format only those explicit files.
 - Do not run Prettier on Foundry `.hbs` templates unless a future template-aware formatter is added; this repo uses Handlebars partials and inline blocks that Prettier rejects.
 - If performance is the topic, do not rely only on `npm run check` timing. Run direct `node scripts/test-*.mjs` commands multiple times around the feature path being measured.
