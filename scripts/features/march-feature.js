@@ -579,7 +579,8 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
   const draggableEntries = [
     ...Array.from(html.querySelectorAll(".po-entry")),
     ...Array.from(html.querySelectorAll(".po-march-board-card[data-actor-id]")),
-    ...Array.from(html.querySelectorAll(".po-march-board-staging-chip[data-actor-id]"))
+    ...Array.from(html.querySelectorAll(".po-march-board-staging-chip[data-actor-id]")),
+    ...Array.from(html.querySelectorAll(".po-march-spacing-token[data-actor-id]"))
   ];
 
   draggableEntries.forEach((entry) => {
@@ -612,7 +613,8 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
 
   const dropTargets = [
     ...Array.from(html.querySelectorAll(".po-rank-col")),
-    ...Array.from(html.querySelectorAll(".po-march-board-cell[data-rank-id]"))
+    ...Array.from(html.querySelectorAll(".po-march-board-cell[data-rank-id]")),
+    ...Array.from(html.querySelectorAll(".po-march-spacing-cell[data-rank-id]"))
   ];
 
   dropTargets.forEach((column) => {
@@ -641,10 +643,14 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
 
       let insertIndex = Number.parseInt(String(column.dataset.insertIndex ?? ""), 10);
       if (!Number.isInteger(insertIndex) || insertIndex < 0) {
-        const targetEntry = event.target?.closest?.(".po-entry") ?? event.target?.closest?.(".po-march-board-card");
+        const targetEntry =
+          event.target?.closest?.(".po-entry") ??
+          event.target?.closest?.(".po-march-board-card") ??
+          event.target?.closest?.(".po-march-spacing-token");
         const entryList = [
           ...Array.from(column.querySelectorAll(".po-entry")),
-          ...Array.from(column.querySelectorAll(".po-march-board-card"))
+          ...Array.from(column.querySelectorAll(".po-march-board-card")),
+          ...Array.from(column.querySelectorAll(".po-march-spacing-token"))
         ];
         insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
       }

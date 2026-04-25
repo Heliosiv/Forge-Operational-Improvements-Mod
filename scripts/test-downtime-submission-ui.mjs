@@ -42,14 +42,20 @@ assert.match(
 
 assert.match(
   moduleSource,
-  /async function runGatherResourceCheck\(\) \{[\s\S]*if \(!game\.user\?\.isGM\) \{[\s\S]*Wait for the GM to call for gather requests\.[\s\S]*GM must initiate gather requests\./,
-  "Players should not be able to self-initiate the gather request dialog from the operations page."
+  /async function runGatherResourceCheck\(\) \{[\s\S]*if \(!game\.user\?\.isGM\) \{[\s\S]*Only the GM can assign gather checks\.[\s\S]*GM must assign gather checks\.[\s\S]*return promptGatherResourceDialog\(\{[\s\S]*showDialog: true,[\s\S]*applyToLedger: true,[\s\S]*rollMode: isMonksTokenBarActive\(\) \? "prefer-monks" : "native"/,
+  "GM gather calls should open the manual assignment dialog instead of broadcasting player request prompts."
 );
 
 assert.match(
   moduleSource,
   /async function promptPlayerGatherRequestDialog\(options = \{\}\) \{[\s\S]*const promptedByUserId = String\(options\?\.promptedByUserId \?\? ""\)\.trim\(\);[\s\S]*!isActiveGmUserId\(promptedByUserId\)[\s\S]*GM must initiate gather requests\./,
   "Player gather request dialogs should require a broadcast prompt from an active GM."
+);
+
+assert.match(
+  moduleSource,
+  /function getGatherSelectableActorsForUser\(user = game\.user\) \{[\s\S]*const hasSharedOpsAccess = canAccessAllPlayerOps\(user\);[\s\S]*!hasSharedOpsAccess && !canUserManageDowntimeActor\(user, actor\)[\s\S]*function canUserRequestGatherForActor\(user, actor\) \{[\s\S]*canAccessAllPlayerOps\(user\) \|\| canUserManageDowntimeActor\(user, actor\)[\s\S]*async function applyPlayerGatherRequest\(message, requesterRef = null\) \{[\s\S]*!canUserRequestGatherForActor\(requester, actor\)/,
+  "Gather calls should let shared player-ops users choose party actors and have the GM accept those requests."
 );
 
 assert.match(
@@ -138,14 +144,14 @@ assert.doesNotMatch(
 
 assert.match(
   restWatchTemplate,
-  /Pending Requests[\s\S]*Gather History/,
-  "Gather panel should render the compact queue-first section order: pending requests, then history."
+  /Assign gatherers manually[\s\S]*Assign Gather[\s\S]*Check[\s\S]*Use Monk's TokenBar[\s\S]*Gather History/,
+  "Gather panel should prioritize the manual GM assignment flow before history."
 );
 
 assert.match(
   restWatchTemplate,
   /\{\{#if @root\.isGM\}\}[\s\S]*data-action="gather-resource-check"[\s\S]*\{\{\/if\}\}/,
-  "Call Gather buttons should only render for the GM."
+  "Assign Gather buttons should only render for the GM."
 );
 
 assert.match(

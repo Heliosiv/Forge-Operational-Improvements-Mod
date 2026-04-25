@@ -462,6 +462,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   const nonGmHandler = createPartyOperationsSocketMessageHandler({
     game: {
       user: {
+        id: "player-1",
         isGM: false
       },
       users: {
@@ -492,7 +493,14 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   await nonGmHandler({
     type: "players:openGatherResources",
     gmUserId: "gm-1",
+    userId: "player-1",
     options: { promptedBy: "GM", promptedByUserId: "gm-1", promptedAt: 1 }
+  });
+  await nonGmHandler({
+    type: "players:openGatherResources",
+    gmUserId: "gm-1",
+    userId: "player-2",
+    options: { promptedBy: "GM", promptedByUserId: "gm-1", promptedAt: 2 }
   });
   await nonGmHandler({ type: "ops:gather-request" });
   await nonGmHandler({ type: "ops:gather-yield-response", requestId: "ignored" });

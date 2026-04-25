@@ -959,7 +959,7 @@
               <div class="po-collapsible-head">
                 <div>
                   <div class="po-section-title">Resources</div>
-                  <div class="po-hint">Call players to choose PC-owned gatherers, then resolve incoming request cards.</div>
+                  <div class="po-hint">Assign gatherers manually, set the hidden difficulty, then push the Survival roll through Monk's TokenBar.</div>
                 </div>
                 <div class="po-pill">{{operations.resources.gatherRequests.count}} pending</div>
               </div>
@@ -969,15 +969,17 @@
               </div>
               <div class="po-op-action-row">
                 {{#if @root.isGM}}
-                <button type="button" class="po-btn po-btn-sm po-gather-launch-btn" data-action="gather-resource-check" title="Call players to choose a PC-owned character for gathering">
+                <button type="button" class="po-btn po-btn-sm po-gather-launch-btn" data-action="gather-resource-check" title="Assign a gatherer and push the Survival roll">
                   <i class="fa-solid fa-seedling" aria-hidden="true"></i>
                   <span class="po-gather-launch-btn-copy">
-                    <span class="po-gather-launch-btn-main">Call Gather</span>
-                    <span class="po-gather-launch-btn-sub">Player Requests</span>
+                    <span class="po-gather-launch-btn-main">Assign Gather</span>
+                    <span class="po-gather-launch-btn-sub">Check</span>
                   </span>
                 </button>
                 {{/if}}
               </div>
+              <div class="po-op-summary">Use Monk's TokenBar for the player-facing roll. Party Operations records the result and adds gathered food or water after the roll resolves.</div>
+              {{#if operations.resources.gatherRequests.hasRows}}
               <div class="po-op-divider"></div>
               <div class="po-gather-history-panel po-gather-queue-panel">
                 <div class="po-section-head-row po-gather-history-head">
@@ -1034,6 +1036,7 @@
                 <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherRequests.emptyMessage}}</div>
                 {{/if}}
               </div>
+              {{/if}}
 
               <div class="po-op-divider"></div>
               <details class="po-panel-disclosure po-gather-history-disclosure">

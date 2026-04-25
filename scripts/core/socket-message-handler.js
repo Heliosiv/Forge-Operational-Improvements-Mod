@@ -15,6 +15,10 @@ export function createPartyOperationsSocketMessageHandler({
 } = {}) {
   return async function handlePartyOperationsSocketMessage(message) {
     if (message?.type === "players:openGatherResources") {
+      const targetUserId = String(message?.userId ?? "").trim();
+      const currentUserId = String(game?.user?.id ?? "").trim();
+      const broadcast = !targetUserId || targetUserId === "*" || targetUserId.toLowerCase() === "all";
+      if (!broadcast && targetUserId !== currentUserId) return;
       const gmUserId = String(message?.gmUserId ?? message?.options?.promptedByUserId ?? "").trim();
       if (!game?.user?.isGM && isActiveGmUserId(gmUserId, game))
         await promptPlayerGatherRequest?.(message?.options ?? {});

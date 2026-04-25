@@ -2059,9 +2059,10 @@ function isStewardPoolInfinite(pool) {
 function getGatherSelectableActorsForUser(user = game.user) {
   if (!user) return [];
   const unique = new Map();
+  const hasSharedOpsAccess = canAccessAllPlayerOps(user);
   const addActor = (actor) => {
     if (!actor || actor.type !== "character" || !actor.id) return;
-    if (!canUserManageDowntimeActor(user, actor)) return;
+    if (!hasSharedOpsAccess && !canUserManageDowntimeActor(user, actor)) return;
     unique.set(String(actor.id), actor);
   };
 
@@ -33335,6 +33336,10 @@ function canUserManageDowntimeActor(user, actor) {
   return canUserOwnActor(user, actor, { requireCharacter: true });
 }
 
+function canUserRequestGatherForActor(user, actor) {
+  return Boolean(actor) && (canAccessAllPlayerOps(user) || canUserManageDowntimeActor(user, actor));
+}
+
 function normalizeDowntimeCheckAbilityKey(value, fallback = "int") {
   const normalized = String(value ?? "")
     .trim()
@@ -38183,6 +38188,20 @@ function getMonksTokenBarApi() {
   return game.MonksTokenBar ?? globalThis.MonksTokenBar ?? game.modules.get("monks-tokenbar")?.api ?? null;
 }
 
+function normalizeMonksRequestOption(request) {
+  if (Array.isArray(request)) return request;
+  if (request && typeof request === "object") return [request];
+  const value = String(request ?? "skill:sur").trim() || "skill:sur";
+  if (value.startsWith("dice:")) {
+    const key = value.slice("dice:".length).trim() || "1d20";
+    return [{ type: "dice", key, slug: `dice:${key}` }];
+  }
+  const [rawType, ...keyParts] = value.split(":");
+  const type = String(keyParts.length > 0 ? rawType : "skill").trim() || "skill";
+  const key = String(keyParts.length > 0 ? keyParts.join(":") : rawType).trim() || "sur";
+  return [{ type, key }];
+}
+
 function extractRollTotalFromMonksResult(result, actorId) {
   if (!result) return null;
   const candidates = [];
@@ -38228,9 +38247,10 @@ async function requestMonksActorsCheck(actors, request, dc, flavor, options = {}
   if (!api || typeof api.requestRoll !== "function") return [];
 
   const requestType = String(request ?? "skill:sur").trim() || "skill:sur";
+  const requestOption = normalizeMonksRequestOption(requestType);
   const showDc = Boolean(options.showDc);
   const requestOptions = {
-    request: requestType,
+    request: requestOption,
     dc,
     flavor,
     silent: false,
@@ -38242,7 +38262,9 @@ async function requestMonksActorsCheck(actors, request, dc, flavor, options = {}
   };
 
   const actorIds = actorTargets.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean);
-  const tokenTargets = actorTargets.flatMap((actor) => actor.getActiveTokens?.(true, true) ?? []);
+  const tokenTargets = actorTargets
+    .flatMap((actor) => actor.getActiveTokens?.(true, true) ?? [])
+    .filter((token) => token?.actor);
   const requestTargets = tokenTargets.length > 0 ? tokenTargets : actorTargets;
 
   const buildResults = (result) => {
@@ -38284,9 +38306,9 @@ async function requestMonksActorsCheck(actors, request, dc, flavor, options = {}
     };
 
     const attempts = [
-      () => api.requestRoll(actorTargets, requestOptions),
       () => api.requestRoll(requestTargets, requestOptions),
-      () => api.requestRoll(actorTargets, requestType, requestOptions)
+      () => api.requestRoll(actorTargets, requestOptions),
+      () => api.requestRoll(requestTargets, requestType, requestOptions)
     ];
 
     for (const attempt of attempts) {
@@ -39051,7 +39073,7 @@ async function promptLocalGatherCheckRoll(message = {}) {
     );
   };
 
-  if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+  if (!actor || !canUserRequestGatherForActor(game.user, actor)) {
     sendResponse({ ok: false, blocked: true, reason: "Actor unavailable for player roll." });
     return false;
   }
@@ -39186,7 +39208,7 @@ async function applyPlayerGatherRequest(message, requesterRef = null) {
   const request = normalizeGatherRequestPayload(message?.request);
   if (!request.actorId) return;
   const actor = game.actors?.get?.(request.actorId) ?? null;
-  if (!actor || !canUserManageDowntimeActor(requester, actor)) return;
+  if (!actor || !canUserRequestGatherForActor(requester, actor)) return;
   request.actorName = String(actor.name ?? request.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
   request.requesterUserId = String(requester.id ?? "").trim();
   request.requesterName = String(requester.name ?? "Player").trim() || "Player";
@@ -40074,24 +40096,14 @@ function triggerGatherResourceButtonAnimation(element) {
 
 async function runGatherResourceCheck() {
   if (!game.user?.isGM) {
-    ui.notifications?.warn("Wait for the GM to call for gather requests.");
-    return { ok: false, blocked: true, reason: "GM must initiate gather requests." };
+    ui.notifications?.warn("Only the GM can assign gather checks.");
+    return { ok: false, blocked: true, reason: "GM must assign gather checks." };
   }
-  emitModuleSocket(
-    {
-      type: "players:openGatherResources",
-      userId: "*",
-      gmUserId: String(game.user?.id ?? "").trim(),
-      options: {
-        promptedBy: String(game.user?.name ?? "GM").trim() || "GM",
-        promptedByUserId: String(game.user?.id ?? "").trim(),
-        promptedAt: Date.now()
-      }
-    },
-    { channel: SOCKET_CHANNEL }
-  );
-  ui.notifications?.info("Gather resource call sent to players.");
-  return { ok: true, promptedPlayers: true };
+  return promptGatherResourceDialog({
+    showDialog: true,
+    applyToLedger: true,
+    rollMode: isMonksTokenBarActive() ? "prefer-monks" : "native"
+  });
 }
 
 async function submitQuickPlayerGatherRequest(options = {}) {
@@ -40113,7 +40125,7 @@ async function submitQuickPlayerGatherRequest(options = {}) {
 
   const preferredActorId = String(options?.actorId ?? game.user?.character?.id ?? "").trim();
   const actor = actors.find((entry) => String(entry?.id ?? "").trim() === preferredActorId) ?? actors[0] ?? null;
-  if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+  if (!actor || !canUserRequestGatherForActor(game.user, actor)) {
     ui.notifications?.warn("You can only request gather checks for a character you manage.");
     return { ok: false, blocked: true, reason: "Invalid actor." };
   }
@@ -40227,7 +40239,7 @@ async function promptPlayerGatherRequestDialog(options = {}) {
         callback: async (html) => {
           const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
           const actor = game.actors?.get?.(actorId) ?? null;
-          if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+          if (!actor || !canUserRequestGatherForActor(game.user, actor)) {
             ui.notifications?.warn("You can only request gather checks for a character you manage.");
             return;
           }
@@ -50004,11 +50016,33 @@ function buildMarchSpacingGridContext(state, formationBoard) {
     if (!actorsByCell.has(key)) actorsByCell.set(key, []);
     actorsByCell.get(key).push(actor);
   }
+  const boardRows = Array.isArray(formationBoard?.rows) ? formationBoard.rows : [];
+  const columnCount = Math.max(1, Number(formationBoard?.columnCount ?? 1) || 1);
+  const resolveSpacingCellTarget = (rowIndex, columnIndex) => {
+    const boardRowIndex = Math.max(
+      0,
+      Math.min(boardRows.length - 1, Math.floor(((rowIndex + 0.5) / size) * Math.max(1, boardRows.length)))
+    );
+    const boardColumnIndex = Math.max(
+      0,
+      Math.min(columnCount - 1, Math.floor(((columnIndex + 0.5) / size) * columnCount))
+    );
+    const rankId = String(boardRows[boardRowIndex]?.id ?? "middle").trim() || "middle";
+    const boardCells = Array.isArray(boardRows[boardRowIndex]?.cells) ? boardRows[boardRowIndex].cells : [];
+    const boardCell = boardCells.find((cell) => Number(cell?.column) === boardColumnIndex) ?? null;
+    return {
+      rankId,
+      cellIndex: boardColumnIndex,
+      insertIndex: Number.isInteger(Number(boardCell?.insertIndex)) ? Number(boardCell.insertIndex) : 0
+    };
+  };
 
   const rows = Array.from({ length: size }, (_, rowIndex) => ({
     cells: Array.from({ length: size }, (_, columnIndex) => {
       const cellActors = actorsByCell.get(`${rowIndex}:${columnIndex}`) ?? [];
+      const target = resolveSpacingCellTarget(rowIndex, columnIndex);
       return {
+        ...target,
         hasActors: cellActors.length > 0,
         actors: cellActors,
         label: cellActors.map((actor) => `${actor.name} (${actor.offsetLabel})`).join(", ")

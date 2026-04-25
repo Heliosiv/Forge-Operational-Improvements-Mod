@@ -5049,6 +5049,10 @@
   background: color-mix(in srgb, var(--po-accent) 16%, transparent);
 }
 
+.party-operations [data-tool="marching-order"] .po-march-spacing-cell[data-rank-id] {
+  cursor: crosshair;
+}
+
 .party-operations [data-tool="marching-order"] .po-march-spacing-token {
   position: absolute;
   inset: 1px;
@@ -5061,6 +5065,10 @@
   font-weight: 800;
   line-height: 1;
   overflow: hidden;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-token.is-draggable {
+  cursor: grab;
 }
 
 .party-operations .po-overview-actions {
