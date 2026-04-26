@@ -1,8 +1,26 @@
 import { createPageActionHelpers } from "./page-action-helpers.js";
 
 function getTagModeFromElement(element) {
-  const mode = String(element?.dataset?.tagMode ?? "").trim().toLowerCase();
+  const mode = String(element?.dataset?.tagMode ?? "")
+    .trim()
+    .toLowerCase();
   return mode === "exclude" ? "exclude" : "include";
+}
+
+function createDebouncedAction(callback, delayMs = 160) {
+  let timeoutId = null;
+  return (...args) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(
+      () => {
+        timeoutId = null;
+        callback(...args);
+      },
+      Math.max(0, Number(delayMs) || 0)
+    );
+  };
 }
 
 function getTagInputName(tagMode) {
@@ -12,20 +30,23 @@ function getTagInputName(tagMode) {
 function getTagCheckboxes(root, tagMode) {
   if (!root?.querySelectorAll) return [];
   const inputName = getTagInputName(tagMode);
-  return Array.from(root.querySelectorAll(`input[name='${inputName}']`))
-    .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
+  return Array.from(root.querySelectorAll(`input[name='${inputName}']`)).filter(
+    (entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox"
+  );
 }
 
 function getMerchantSourceRefCheckboxes(root) {
   if (!root?.querySelectorAll) return [];
-  return Array.from(root.querySelectorAll("input[name='merchantSourceRef']"))
-    .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
+  return Array.from(root.querySelectorAll("input[name='merchantSourceRef']")).filter(
+    (entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox"
+  );
 }
 
 function getMerchantSourceRefOptionElements(root) {
   if (!root?.querySelectorAll) return [];
-  return Array.from(root.querySelectorAll("[data-merchant-source-option]"))
-    .filter((entry) => entry instanceof HTMLElement);
+  return Array.from(root.querySelectorAll("[data-merchant-source-option]")).filter(
+    (entry) => entry instanceof HTMLElement
+  );
 }
 
 function syncMerchantSourceRefSelectionUi(root) {
@@ -42,9 +63,14 @@ function syncMerchantSourceRefSelectionUi(root) {
 }
 
 function normalizeMerchantSourceFilterValue(value, normalizeFilter) {
-  const normalizer = typeof normalizeFilter === "function"
-    ? normalizeFilter
-    : (input) => String(input ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const normalizer =
+    typeof normalizeFilter === "function"
+      ? normalizeFilter
+      : (input) =>
+          String(input ?? "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 120);
   return String(normalizer(value) ?? "").trim();
 }
 
@@ -91,7 +117,9 @@ function normalizeMerchantKeywordCsvInput(value) {
   const seen = new Set();
   const normalized = [];
   for (const part of source.split(/[\n,;]+/)) {
-    const keyword = String(part ?? "").trim().toLowerCase();
+    const keyword = String(part ?? "")
+      .trim()
+      .toLowerCase();
     if (!keyword || seen.has(keyword)) continue;
     seen.add(keyword);
     normalized.push(keyword);
@@ -102,13 +130,18 @@ function normalizeMerchantKeywordCsvInput(value) {
 function toggleMerchantKeywordFromElement(actionElement, options = {}) {
   const form = actionElement?.closest?.("form");
   if (!(form instanceof HTMLElement)) return false;
-  const mode = String(actionElement?.dataset?.keywordMode ?? "").trim().toLowerCase() === "exclude"
-    ? "exclude"
-    : "include";
+  const mode =
+    String(actionElement?.dataset?.keywordMode ?? "")
+      .trim()
+      .toLowerCase() === "exclude"
+      ? "exclude"
+      : "include";
   const inputName = mode === "exclude" ? "merchantKeywordExclude" : "merchantKeywordInclude";
   const input = form.querySelector(`input[name='${inputName}']`);
   if (!(input instanceof HTMLInputElement)) return false;
-  const keyword = String(actionElement?.dataset?.keywordValue ?? "").trim().toLowerCase();
+  const keyword = String(actionElement?.dataset?.keywordValue ?? "")
+    .trim()
+    .toLowerCase();
   if (!keyword) return false;
   const current = normalizeMerchantKeywordCsvInput(input.value);
   const exists = current.includes(keyword);
@@ -130,10 +163,10 @@ function setMerchantTagGroupSelectionFromElement(actionElement, options = {}) {
   const tagMode = getTagModeFromElement(group);
   const shouldSelect = options?.selected !== false;
   const inputName = getTagInputName(tagMode);
-  const nodes = Array.from(group.querySelectorAll(`input[name='${inputName}']`))
-    .filter((entry) => entry instanceof HTMLInputElement
-      && String(entry.type ?? "").toLowerCase() === "checkbox"
-      && !entry.disabled);
+  const nodes = Array.from(group.querySelectorAll(`input[name='${inputName}']`)).filter(
+    (entry) =>
+      entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox" && !entry.disabled
+  );
   if (nodes.length <= 0) return false;
   let changed = false;
   for (const node of nodes) {
@@ -152,8 +185,9 @@ function syncMerchantTagGroupCounts(root, tagMode) {
   const groups = Array.from(root.querySelectorAll(`details.po-merchant-tag-group[data-tag-mode='${tagMode}']`));
   for (const group of groups) {
     if (!(group instanceof HTMLElement)) continue;
-    const inputs = Array.from(group.querySelectorAll(`input[name='${getTagInputName(tagMode)}']`))
-      .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
+    const inputs = Array.from(group.querySelectorAll(`input[name='${getTagInputName(tagMode)}']`)).filter(
+      (entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox"
+    );
     const selectedCount = inputs.filter((entry) => Boolean(entry.checked)).length;
     const totalCount = inputs.length;
     const selectedNode = group.querySelector("[data-merchant-tag-group-selected]");
@@ -194,11 +228,7 @@ function getConfiguredMerchantExpandedIds() {
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return new Set();
-    return new Set(
-      parsed
-        .map((entry) => String(entry ?? "").trim())
-        .filter(Boolean)
-    );
+    return new Set(parsed.map((entry) => String(entry ?? "").trim()).filter(Boolean));
   } catch {
     return new Set();
   }
@@ -343,16 +373,18 @@ export function createGmMerchantsPageApp(deps) {
           const draft = cacheMerchantEditorDraftChangeFromElement(actionElement, { suppressMissingFormWarning: true });
           if (!draft) return;
           const inputName = String(actionElement?.name ?? "").trim();
-          const isTagCheckbox = actionElement instanceof HTMLInputElement
-            && String(actionElement.type ?? "").toLowerCase() === "checkbox"
-            && (inputName === "merchantIncludeTags" || inputName === "merchantExcludeTags");
+          const isTagCheckbox =
+            actionElement instanceof HTMLInputElement &&
+            String(actionElement.type ?? "").toLowerCase() === "checkbox" &&
+            (inputName === "merchantIncludeTags" || inputName === "merchantExcludeTags");
           if (isTagCheckbox) {
             syncMerchantTagSelectionUi(this.element, inputName === "merchantExcludeTags" ? "exclude" : "include");
             return;
           }
-          const isSourceRefCheckbox = actionElement instanceof HTMLInputElement
-            && String(actionElement.type ?? "").toLowerCase() === "checkbox"
-            && inputName === "merchantSourceRef";
+          const isSourceRefCheckbox =
+            actionElement instanceof HTMLInputElement &&
+            String(actionElement.type ?? "").toLowerCase() === "checkbox" &&
+            inputName === "merchantSourceRef";
           if (isSourceRefCheckbox) {
             syncMerchantSourceRefSelectionUi(this.element);
             return;
@@ -467,7 +499,8 @@ export function createGmMerchantsPageApp(deps) {
         normalizeFilter: normalizeMerchantEditorFilter,
         filterValue: getMerchantEditorSourceFilter?.() ?? ""
       });
-      for (const card of this.element?.querySelectorAll?.("details.po-merchant-definition-card[data-merchant-id]") ?? []) {
+      for (const card of this.element?.querySelectorAll?.("details.po-merchant-definition-card[data-merchant-id]") ??
+        []) {
         if (!(card instanceof HTMLDetailsElement)) continue;
         if (card.dataset.poMerchantDisclosureBound === "1") continue;
         card.dataset.poMerchantDisclosureBound = "1";
@@ -482,27 +515,35 @@ export function createGmMerchantsPageApp(deps) {
     }
 
     _bindAdditionalListeners(root) {
-      const syncCityCatalogDraft = (target) => {
+      const syncCityCatalogDraft = createDebouncedAction((target) => {
         if (!target?.matches?.("input[name='merchantCityCatalog']")) return;
         setMerchantCityCatalogDraftValue(target?.value ?? "");
-      };
+      }, 200);
 
-      const syncSourceFilterDraft = (target) => {
+      const syncSourceFilterDraft = createDebouncedAction((target) => {
         if (!target?.matches?.("[data-merchant-source-filter]")) return;
         const filterValue = setMerchantEditorSourceFilter?.(target?.value ?? "") ?? String(target?.value ?? "");
         applyMerchantSourceRefFilter(root, {
           normalizeFilter: normalizeMerchantEditorFilter,
           filterValue
         });
-      };
+      }, 200);
 
       root.addEventListener("input", (event) => {
         syncCityCatalogDraft(event.target);
         syncSourceFilterDraft(event.target);
       });
       root.addEventListener("change", (event) => {
-        syncCityCatalogDraft(event.target);
-        syncSourceFilterDraft(event.target);
+        if (event.target?.matches?.("input[name='merchantCityCatalog']")) {
+          setMerchantCityCatalogDraftValue(event.target?.value ?? "");
+        } else if (event.target?.matches?.("[data-merchant-source-filter]")) {
+          const filterValue =
+            setMerchantEditorSourceFilter?.(event.target?.value ?? "") ?? String(event.target?.value ?? "");
+          applyMerchantSourceRefFilter(root, {
+            normalizeFilter: normalizeMerchantEditorFilter,
+            filterValue
+          });
+        }
       });
     }
   };

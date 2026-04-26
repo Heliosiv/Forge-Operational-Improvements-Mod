@@ -25,10 +25,13 @@ function createDebouncedAction(callback, delayMs = 160) {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
-    timeoutId = setTimeout(() => {
-      timeoutId = null;
-      callback(...args);
-    }, Math.max(0, Number(delayMs) || 0));
+    timeoutId = setTimeout(
+      () => {
+        timeoutId = null;
+        callback(...args);
+      },
+      Math.max(0, Number(delayMs) || 0)
+    );
   };
 }
 
@@ -102,9 +105,12 @@ export function createGmLootPageApp(deps) {
         message: String(message ?? ""),
         tone: String(tone ?? "")
       };
-      const root = this.element instanceof HTMLElement
-        ? this.element
-        : (this.element?.[0] instanceof HTMLElement ? this.element[0] : null);
+      const root =
+        this.element instanceof HTMLElement
+          ? this.element
+          : this.element?.[0] instanceof HTMLElement
+            ? this.element[0]
+            : null;
       const statusNode = root?.querySelector?.("[data-page-action-status]");
       if (statusNode instanceof HTMLElement) {
         statusNode.textContent = this._uiActionStatus.message;
@@ -144,21 +150,19 @@ export function createGmLootPageApp(deps) {
         setLootPackSourcesUiState({ filter: String(value ?? "") });
         rerender();
       });
-      const withActionStatus = (operation, {
-        pending = "Working…",
-        success = "Update complete.",
-        failure = "Action failed."
-      } = {}) => async (actionElement, event) => {
-        this._setUiActionStatus(pending);
-        try {
-          const result = await operation(actionElement, event);
-          this._setUiActionStatus(success, "good");
-          return result;
-        } catch (error) {
-          this._setUiActionStatus(failure, "warn");
-          throw error;
-        }
-      };
+      const withActionStatus =
+        (operation, { pending = "Working…", success = "Update complete.", failure = "Action failed." } = {}) =>
+        async (actionElement, event) => {
+          this._setUiActionStatus(pending);
+          try {
+            const result = await operation(actionElement, event);
+            this._setUiActionStatus(success, "good");
+            return result;
+          } catch (error) {
+            this._setUiActionStatus(failure, "warn");
+            throw error;
+          }
+        };
       const rerenderUnlessInput = (operation) => async (actionElement, event) => {
         await operation(actionElement, event);
         if (event?.type !== "input") rerender();
@@ -201,22 +205,20 @@ export function createGmLootPageApp(deps) {
         "set-loot-rarity-floor": rerenderAlways(setLootRarityFloor),
         "set-loot-rarity-ceiling": rerenderAlways(setLootRarityCeiling),
         "set-loot-manifest-pack": rerenderAlways(setLootManifestPack),
-        "import-loot-manifest-compendium": rerenderAlways(withActionStatus(
-          () => importLootManifestCompendiumToWorld(),
-          {
+        "import-loot-manifest-compendium": rerenderAlways(
+          withActionStatus(() => importLootManifestCompendiumToWorld(), {
             pending: "Importing manifest items…",
             success: "Manifest items imported.",
             failure: "Manifest import failed."
-          }
-        )),
-        "clear-loot-manifest-imported-items": rerenderAlways(withActionStatus(
-          () => clearLootManifestImportedWorldItems(),
-          {
+          })
+        ),
+        "clear-loot-manifest-imported-items": rerenderAlways(
+          withActionStatus(() => clearLootManifestImportedWorldItems(), {
             pending: "Clearing imported world items…",
             success: "Imported world items cleared.",
             failure: "Unable to clear imported world items."
-          }
-        )),
+          })
+        ),
         "set-loot-keyword-include-mode": rerenderAlways(setLootKeywordIncludeMode),
         "set-loot-keyword-include-tags": rerenderAlways(setLootKeywordIncludeTags),
         "set-loot-keyword-exclude-tags": rerenderAlways(setLootKeywordExcludeTags),
@@ -224,33 +226,33 @@ export function createGmLootPageApp(deps) {
         "set-loot-preview-field": rerenderUnlessInput((actionElement) => {
           setLootPreviewField(actionElement);
         }),
-        "roll-loot-preview": rerenderAlways(withActionStatus(rollLootPreview, {
-          pending: "Generating loot preview…",
-          success: "Loot preview generated.",
-          failure: "Loot generation failed."
-        })),
+        "roll-loot-preview": rerenderAlways(
+          withActionStatus(rollLootPreview, {
+            pending: "Generating loot preview…",
+            success: "Loot preview generated.",
+            failure: "Loot generation failed."
+          })
+        ),
         "generate-loot-preview-item": rerenderIfTruthy(() => generateLootPreviewItemFromSnapshot()),
         "add-loot-preview-item": rerenderIfTruthy(() => addLootPreviewItemByPicker()),
         "edit-loot-preview-item": rerenderIfTruthy(editLootPreviewItem),
         "remove-loot-preview-item": rerenderIfTruthy(removeLootPreviewItem),
         "adjust-loot-preview-currency": rerenderIfTruthy(adjustLootPreviewCurrency),
         "clear-loot-preview": rerenderAlways(() => clearLootPreviewResult()),
-        "publish-loot-claims": rerenderAlways(withActionStatus(
-          () => publishLootPreviewToClaims(),
-          {
+        "publish-loot-claims": rerenderAlways(
+          withActionStatus(() => publishLootPreviewToClaims(), {
             pending: "Publishing claim board…",
             success: "Claim board published to players.",
             failure: "Unable to publish claim board."
-          }
-        )),
-        "clear-loot-claims": rerenderAlways(withActionStatus(
-          () => clearLootClaimsPool(),
-          {
+          })
+        ),
+        "clear-loot-claims": rerenderAlways(
+          withActionStatus(() => clearLootClaimsPool(), {
             pending: "Archiving selected claim run…",
             success: "Claim run archived.",
             failure: "Unable to archive selected claim run."
-          }
-        )),
+          })
+        ),
         "open-loot-item": async (actionElement) => {
           await openLootItemFromElement(actionElement);
         }
@@ -285,6 +287,7 @@ export function createGmLootPageApp(deps) {
       root.addEventListener("dragleave", (event) => {
         const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return;
+        if (event.relatedTarget instanceof Node && dropZone.contains(event.relatedTarget)) return;
         dropZone.classList.remove("is-drop-active");
       });
       root.addEventListener("drop", (event) => {

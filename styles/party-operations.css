@@ -10611,3 +10611,36 @@
     flex-direction: column;
   }
 }
+
+.party-operations .po-loot-budget-bar-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.party-operations .po-loot-budget-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--po-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.party-operations .po-loot-budget-bar-track {
+  width: 100%;
+  height: 8px;
+  background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 40%, transparent);
+}
+
+.party-operations .po-loot-budget-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--po-accent) 60%, transparent), var(--po-accent));
+  transition: width 400ms ease;
+  border-radius: 4px;
+}
