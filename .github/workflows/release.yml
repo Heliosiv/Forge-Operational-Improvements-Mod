@@ -8,6 +8,15 @@ on:
       - "v*.*.*"
       - "!v*-test.*"
   workflow_dispatch:
+    inputs:
+      publish_foundry:
+        description: "Publish the current module.json version to the official Foundry package listing."
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
@@ -92,7 +101,7 @@ jobs:
           fi
 
       - name: 12) Publish Foundry package listing
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_foundry == 'true')
         env:
           FOUNDRY_PACKAGE_RELEASE_TOKEN: ${{ secrets.FOUNDRY_PACKAGE_RELEASE_TOKEN }}
         run: |
