@@ -1,10 +1,19 @@
 import { MODULE_ID, SOCKET_CHANNEL } from "../../core/constants.js";
 import { registerModuleSocketHandler } from "../../core/socket-registry.js";
+import { registerPartyOperationsUiHooks } from "../../hooks/ui-hooks.js";
 import { registerRefactorModuleApi } from "../api/module-api.js";
-import { ensureLauncherUi, forceLauncherRecovery } from "../apps/app-shell.js";
+import {
+  canAccessGmPage,
+  ensureLauncherUi,
+  forceLauncherRecovery,
+  hideManagedAudioMixPlaylistUi,
+  openMainTab
+} from "../apps/app-shell.js";
 import { registerRefactorRuntimeHooks } from "./hook-registration.js";
 import { ensureRefactorSettingsRegistered } from "../settings/refactor-settings.js";
 import { handleRefactorSocketMessage } from "../sockets/refresh-socket.js";
+import { handleAutomaticMerchantAutoRefreshTick } from "../../features/merchant-domain.js";
+import { canAccessAllPlayerOps } from "../../core/socket-write-policy.js";
 import { asyncNoop, noop } from "./common.js";
 
 export function buildRuntimeReadyConfig({ logger = console } = {}) {
@@ -12,7 +21,14 @@ export function buildRuntimeReadyConfig({ logger = console } = {}) {
     registerPartyOperationsApi: () => registerRefactorModuleApi({ moduleId: MODULE_ID }),
     ensureSettingsRegistered: ensureRefactorSettingsRegistered,
     validatePartyOperationsTemplates: asyncNoop,
-    setupPartyOperationsUI: noop,
+    setupPartyOperationsUI: () =>
+      registerPartyOperationsUiHooks({
+        openMainTab,
+        canAccessAllPlayerOps,
+        canAccessGmPage,
+        ensureLauncherUi,
+        hideManagedAudioMixPlaylistUi
+      }),
     ensureLauncherUi,
     launcherWarmupDelaysMs: [],
     launcherSelfHealDelayMs: 0,
@@ -23,7 +39,7 @@ export function buildRuntimeReadyConfig({ logger = console } = {}) {
     game: globalThis.game,
     schedulePendingSopNoteSync: noop,
     scheduleIntegrationSync: noop,
-    handleAutomaticMerchantAutoRefreshTick: asyncNoop,
+    handleAutomaticMerchantAutoRefreshTick,
     audioLibraryWarmupDelayMs: 0,
     queueAudioLibraryMetadataWarmup: noop,
     ensureOperationsJournalFolderTree: asyncNoop,

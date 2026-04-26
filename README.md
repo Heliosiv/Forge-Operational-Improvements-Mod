@@ -4,7 +4,7 @@ Party Operations is a Foundry VTT module for running the table-facing logistics 
 
 ## Current Build
 
-The current repository manifest version is `2.2.12`.
+The current repository manifest version is `2.2.13`.
 
 ## What This Module Covers
 
@@ -89,7 +89,7 @@ npm run publish:foundry:dry-run
 npm run publish:foundry
 ```
 
-The Foundry package version entry should use the version-specific manifest URL, for example `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/download/v2.2.11/module.json`.
+The Foundry package version entry should use the version-specific manifest URL, for example `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/download/v2.2.13/module.json`.
 
 ## Repository Release Flow
 

@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import process from "node:process";
 import vm from "node:vm";
 
+import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
+
 const args = new Set(process.argv.slice(2));
-const source = args.has("--source-stdin")
-  ? readFileSync(0, "utf8")
-  : readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const source = args.has("--source-stdin") ? readFileSync(0, "utf8") : readLegacyRuntimeSource("loot-engine");
 
 function extractFunctionBlock(sourceText, functionName, nextFunctionName) {
   const start = sourceText.indexOf(`function ${functionName}(`);

@@ -20852,7 +20852,9 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
   if (phase === "spend") {
     if (projectedDeltaGp < currentDeltaGp) {
       const gainRatio = (currentDeltaGp - projectedDeltaGp) / Math.max(1, currentDeltaGp);
-      budgetWeight *= 1 + Math.min(2.4, gainRatio * 2.2);
+      const progressBoost =
+        targetTotal >= 1500 ? 1 + Math.min(2.8, gainRatio * 2.8) : 1 + Math.min(2.4, gainRatio * 2.2);
+      budgetWeight *= progressBoost;
       if (correctiveOvershoot) {
         budgetWeight *= 1.3 + Math.min(0.45, gainRatio);
       }

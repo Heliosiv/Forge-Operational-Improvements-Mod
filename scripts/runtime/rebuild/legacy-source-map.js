@@ -61,7 +61,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "loot-engine",
     label: "Loot Generation Engine",
-    lines: { start: 16205, end: 22954 },
+    lines: { start: 16205, end: 22956 },
     featureIds: ["loot"],
     targetModules: ["scripts/features/loot-engine-*"],
     notes:
@@ -70,7 +70,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "operations-ledger-loot-claims",
     label: "Operations Ledger And Loot Claim State",
-    lines: { start: 22955, end: 25727 },
+    lines: { start: 22957, end: 25729 },
     featureIds: ["operations", "loot", "journal"],
     targetModules: ["scripts/features/operations-*", "scripts/features/loot-claims-*"],
     notes:
@@ -79,7 +79,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "merchants",
     label: "Merchant Domain And Workflows",
-    lines: { start: 25728, end: 33097 },
+    lines: { start: 25730, end: 33099 },
     featureIds: ["merchants"],
     targetModules: ["scripts/features/merchant-domain.js", "scripts/features/merchants-ui.js"],
     notes:
@@ -88,7 +88,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "downtime-operations-actions",
     label: "Downtime And Operations Actions",
-    lines: { start: 33098, end: 41498 },
+    lines: { start: 33100, end: 41500 },
     featureIds: ["downtime", "operations", "loot"],
     targetModules: ["scripts/features/downtime-*", "scripts/features/operations-*"],
     notes:
@@ -97,7 +97,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "loot-runtime-actions",
     label: "Loot Runtime Actions",
-    lines: { start: 41499, end: 44576 },
+    lines: { start: 41501, end: 44578 },
     featureIds: ["loot", "merchants"],
     targetModules: ["scripts/features/loot-runtime-*"],
     notes:
@@ -106,7 +106,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "weather-upkeep-autopilot",
     label: "Weather, Upkeep, And Session Autopilot",
-    lines: { start: 44577, end: 45607 },
+    lines: { start: 44579, end: 45609 },
     featureIds: ["operations", "gm-pages"],
     targetModules: ["scripts/features/weather-*", "scripts/features/upkeep-*"],
     notes:
@@ -115,7 +115,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "injury-recovery",
     label: "Injury Recovery",
-    lines: { start: 45608, end: 46897 },
+    lines: { start: 45610, end: 46899 },
     featureIds: ["operations", "gm-pages"],
     targetModules: ["scripts/features/injury-*"],
     notes:
@@ -124,7 +124,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "rest-march-runtime",
     label: "Rest Watch And March Runtime",
-    lines: { start: 46898, end: 51039 },
+    lines: { start: 46900, end: 51041 },
     featureIds: ["rest-watch", "march"],
     targetModules: ["scripts/features/rest-feature.js", "scripts/features/march-feature.js", "scripts/apps"],
     notes:
@@ -133,7 +133,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "api-socket-bootstrap",
     label: "API, Socket Handler, And Runtime Bootstrap",
-    lines: { start: 51040, end: 51669 },
+    lines: { start: 51042, end: 51671 },
     featureIds: ["runtime-shell", "sockets", "hooks", "rest-watch"],
     targetModules: ["scripts/runtime", "scripts/core/socket-*", "scripts/bootstrap"],
     notes:

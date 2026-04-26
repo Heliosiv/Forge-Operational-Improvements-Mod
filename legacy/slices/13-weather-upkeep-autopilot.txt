@@ -1,6 +1,6 @@
 # Weather, Upkeep, And Session Autopilot
 
-Source: legacy/party-operations-monolith.js:44577-45607
+Source: legacy/party-operations-monolith.js:44579-45609
 Feature IDs: operations, gm-pages
 Target Modules: scripts/features/weather-*, scripts/features/upkeep-*
 

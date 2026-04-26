@@ -1,31 +1,5 @@
 import assert from "node:assert/strict";
-import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
-import vm from "node:vm";
-
-const moduleSource = readLegacyRuntimeSource("loot-engine");
-
-function extractFunctionBlock(source, functionName, nextFunctionName) {
-  const start = source.indexOf(`function ${functionName}(`);
-  assert.notEqual(start, -1, `${functionName} should exist in party-operations.js`);
-  const end = source.indexOf(`async function ${nextFunctionName}(`, start);
-  assert.notEqual(end, -1, `${nextFunctionName} should exist after ${functionName} in party-operations.js`);
-  return source.slice(start, end).trim();
-}
-
-const functionBlock = extractFunctionBlock(
-  moduleSource,
-  "validateBoardReadyLootBundle",
-  "generateBoardReadyLootBundle"
-);
-
-const context = vm.createContext({
-  normalizeLootClaimRunId: (value) => String(value ?? "").trim(),
-  result: {}
-});
-
-vm.runInContext(`${functionBlock}\nresult.validateBoardReadyLootBundle = validateBoardReadyLootBundle;`, context);
-
-const { validateBoardReadyLootBundle } = context.result;
+import { validateBoardReadyLootBundle } from "./features/loot-builder.js";
 
 const validBundle = {
   status: "ok",

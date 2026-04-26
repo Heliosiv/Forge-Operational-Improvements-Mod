@@ -1,6 +1,6 @@
 # Operations Ledger And Loot Claim State
 
-Source: legacy/party-operations-monolith.js:22955-25727
+Source: legacy/party-operations-monolith.js:22957-25729
 Feature IDs: operations, loot, journal
 Target Modules: scripts/features/operations-*, scripts/features/loot-claims-*
 
