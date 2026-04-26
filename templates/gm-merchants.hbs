@@ -51,11 +51,11 @@
             <strong>{{merchants.gm.totalDefinitionCount}}</strong>
           </div>
           <div class="po-gm-page-stat" role="listitem">
-            <span>Schema</span>
-            <strong>{{merchants.gm.sourceTaxonomy.schemaLabel}}</strong>
+            <span>Source</span>
+            <strong>Compendium</strong>
           </div>
           <div class="po-gm-page-stat" role="listitem">
-            <span>Tagged Items</span>
+            <span>Preset Items</span>
             <strong>{{merchants.gm.sourceTaxonomy.itemCount}}</strong>
           </div>
         </div>
@@ -64,10 +64,10 @@
       <div id="po-gm-merchants" class="po-gm-section po-merchants-page">
         <input type="hidden" name="merchantId" value="{{merchants.gm.editor.id}}" />
         <div class="po-merchant-workspace">
-          <div class="po-tabs po-tabs-sub po-merchant-view-tabs po-gm-subtabs" aria-label="Merchant workspace tabs">
-            <button type="button" class="po-tab {{#if merchants.gm.viewTabWorkspace}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="editor">Merchant Workspace</button>
-            <button type="button" class="po-tab {{#if merchants.gm.viewTabConfiguredMerchants}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="configured-merchants">Configured Merchants</button>
-            <button type="button" class="po-tab {{#if merchants.gm.viewTabShopSession}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="shop-session">Shop Session</button>
+          <div class="po-tabs po-tabs-sub po-merchant-view-tabs po-gm-subtabs" aria-label="Merchant view toggle">
+            <button type="button" class="po-tab {{#if merchants.gm.viewTabWorkspace}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="editor">Build</button>
+            <button type="button" class="po-tab {{#if merchants.gm.viewTabConfiguredMerchants}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="configured-merchants">Merchants</button>
+            <button type="button" class="po-tab {{#if merchants.gm.viewTabShopSession}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="shop-session">Live Shop</button>
           </div>
 
           <div class="po-merchant-view-panel">
@@ -154,8 +154,8 @@
           <div class="po-panel-disclosure-body">
             <div class="po-two-col po-merchant-editor-grid">
               <div class="po-col po-merchant-editor-column">
-                <div class="po-section-title">Merchant Basics</div>
-                <div class="po-hint">Choose a preset, then change only the name, title, or race for this merchant.</div>
+                <div class="po-section-title">Merchant Presets</div>
+                <div class="po-hint">Choose the shop preset first, then adjust identity fields only when needed.</div>
                 <label class="po-resource-row">
                   <span>Merchant Preset</span>
                   <select class="po-select" name="merchantArchetype" data-action="merchant-editor-draft-change">
@@ -180,7 +180,11 @@
                 </div>
                 <label class="po-resource-row">
                   <span>Title</span>
-                  <input type="text" name="merchantTitle" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.title}}" placeholder="Optional subtitle" />
+                  <select class="po-select" name="merchantTitle" data-action="merchant-editor-draft-change">
+                    {{#each merchants.gm.titleOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
                 </label>
                 <label class="po-resource-row">
                   <span>Race</span>
@@ -295,6 +299,35 @@
                     {{/if}}
                   </div>
                 </div>
+                    <label class="po-resource-row">
+                      <span>Value Strictness</span>
+                      <input type="number" min="50" max="300" step="10" name="merchantValueStrictness" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.valueStrictness}}" />
+                    </label>
+                    <div class="po-resource-row po-merchant-rarity-row">
+                      <span>Rarity Stock Weights</span>
+                      <div class="po-op-action-row po-merchant-rarity-grid">
+                    <label class="po-merchant-range-option">
+                      <span><strong>Common</strong><em>{{merchants.gm.editor.rarityWeightCommon}}</em></span>
+                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightCommon" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightCommon}}" />
+                    </label>
+                    <label class="po-merchant-range-option">
+                      <span><strong>Uncommon</strong><em>{{merchants.gm.editor.rarityWeightUncommon}}</em></span>
+                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightUncommon" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightUncommon}}" />
+                    </label>
+                    <label class="po-merchant-range-option">
+                      <span><strong>Rare</strong><em>{{merchants.gm.editor.rarityWeightRare}}</em></span>
+                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightRare" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightRare}}" />
+                    </label>
+                    <label class="po-merchant-range-option">
+                      <span><strong>Very Rare</strong><em>{{merchants.gm.editor.rarityWeightVeryRare}}</em></span>
+                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightVeryRare" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightVeryRare}}" />
+                    </label>
+                    <label class="po-merchant-range-option">
+                      <span><strong>Legendary</strong><em>{{merchants.gm.editor.rarityWeightLegendary}}</em></span>
+                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightLegendary" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightLegendary}}" />
+                    </label>
+                      </div>
+                    </div>
                   </div>
                 </details>
               </div>
@@ -310,11 +343,11 @@
                   <span>Sell Rate Percent</span>
                   <input type="number" min="0" max="1000" step="0.01" name="merchantSellRatePercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.sellRatePercent}}" />
                 </label>
-                <details class="po-panel-disclosure po-merchant-price-scale">
-                  <summary class="po-panel-disclosure-summary">
-                    <span class="po-section-title">Rarity Price Scale</span>
-                    <span class="po-op-summary">Standard cost by rarity</span>
-                  </summary>
+                <div class="po-panel-disclosure po-merchant-price-scale">
+                  <div class="po-panel-disclosure-summary">
+                    <span class="po-section-title">Rarity Prices</span>
+                    <span class="po-op-summary">Base item price by rarity</span>
+                  </div>
                   <div class="po-panel-disclosure-body">
                     <div class="po-resource-row po-merchant-rarity-row">
                       <span>Buy Price Multipliers</span>
@@ -342,7 +375,7 @@
                       </div>
                     </div>
                   </div>
-                </details>
+                </div>
                 <label class="po-resource-row">
                   <span>Buy from Players</span>
                   <input type="checkbox" name="merchantSellEnabled" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.sellEnabled}}checked{{/if}} />
@@ -367,43 +400,6 @@
                   <span>Target Stock Value (gp)</span>
                   <input type="number" min="0" max="1000000" step="1" name="merchantTargetValueGp" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.targetValueGp}}" />
                 </label>
-                <details class="po-panel-disclosure po-merchant-advanced-pricing" {{#if merchants.gm.editor.customMode}}open{{/if}}>
-                  <summary class="po-panel-disclosure-summary">
-                    <span class="po-section-title">Advanced Rarity Balance</span>
-                    <span class="po-op-summary">Only adjust when the preset needs special stock weighting</span>
-                  </summary>
-                  <div class="po-panel-disclosure-body">
-                    <label class="po-resource-row">
-                      <span>Value Strictness</span>
-                      <input type="number" min="50" max="300" step="10" name="merchantValueStrictness" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.valueStrictness}}" />
-                    </label>
-                    <div class="po-resource-row po-merchant-rarity-row">
-                      <span>Rarity Weights</span>
-                      <div class="po-op-action-row po-merchant-rarity-grid">
-                    <label class="po-merchant-range-option">
-                      <span><strong>Common</strong><em>{{merchants.gm.editor.rarityWeightCommon}}</em></span>
-                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightCommon" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightCommon}}" />
-                    </label>
-                    <label class="po-merchant-range-option">
-                      <span><strong>Uncommon</strong><em>{{merchants.gm.editor.rarityWeightUncommon}}</em></span>
-                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightUncommon" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightUncommon}}" />
-                    </label>
-                    <label class="po-merchant-range-option">
-                      <span><strong>Rare</strong><em>{{merchants.gm.editor.rarityWeightRare}}</em></span>
-                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightRare" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightRare}}" />
-                    </label>
-                    <label class="po-merchant-range-option">
-                      <span><strong>Very Rare</strong><em>{{merchants.gm.editor.rarityWeightVeryRare}}</em></span>
-                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightVeryRare" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightVeryRare}}" />
-                    </label>
-                    <label class="po-merchant-range-option">
-                      <span><strong>Legendary</strong><em>{{merchants.gm.editor.rarityWeightLegendary}}</em></span>
-                      <input type="range" min="0" max="100" step="1" name="merchantRarityWeightLegendary" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightLegendary}}" />
-                    </label>
-                      </div>
-                    </div>
-                  </div>
-                </details>
                 <label class="po-resource-row">
                   <span>Barter Enabled</span>
                   <input type="checkbox" name="merchantBarterEnabled" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.barterEnabled}}checked{{/if}} />
@@ -420,7 +416,7 @@
                     {{/each}}
                   </select>
                 </label>
-                <div class="po-op-summary">Buy Price changes what the actor pays. Sell Value changes what the actor receives. Use negative values to reduce a rate and positive values to increase it.</div>
+                <div class="po-op-summary">Passing or failing by 5 or more doubles the barter adjustment.</div>
                 <label class="po-resource-row">
                   <span>Success Buy Price %</span>
                   <input type="number" min="-1000" max="1000" step="1" name="merchantBarterSuccessBuyModifierPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.barterSuccessBuyModifierPercent}}" />
@@ -438,15 +434,8 @@
                   <input type="number" min="-1000" max="1000" step="1" name="merchantBarterFailureSellModifierPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.barterFailureSellModifierPercent}}" />
                 </label>
                 <div class="po-resource-row">
-                  <span>Buyback Item Types</span>
-                  <div class="po-op-action-row po-merchant-buyback-grid">
-                    {{#each merchants.gm.buybackTypeOptions}}
-                    <label class="po-merchant-check-option">
-                      <input type="checkbox" name="merchantBuybackType" value="{{value}}" data-action="merchant-editor-draft-change" {{#if selected}}checked{{/if}} />
-                      <span>{{label}}</span>
-                    </label>
-                    {{/each}}
-                  </div>
+                  <span>Buyback</span>
+                  <div class="po-op-summary">{{merchants.gm.buybackTypeSummary}}</div>
                 </div>
               </div>
             </div>

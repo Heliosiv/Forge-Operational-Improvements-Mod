@@ -20,13 +20,42 @@ const swordB = {
   itemWeightLb: 3
 };
 
-assert.equal(getLootEntryStackKey(swordA), "uuid:item.sword-1");
+assert.equal(
+  getLootEntryStackKey(swordA),
+  "name:longsword|type:weapon|rarity:common|source:world item directory|kind:|value:|denom:"
+);
 
 const aggregatedSwords = aggregateLootEntriesForStacks([swordA, swordB]);
 assert.equal(aggregatedSwords.length, 1);
 assert.equal(aggregatedSwords[0].quantity, 2);
 assert.equal(aggregatedSwords[0].itemValueGp, 30);
 assert.equal(aggregatedSwords[0].itemWeightLb, 6);
+
+const duplicatePackLanterns = aggregateLootEntriesForStacks([
+  {
+    uuid: "Compendium.party-operations.party-operations-loot-manifest.Item.lantern-a",
+    name: "Hooded Lantern",
+    itemType: "consumable",
+    rarity: "common",
+    sourceLabel: "Party Operations Built Items",
+    itemValueGp: 10,
+    itemWeightLb: 2
+  },
+  {
+    uuid: "Compendium.party-operations.party-operations-loot-manifest.Item.lantern-b",
+    name: "Hooded Lantern",
+    itemType: "consumable",
+    rarity: "common",
+    sourceLabel: "Party Operations Built Items",
+    itemValueGp: 10,
+    itemWeightLb: 2
+  }
+]);
+
+assert.equal(duplicatePackLanterns.length, 1);
+assert.equal(duplicatePackLanterns[0].quantity, 2);
+assert.equal(duplicatePackLanterns[0].itemValueGp, 20);
+assert.equal(duplicatePackLanterns[0].itemWeightLb, 4);
 
 const variantNamed = aggregateLootEntriesForStacks([
   {

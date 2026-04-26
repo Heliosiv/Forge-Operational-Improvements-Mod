@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
 import {
+  computeMerchantBarterAdjustment,
+  computeMerchantEffectiveBuyMultiplier,
+  computeMerchantEffectiveSellMultiplier,
   getMerchantArchetypeOptions,
   getMerchantRarityPriceMultiplier,
   MERCHANT_DEFAULTS,
@@ -186,6 +189,38 @@ assert.equal(barterPatch.pricing.barterSuccessBuyModifier, -0.15);
 assert.equal(barterPatch.pricing.barterSuccessSellModifier, 0.2);
 assert.equal(barterPatch.pricing.barterFailureBuyModifier, 0.15);
 assert.equal(barterPatch.pricing.barterFailureSellModifier, -0.3);
+
+const strongSuccessBarter = computeMerchantBarterAdjustment(20, 15, barterPatch.pricing);
+assert.equal(strongSuccessBarter.success, true);
+assert.equal(strongSuccessBarter.margin, 5);
+assert.equal(strongSuccessBarter.tierMultiplier, 2);
+assert.equal(strongSuccessBarter.buyMarkupDelta, -0.3);
+assert.equal(strongSuccessBarter.sellRateDelta, 0.4);
+assert.equal(
+  computeMerchantEffectiveBuyMultiplier({ baseBuyMarkup: 1.5, barterBuyDelta: -0.3 }),
+  1.2,
+  "Strong barter success should allow the doubled buy discount up to the haggle cap."
+);
+assert.equal(
+  computeMerchantEffectiveSellMultiplier({ baseSellRate: 0.5, barterSellDelta: 0.4 }),
+  0.6,
+  "Strong barter success should allow the doubled sell boost up to the haggle cap."
+);
+
+const strongFailureBarter = computeMerchantBarterAdjustment(10, 15, barterPatch.pricing);
+assert.equal(strongFailureBarter.success, false);
+assert.equal(strongFailureBarter.margin, -5);
+assert.equal(strongFailureBarter.tierMultiplier, 2);
+assert.equal(strongFailureBarter.buyMarkupDelta, 0.3);
+assert.equal(strongFailureBarter.sellRateDelta, -0.6);
+
+const derivedBuybackPatch = buildMerchantDefinitionPatchFromEditorForm({
+  name: "Narrow Buyer",
+  allowedTypes: ["weapon", "ammunition"],
+  existingStock: {},
+  existingPricing: {}
+});
+assert.deepEqual(derivedBuybackPatch.pricing.buybackAllowedTypes, ["weapon", "ammunition"]);
 
 const ammoSettingsPatch = buildMerchantDefinitionPatchFromEditorForm({
   name: "Ammo Tuner",

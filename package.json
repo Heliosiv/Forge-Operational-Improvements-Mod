@@ -84,6 +84,7 @@
     "check:loot-ui-state": "node scripts/test-loot-ui-state.mjs",
     "check:loot-budget": "node scripts/test-loot-budget.mjs",
     "check:loot-budget-source-policy": "node scripts/test-loot-budget-source-policy.mjs",
+    "check:loot-compendium-manifest-source": "node scripts/test-loot-compendium-manifest-source.mjs",
     "check:loot-item-count": "node scripts/test-loot-item-count.mjs",
     "check:loot-item-candidate-sources": "node scripts/test-loot-item-candidate-sources.mjs",
     "check:loot-picker-item-cap": "node scripts/test-loot-picker-item-cap.mjs",

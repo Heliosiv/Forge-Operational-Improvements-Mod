@@ -1,5 +1,7 @@
 function normalizeText(value = "") {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeQuantity(value = 1) {
@@ -15,9 +17,11 @@ function roundWeightLb(value = 0) {
 function isCoinLikeName(name = "") {
   const normalized = normalizeText(name);
   if (!normalized) return false;
-  return /\b(copper|silver|electrum|gold|platinum)\b/.test(normalized)
-    || /\b(cp|sp|ep|gp|pp)\b/.test(normalized)
-    || /\bcoins?\b/.test(normalized);
+  return (
+    /\b(copper|silver|electrum|gold|platinum)\b/.test(normalized) ||
+    /\b(cp|sp|ep|gp|pp)\b/.test(normalized) ||
+    /\bcoins?\b/.test(normalized)
+  );
 }
 
 function isLegacyStackable(entry = {}) {
@@ -31,15 +35,24 @@ function isLootEntryStackingDisabled(entry = {}) {
 }
 
 function buildExactDuplicateStackKey(entry = {}) {
-  const uuid = normalizeText(entry?.uuid);
-  if (uuid) return `uuid:${uuid}`;
   const name = normalizeText(entry?.name);
-  if (!name) return "";
+  const uuid = normalizeText(entry?.uuid);
+  if (!name) return uuid ? `uuid:${uuid}` : "";
   const itemType = normalizeText(entry?.itemType);
   const rarity = normalizeText(entry?.rarityBucket ?? entry?.rarity);
   const sourceLabel = normalizeText(entry?.sourceLabel);
   const variableTreasureKind = normalizeText(entry?.variableTreasureKind);
-  return `name:${name}|type:${itemType}|rarity:${rarity}|source:${sourceLabel}|kind:${variableTreasureKind}`;
+  const valueBand = normalizeText(entry?.valueBand);
+  const priceDenomination = normalizeText(entry?.priceDenomination);
+  return [
+    `name:${name}`,
+    `type:${itemType}`,
+    `rarity:${rarity}`,
+    `source:${sourceLabel}`,
+    `kind:${variableTreasureKind}`,
+    `value:${valueBand}`,
+    `denom:${priceDenomination}`
+  ].join("|");
 }
 
 export function getLootEntryStackKey(entry = {}) {
@@ -84,14 +97,16 @@ export function aggregateLootEntriesForStacks(values = []) {
     }
     const existing = aggregated[existingIndex];
     existing.quantity += entry.quantity;
-    existing.itemValueGp = Math.max(0, Number(existing.itemValueGp ?? 0) || 0) + Math.max(0, Number(entry.itemValueGp ?? 0) || 0);
+    existing.itemValueGp =
+      Math.max(0, Number(existing.itemValueGp ?? 0) || 0) + Math.max(0, Number(entry.itemValueGp ?? 0) || 0);
     if (existing.itemWeightLb !== undefined || entry.itemWeightLb !== undefined) {
       existing.itemWeightLb = roundWeightLb(
         Math.max(0, Number(existing.itemWeightLb ?? 0) || 0) + Math.max(0, Number(entry.itemWeightLb ?? 0) || 0)
       );
     }
     if (existing.baseItemValueGp !== undefined || entry.baseItemValueGp !== undefined) {
-      existing.baseItemValueGp = Math.max(0, Number(existing.baseItemValueGp ?? 0) || 0) + Math.max(0, Number(entry.baseItemValueGp ?? 0) || 0);
+      existing.baseItemValueGp =
+        Math.max(0, Number(existing.baseItemValueGp ?? 0) || 0) + Math.max(0, Number(entry.baseItemValueGp ?? 0) || 0);
     }
     if (existing.baseItemWeightLb !== undefined || entry.baseItemWeightLb !== undefined) {
       existing.baseItemWeightLb = roundWeightLb(

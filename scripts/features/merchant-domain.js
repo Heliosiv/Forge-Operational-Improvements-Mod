@@ -354,8 +354,10 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
   })
 ]);
 
-// Maximum fractional price deviation that barter/haggling may produce (±10% of base).
-export const MERCHANT_HAGGLE_CAP_PERCENT = 0.1;
+// Maximum fractional price deviation that barter/haggling may produce (+/-20% of base).
+export const MERCHANT_HAGGLE_CAP_PERCENT = 0.2;
+export const MERCHANT_BARTER_STRONG_MARGIN = 5;
+export const MERCHANT_BARTER_STRONG_MULTIPLIER = 2;
 
 // Restock partial-reroll: retain about 60% of existing slots, weighted toward durable staples.
 export const MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE = 0.6;
@@ -633,7 +635,7 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     barterEnabled: true,
     barterDc: 15,
     barterAbility: "cha",
-    // ±10% of buy/sell base is the maximum haggle effect (MERCHANT_HAGGLE_CAP_PERCENT)
+    // +/-20% of buy/sell base is the maximum haggle effect (MERCHANT_HAGGLE_CAP_PERCENT)
     barterSuccessBuyModifier: -0.1,
     barterSuccessSellModifier: 0.1,
     barterFailureBuyModifier: 0.1,
@@ -1524,12 +1526,6 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
     ? Math.max(0, Math.min(1000000, Number(cashOnHandGpRaw.toFixed(2))))
     : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
-  const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
-    source?.buybackAllowedTypes ??
-      existingPricing?.buybackAllowedTypes ??
-      archetypeDefaults?.pricing?.buybackAllowedTypes ??
-      MERCHANT_ALLOWED_ITEM_TYPE_LIST
-  );
   const barterEnabled =
     source?.barterEnabled === undefined
       ? Boolean(existingPricing?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled)
@@ -1626,6 +1622,12 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       existingStock?.allowedTypes ??
       archetypeDefaults?.stock?.allowedTypes ??
       MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+    source?.buybackAllowedTypes ??
+      (source?.allowedTypes !== undefined
+        ? allowedTypes
+        : (existingPricing?.buybackAllowedTypes ?? archetypeDefaults?.pricing?.buybackAllowedTypes ?? allowedTypes))
   );
   const includeTags = customMode
     ? normalizeMerchantTagList(source?.includeTags ?? existingStock?.includeTags ?? [])
@@ -2650,7 +2652,7 @@ export function normalizeMerchantTaxFeePercent(value = 0, fallback = 0) {
  * buy price (cp) = base × effectiveMultiplier × (1 + taxFeePercent/100)
  *
  * Barter delta is clamped so the adjusted base never strays more than
- * MERCHANT_HAGGLE_CAP_PERCENT (10%) away from baseBuyMarkup.
+ * MERCHANT_HAGGLE_CAP_PERCENT away from baseBuyMarkup.
  */
 export function computeMerchantEffectiveBuyMultiplier(options = {}) {
   const {
@@ -3541,20 +3543,26 @@ async function postMerchantTradeToChat(outcome = {}) {
   });
 }
 
-function computeMerchantBarterAdjustment(checkTotalInput, dcInput, pricing = {}) {
+export function computeMerchantBarterAdjustment(checkTotalInput, dcInput, pricing = {}) {
   const checkTotal = Math.floor(Number(checkTotalInput ?? 0) || 0);
   const dc = Math.max(1, Math.floor(Number(dcInput ?? 10) || 10));
   const margin = checkTotal - dc;
   const success = margin >= 0;
+  const tierMultiplier = Math.abs(margin) >= MERCHANT_BARTER_STRONG_MARGIN ? MERCHANT_BARTER_STRONG_MULTIPLIER : 1;
   const modifiers = getMerchantBarterPricingModifiers(pricing);
-  const buyMarkupDelta = success ? modifiers.successBuyModifier : modifiers.failureBuyModifier;
-  const sellRateDelta = success ? modifiers.successSellModifier : modifiers.failureSellModifier;
+  const buyMarkupDelta = Number(
+    ((success ? modifiers.successBuyModifier : modifiers.failureBuyModifier) * tierMultiplier).toFixed(2)
+  );
+  const sellRateDelta = Number(
+    ((success ? modifiers.successSellModifier : modifiers.failureSellModifier) * tierMultiplier).toFixed(2)
+  );
   const delta = Math.max(Math.abs(buyMarkupDelta), Math.abs(sellRateDelta));
   return {
     checkTotal,
     dc,
     margin,
     success,
+    tierMultiplier,
     delta,
     buyMarkupDelta,
     sellRateDelta

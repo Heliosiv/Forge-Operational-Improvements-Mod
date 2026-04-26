@@ -116,8 +116,8 @@ const majorArrowBundle = buildLootCohesiveBundle(arrow, {
 
 assert.equal(majorArrowBundle[0].candidate.uuid, "Item.arrow");
 assert.ok(
-  majorArrowBundle[0].quantity <= 4,
-  "Major hordes should keep ammo batching to a few pieces instead of flooding the output."
+  majorArrowBundle[0].quantity <= 8,
+  "Major hordes should stack more ammunition while still bounding the output."
 );
 
 const majorGemBundle = buildLootCohesiveBundle(gem, {
@@ -128,10 +128,7 @@ const majorGemBundle = buildLootCohesiveBundle(gem, {
   random: () => 0
 });
 
-assert.ok(
-  majorGemBundle[0].quantity <= 2,
-  "Major hordes should keep valuables grouped into a small number of picks."
-);
+assert.ok(majorGemBundle[0].quantity <= 2, "Major hordes should keep valuables grouped into a small number of picks.");
 
 const healerKit = {
   uuid: "Item.healer-kit",
@@ -226,10 +223,7 @@ const consumableBatch = buildLootCohesiveBundle(rations, {
   random: () => 0
 });
 
-assert.ok(
-  consumableBatch[0].quantity >= 2,
-  "Useful low-value consumables should batch into a compact supply bundle."
-);
+assert.ok(consumableBatch[0].quantity >= 2, "Useful low-value consumables should batch into a compact supply bundle.");
 
 const magicArrow = {
   uuid: "Item.magic-arrow",
@@ -248,9 +242,6 @@ const magicAmmoBundle = buildLootCohesiveBundle(magicArrow, {
   random: () => 0
 });
 
-assert.ok(
-  magicAmmoBundle[0].quantity <= 9,
-  "Enhanced ammunition should still bundle conservatively."
-);
+assert.ok(magicAmmoBundle[0].quantity <= 9, "Enhanced ammunition should still bundle conservatively.");
 
 process.stdout.write("loot selection cohesion validation passed\n");

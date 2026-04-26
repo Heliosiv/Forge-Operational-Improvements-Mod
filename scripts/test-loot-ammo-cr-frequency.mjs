@@ -45,7 +45,7 @@ function makeAmmo(tier = 0) {
 }
 
 function sampleAmmoQuantity(challenge = "low", tier = 0, scale = "medium", trials = TRIALS) {
-  const baseSeed = (challenge.charCodeAt(0) * 1000) + (tier * 97) + (scale.charCodeAt(0) * 13);
+  const baseSeed = challenge.charCodeAt(0) * 1000 + tier * 97 + scale.charCodeAt(0) * 13;
   const random = createSeededRandom(baseSeed);
   const counts = new Map();
   let total = 0;
@@ -133,7 +133,9 @@ function relativeSelectionIndex(challenge = "low", tier = 0) {
 }
 
 function logSample(sample) {
-  log(`${CHALLENGE_LABELS[sample.challenge]} +${sample.tier} | avg=${sample.avg.toFixed(2)} | nonZero=${sample.nonZeroRate.toFixed(1)}% | ${sample.top}`);
+  log(
+    `${CHALLENGE_LABELS[sample.challenge]} +${sample.tier} | avg=${sample.avg.toFixed(2)} | nonZero=${sample.nonZeroRate.toFixed(1)}% | ${sample.top}`
+  );
 }
 
 const lowPlusZero = sampleAmmoQuantity("low", 0, "medium", TRIALS);
@@ -144,6 +146,7 @@ const highPlusZero = sampleAmmoQuantity("high", 0, "medium", TRIALS);
 const highPlusOne = sampleAmmoQuantity("high", 1, "medium", TRIALS);
 const highPlusTwo = sampleAmmoQuantity("high", 2, "medium", TRIALS);
 const highPlusThree = sampleAmmoQuantity("high", 3, "medium", TRIALS);
+const highMajorPlusZero = sampleAmmoQuantity("high", 0, "major", TRIALS);
 
 for (const sample of [
   lowPlusZero,
@@ -153,26 +156,49 @@ for (const sample of [
   highPlusZero,
   highPlusOne,
   highPlusTwo,
-  highPlusThree
+  highPlusThree,
+  highMajorPlusZero
 ]) {
   logSample(sample);
 }
 
-assert(lowPlusZero.avg >= 4 && lowPlusZero.avg <= 6, `Expected low CR +0 ammo average near 4-6, got ${lowPlusZero.avg.toFixed(2)}.`);
-assert(lowPlusOne.avg >= 1 && lowPlusOne.avg <= 3, `Expected low CR +1 ammo average near 1-3, got ${lowPlusOne.avg.toFixed(2)}.`);
-assert(lowPlusTwo.avg >= 0 && lowPlusTwo.avg <= 1, `Expected low CR +2 ammo average near 0-1, got ${lowPlusTwo.avg.toFixed(2)}.`);
+assert(
+  lowPlusZero.avg >= 4 && lowPlusZero.avg <= 6,
+  `Expected low CR +0 ammo average near 4-6, got ${lowPlusZero.avg.toFixed(2)}.`
+);
+assert(
+  lowPlusOne.avg >= 1 && lowPlusOne.avg <= 3,
+  `Expected low CR +1 ammo average near 1-3, got ${lowPlusOne.avg.toFixed(2)}.`
+);
+assert(
+  lowPlusTwo.avg >= 0 && lowPlusTwo.avg <= 1,
+  `Expected low CR +2 ammo average near 0-1, got ${lowPlusTwo.avg.toFixed(2)}.`
+);
 assert.equal(lowPlusThree.avg, 0, "Expected low CR +3 ammo average to stay at 0.");
 assert.equal(lowPlusThree.nonZeroRate, 0, "Expected low CR +3 ammo to have a 0% non-zero rate.");
-assert(lowPlusTwo.nonZeroRate <= 25, `Expected low CR +2 ammo non-zero rate to stay <= 25%, got ${lowPlusTwo.nonZeroRate.toFixed(1)}%.`);
+assert(
+  lowPlusTwo.nonZeroRate <= 25,
+  `Expected low CR +2 ammo non-zero rate to stay <= 25%, got ${lowPlusTwo.nonZeroRate.toFixed(1)}%.`
+);
 
 assert(highPlusZero.avg > highPlusOne.avg, "Expected high CR +0 ammo average to exceed +1.");
 assert(highPlusOne.avg > highPlusTwo.avg, "Expected high CR +1 ammo average to exceed +2.");
 assert(highPlusTwo.avg > highPlusThree.avg, "Expected high CR +2 ammo average to exceed +3.");
 assert(highPlusThree.avg > 0, "Expected high CR +3 ammo average to remain above 0.");
+assert(
+  highMajorPlusZero.avg >= 7 && highMajorPlusZero.avg <= 8,
+  `Expected major horde mundane ammo to average near the raised cap, got ${highMajorPlusZero.avg.toFixed(2)}.`
+);
 
 assert.equal(relativeSelectionIndex("low", 2), 0, "Expected low CR +2 ammo selection index to be 0.");
 assert.equal(relativeSelectionIndex("low", 3), 0, "Expected low CR +3 ammo selection index to be 0.");
-assert(relativeSelectionIndex("high", 1) > relativeSelectionIndex("high", 2), "Expected high CR +1 ammo selection index to exceed +2.");
-assert(relativeSelectionIndex("high", 2) > relativeSelectionIndex("high", 3), "Expected high CR +2 ammo selection index to exceed +3.");
+assert(
+  relativeSelectionIndex("high", 1) > relativeSelectionIndex("high", 2),
+  "Expected high CR +1 ammo selection index to exceed +2."
+);
+assert(
+  relativeSelectionIndex("high", 2) > relativeSelectionIndex("high", 3),
+  "Expected high CR +2 ammo selection index to exceed +3."
+);
 
 process.stdout.write("loot ammo cr frequency validation passed\n");

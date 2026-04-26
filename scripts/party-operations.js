@@ -278,6 +278,8 @@ import {
   computeMerchantPartialRestockPlan,
   normalizeFoundryAssetImagePath,
   MERCHANT_HAGGLE_CAP_PERCENT,
+  MERCHANT_BARTER_STRONG_MARGIN,
+  MERCHANT_BARTER_STRONG_MULTIPLIER,
   MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE,
   MERCHANT_TYPE_OPTIONS,
   MERCHANT_DISPOSITION_OPTIONS,
@@ -1299,6 +1301,7 @@ const MERCHANT_ACCESS_LOG_THROTTLE_MS = DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS;
 const MERCHANT_DEFAULT_VALUE_STRICTNESS = DOMAIN_MERCHANT_DEFAULT_VALUE_STRICTNESS;
 const MERCHANT_DEFAULTS = DOMAIN_MERCHANT_DEFAULTS;
 const MERCHANT_STARTER_BLUEPRINTS = DOMAIN_MERCHANT_STARTER_BLUEPRINTS;
+const MERCHANT_ARCHETYPE_DEFINITIONS = DOMAIN_MERCHANT_ARCHETYPE_DEFINITIONS;
 const MERCHANT_ACCESS_MODES = Object.freeze({
   ALL: "all",
   ASSIGNED: "assigned"
@@ -10858,6 +10861,28 @@ function buildLootWorldItemSourceEntry(input = {}) {
   };
 }
 
+function getLootManifestCompendiumPackId() {
+  return (
+    String(getLootManifestCompendiumPack()?.collection ?? "").trim() ||
+    `${String(MODULE_ID).trim()}.${LOOT_MANIFEST_PACK_NAME}`
+  );
+}
+
+function buildLootManifestSourceEntry(input = {}) {
+  const pack = getLootManifestCompendiumPack();
+  const id = String(input?.id ?? pack?.collection ?? getLootManifestCompendiumPackId()).trim();
+  const weightRaw = Number(input?.weight ?? 1);
+  return {
+    id,
+    label:
+      String(input?.label ?? pack?.metadata?.label ?? pack?.title ?? LOOT_MANIFEST_PACK_LABEL).trim() ||
+      LOOT_MANIFEST_PACK_LABEL,
+    sourceKind: "compendium-pack",
+    enabled: input?.enabled !== false,
+    weight: Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1
+  };
+}
+
 function getLootGenerationItemPackSources() {
   return getAvailableLootItemPackSources();
 }
@@ -10967,6 +10992,15 @@ function isValidLootManifestPackSelectionId(selectionId = "") {
   return folderType === "item";
 }
 
+function isLootManifestManagedWorldFolderSelection(selectionId = "") {
+  const folderId = parseLootWorldItemsFolderFilterId(selectionId);
+  if (!folderId) return false;
+  const folder = game.folders?.get?.(folderId) ?? null;
+  if (!folder) return false;
+  const importFlag = getLootManifestImportFlag(folder);
+  return String(importFlag?.sourcePackId ?? "").trim() === getLootManifestCompendiumPackId();
+}
+
 function buildLootManifestPackOptions(manifestPackId = "", itemPackOptions = []) {
   const selectedId = String(manifestPackId ?? "").trim();
   const options = [
@@ -11011,13 +11045,13 @@ function buildLootManifestPackOptions(manifestPackId = "", itemPackOptions = [])
 
 function buildDefaultLootSourceConfig() {
   return {
-    packs: [buildLootWorldItemSourceEntry()],
+    packs: [buildLootManifestSourceEntry({ enabled: true }), buildLootWorldItemSourceEntry({ enabled: false })],
     tables: [],
     filters: {
       allowedTypes: [...LOOT_DEFAULT_ITEM_TYPES],
       rarityFloor: "",
       rarityCeiling: "",
-      manifestPackId: "",
+      manifestPackId: getLootManifestCompendiumPackId(),
       keywordIncludeMode: LOOT_KEYWORD_INCLUDE_MODES.ALL,
       keywordIncludeTags: [],
       keywordExcludeTags: []
@@ -14199,7 +14233,7 @@ function normalizeLootSourceConfig(config = {}) {
       return rows.findIndex((candidate) => candidate?.id === entry.id) === index;
     });
   if (!packs.some((entry) => String(entry?.id ?? "").trim() === LOOT_WORLD_ITEMS_SOURCE_ID)) {
-    packs.unshift(buildLootWorldItemSourceEntry());
+    packs.unshift(buildLootWorldItemSourceEntry({ enabled: false }));
   } else {
     for (const entry of packs) {
       if (String(entry?.id ?? "").trim() !== LOOT_WORLD_ITEMS_SOURCE_ID) continue;
@@ -14207,6 +14241,14 @@ function normalizeLootSourceConfig(config = {}) {
       if (!String(entry?.label ?? "").trim()) entry.label = LOOT_WORLD_ITEMS_SOURCE_LABEL;
       entry.weight = Math.max(1, Math.floor(Number(entry?.weight ?? 1) || 1));
     }
+  }
+  const manifestSource = buildLootManifestSourceEntry({ enabled: true });
+  if (
+    manifestSource.id &&
+    validLootGenerationSourceIds.has(manifestSource.id) &&
+    !packs.some((entry) => String(entry?.id ?? "").trim() === manifestSource.id)
+  ) {
+    packs.unshift(manifestSource);
   }
   const tables = rawTables
     .map((entry) => normalizeLootSourceTableEntry(entry))
@@ -14235,8 +14277,9 @@ function normalizeLootSourceConfig(config = {}) {
       rarityCeiling: normalizeLootRarityValue(config?.filters?.rarityCeiling),
       manifestPackId: (() => {
         const id = String(config?.filters?.manifestPackId ?? "").trim();
-        if (!id) return "";
+        if (!id) return getLootManifestCompendiumPackId();
         if (validPackIds.has(id)) return id;
+        if (isLootManifestManagedWorldFolderSelection(id)) return getLootManifestCompendiumPackId();
         const selectedFolderId = parseLootWorldItemsFolderFilterId(id);
         return selectedFolderId ? buildLootWorldItemsFolderFilterId(selectedFolderId) : "";
       })(),
@@ -16676,10 +16719,10 @@ function formatPartyOperationsTagSchemaLabel(value = "") {
   const normalized = String(value ?? "")
     .trim()
     .toLowerCase();
-  if (!normalized) return "Legacy Tags";
+  if (!normalized) return "Untagged";
   if (normalized === "po-loot-v3") return "PO Loot V3";
   if (normalized === "po-loot-v2") return "PO Loot V2";
-  return formatPartyOperationsWordLabel(normalized, "Legacy Tags");
+  return formatPartyOperationsWordLabel(normalized, "Untagged");
 }
 
 function getLootItemMerchantCategoriesFromData(data = {}) {
@@ -17434,8 +17477,8 @@ function buildPartyOperationsTaxonomySummaryFromDocuments(documents = []) {
     if (poFlags?.lootEligible === false) continue;
     itemCount += 1;
 
-    pushPartyOperationsTaxonomyCount(schemaCounts, getLootItemTagSchemaFromData(data) || "legacy", (value) =>
-      value === "legacy" ? "Legacy Tags" : formatPartyOperationsTagSchemaLabel(value)
+    pushPartyOperationsTaxonomyCount(schemaCounts, getLootItemTagSchemaFromData(data) || "untagged", (value) =>
+      value === "untagged" ? "Untagged" : formatPartyOperationsTagSchemaLabel(value)
     );
 
     for (const category of getLootItemMerchantCategoriesFromData(data)) {
@@ -17465,7 +17508,7 @@ function buildPartyOperationsTaxonomySummaryFromDocuments(documents = []) {
   const primarySchema = schemaRows[0] ?? null;
   return {
     itemCount,
-    schemaLabel: primarySchema?.label ?? "Legacy Tags",
+    schemaLabel: primarySchema?.label ?? "Compendium",
     schemaCount: schemaRows.length,
     hasMultipleSchemas: schemaRows.length > 1,
     schemaRows,
@@ -19576,6 +19619,15 @@ function getLootChallengeAvailabilityWeight(draft = {}, entry = {}) {
   return 0.16;
 }
 
+function getLootModeItemTypeWeightModifier(draft = {}, entry = {}) {
+  const mode = String(draft?.mode ?? "horde")
+    .trim()
+    .toLowerCase();
+  if (mode !== "horde") return 1;
+  if (isLootAmmoLikeEntry(entry)) return 1.45;
+  return 1;
+}
+
 function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
   const mode = String(draft?.mode ?? "horde")
     .trim()
@@ -20898,6 +20950,7 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
     ) || 0.01
   );
   const availabilityWeight = Math.max(0, Number(getLootChallengeAvailabilityWeight(state?.draft ?? {}, entry)) || 0);
+  const modeItemTypeWeight = Math.max(0.01, Number(getLootModeItemTypeWeightModifier(state?.draft ?? {}, entry)) || 1);
   const intelligenceWeight = Math.max(
     0.000001,
     Number(getLootSelectionIntelligenceWeight(entry, state, phase)) || 0.000001
@@ -20912,6 +20965,7 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
     budgetWeight *
     treasureKindWeight *
     availabilityWeight *
+    modeItemTypeWeight *
     intelligenceWeight
   );
 }
@@ -21483,6 +21537,7 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       );
       const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
       const availabilityWeight = Math.max(0, Number(getLootChallengeAvailabilityWeight(draft, entry)) || 0);
+      const modeItemTypeWeight = Math.max(0.01, Number(getLootModeItemTypeWeightModifier(draft, entry)) || 1);
       const intelligenceWeight = Math.max(
         0.000001,
         Number(getLootSelectionIntelligenceWeight(entry, { selected, draft }, "spend")) || 0.000001
@@ -21496,6 +21551,7 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
         typeWeight *
         valueWeight *
         availabilityWeight *
+        modeItemTypeWeight *
         intelligenceWeight
       );
     });
@@ -27337,8 +27393,26 @@ function getMerchantPresetPackIds() {
     .filter(Boolean);
 }
 
+function buildMerchantPresetPackIndexDocument(packId = "", entry = {}, sourceLabel = "") {
+  const docId = String(entry?._id ?? entry?.id ?? "").trim();
+  if (!packId || !docId) return null;
+  return {
+    uuid: `Compendium.${packId}.Item.${docId}`,
+    name: String(entry?.name ?? docId).trim() || docId,
+    img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
+    type: String(entry?.type ?? "").trim(),
+    flags: foundry.utils.deepClone(entry?.flags ?? {}),
+    system: foundry.utils.deepClone(entry?.system ?? {}),
+    _merchantSourceLabel: sourceLabel || packId
+  };
+}
+
+function getMerchantWorldItemPresetFallbackDocuments() {
+  return [...(game.items?.contents ?? [])];
+}
+
 function getMerchantPresetSourceDocumentsSync() {
-  const documents = [...(game.items?.contents ?? [])];
+  const documents = [];
   const packLabelMap = getMerchantCompendiumPackLabelMap();
   for (const packId of getMerchantPresetPackIds()) {
     const pack = game.packs?.get(packId);
@@ -27347,24 +27421,15 @@ function getMerchantPresetSourceDocumentsSync() {
     const indexRows = getCollectionValues(pack.index);
     for (const indexRow of indexRows) {
       const entry = Array.isArray(indexRow) ? indexRow[1] : indexRow;
-      const docId = String(entry?._id ?? entry?.id ?? "").trim();
-      if (!docId) continue;
-      documents.push({
-        uuid: `Compendium.${packId}.Item.${docId}`,
-        name: String(entry?.name ?? docId).trim() || docId,
-        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
-        type: String(entry?.type ?? "").trim(),
-        flags: foundry.utils.deepClone(entry?.flags ?? {}),
-        system: foundry.utils.deepClone(entry?.system ?? {}),
-        _merchantSourceLabel: sourceLabel
-      });
+      const documentRef = buildMerchantPresetPackIndexDocument(packId, entry, sourceLabel);
+      if (documentRef) documents.push(documentRef);
     }
   }
-  return documents;
+  return documents.length > 0 ? documents : getMerchantWorldItemPresetFallbackDocuments();
 }
 
 async function getMerchantPresetSourceDocuments() {
-  const documents = [...(game.items?.contents ?? [])];
+  const documents = [];
   const packLabelMap = getMerchantCompendiumPackLabelMap();
   for (const packId of getMerchantPresetPackIds()) {
     const sourceLabel = packLabelMap.get(packId) ?? packId;
@@ -27380,11 +27445,11 @@ async function getMerchantPresetSourceDocuments() {
       })
     );
   }
-  return documents;
+  return documents.length > 0 ? documents : getMerchantWorldItemPresetFallbackDocuments();
 }
 
 function getMerchantSourceRefLabel(merchant = {}) {
-  if (isMerchantPresetStockMode(merchant)) return "Preset Library (World + Packs)";
+  if (isMerchantPresetStockMode(merchant)) return "Preset Compendiums";
   const stock = merchant?.stock ?? {};
   const sourceType = normalizeMerchantSourceType(stock?.sourceType);
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return "All World Items";
@@ -27650,6 +27715,28 @@ function getMerchantAllowedTypeOptionsForEditor(selectedTypes = []) {
       };
     })
     .sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
+}
+
+function getMerchantTitleOptionsForEditor(selectedTitleInput = "", archetypeInput = MERCHANT_DEFAULTS.archetype) {
+  const selectedTitle = String(selectedTitleInput ?? "").trim();
+  const archetype = normalizeMerchantArchetype(archetypeInput);
+  const rows = [];
+  const seen = new Set();
+  const addTitle = (valueInput) => {
+    const value = String(valueInput ?? "").trim();
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) return;
+    seen.add(key);
+    rows.push({
+      value,
+      label: value,
+      selected: selectedTitle.toLowerCase() === key
+    });
+  };
+  addTitle(getMerchantArchetypeDefinition(archetype)?.defaultTitle);
+  for (const definition of MERCHANT_ARCHETYPE_DEFINITIONS) addTitle(definition?.defaultTitle);
+  if (selectedTitle) addTitle(selectedTitle);
+  return rows;
 }
 
 function buildMerchantTagCatalogForEditor(merchant = {}) {
@@ -28929,6 +29016,12 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       MERCHANT_ALLOWED_ITEM_TYPE_LIST
   );
   const editorBuybackTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorBuybackAllowedTypes);
+  const editorBuybackTypeLabels = editorAllowedTypes
+    .map((itemType) => String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType).trim() || itemType)
+    .sort((left, right) => left.localeCompare(right));
+  const editorBuybackTypeSummary = editorSellEnabled
+    ? `Currency plus ${editorBuybackTypeLabels.join(", ") || "this merchant's sell categories"}`
+    : "Currency only";
   const editorBarterEnabled = editorDraft?.pricing?.barterEnabled !== false;
   const editorBarterDcRaw = Number(editorDraft?.pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
   const editorBarterDc = Number.isFinite(editorBarterDcRaw)
@@ -29148,6 +29241,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         actorId: String(editorDraft?.actorId ?? "")
       },
       archetypeOptions: getMerchantArchetypeOptions(editorArchetype),
+      titleOptions: getMerchantTitleOptionsForEditor(editorDraft?.title ?? "", editorArchetype),
       sourceTypeOptions: getMerchantEditorSourceTypeOptions(editorSourceType),
       scarcityOptions: getMerchantScarcityOptions(editorScarcity),
       accessModeOptions: getMerchantAccessModeOptions(editorAccessMode),
@@ -29164,7 +29258,8 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       sourcePackFilter: editorSourceFilter,
       sourcePackFilterActive: Boolean(editorSourceFilter),
       sourceTaxonomy: editorSourceTaxonomy,
-      buybackTypeOptions: editorBuybackTypeOptions
+      buybackTypeOptions: editorBuybackTypeOptions,
+      buybackTypeSummary: editorBuybackTypeSummary
     }
   };
 }
@@ -29209,15 +29304,6 @@ function readMerchantDefinitionPatchFromElement(element) {
     const text = String(node?.value ?? "").trim();
     if (!text) return [];
     return normalizer(text.split(/[\n,;]+/));
-  };
-  const getCheckedValues = (selector, normalizer = normalizeMerchantAllowedItemTypes, fallback = []) => {
-    const nodes = Array.from(pageRoot.querySelectorAll(selector));
-    if (nodes.length <= 0) return normalizer(fallback);
-    const values = nodes
-      .filter((entry) => Boolean(entry?.checked))
-      .map((entry) => String(entry?.value ?? "").trim())
-      .filter(Boolean);
-    return normalizer(values);
   };
   const getSelectedValues = (selector, fallback = []) => {
     const nodes = Array.from(pageRoot.querySelectorAll(selector));
@@ -29289,13 +29375,6 @@ function readMerchantDefinitionPatchFromElement(element) {
     "input[name='merchantCashOnHandGp']",
     Number(existingPricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp)
   );
-  const buybackAllowedTypes = getCheckedValues(
-    "input[name='merchantBuybackType']",
-    normalizeMerchantAllowedItemTypes,
-    existingPricing?.buybackAllowedTypes ??
-      MERCHANT_DEFAULTS.pricing.buybackAllowedTypes ??
-      MERCHANT_ALLOWED_ITEM_TYPE_LIST
-  );
   const barterEnabled = getCheckbox(
     "input[name='merchantBarterEnabled']",
     existingPricing?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled
@@ -29332,6 +29411,7 @@ function readMerchantDefinitionPatchFromElement(element) {
       100
   );
   const allowedTypes = existingAllowedTypes;
+  const buybackAllowedTypes = allowedTypes;
   const markupPercent = getNumber(
     "input[name='merchantMarkupPercent']",
     Number(existingPricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
@@ -30318,15 +30398,21 @@ function computeMerchantBarterAdjustment(checkTotalInput, dcInput, pricing = {})
   const dc = Math.max(1, Math.floor(Number(dcInput ?? 10) || 10));
   const margin = checkTotal - dc;
   const success = margin >= 0;
+  const tierMultiplier = Math.abs(margin) >= MERCHANT_BARTER_STRONG_MARGIN ? MERCHANT_BARTER_STRONG_MULTIPLIER : 1;
   const modifiers = getMerchantBarterPricingModifiers(pricing);
-  const buyMarkupDelta = success ? modifiers.successBuyModifier : modifiers.failureBuyModifier;
-  const sellRateDelta = success ? modifiers.successSellModifier : modifiers.failureSellModifier;
+  const buyMarkupDelta = Number(
+    ((success ? modifiers.successBuyModifier : modifiers.failureBuyModifier) * tierMultiplier).toFixed(2)
+  );
+  const sellRateDelta = Number(
+    ((success ? modifiers.successSellModifier : modifiers.failureSellModifier) * tierMultiplier).toFixed(2)
+  );
   const delta = Math.max(Math.abs(buyMarkupDelta), Math.abs(sellRateDelta));
   return {
     checkTotal,
     dc,
     margin,
     success,
+    tierMultiplier,
     delta,
     buyMarkupDelta,
     sellRateDelta
@@ -31129,7 +31215,7 @@ function refreshMerchantTradeDialogPricing(root) {
   const taxFeeFactor = Math.max(1, Number(root.dataset?.taxFeeFactor ?? 1) || 1);
   const barterBuyDelta = Number(barter?.buyMarkupDelta ?? 0);
   const barterSellDelta = Number(barter?.sellRateDelta ?? 0);
-  // Enforce ±10% barter cap relative to base (per spec)
+  // Enforce barter cap relative to base.
   const haggleCap = MERCHANT_HAGGLE_CAP_PERCENT;
   const effectiveBuyMarkup = Math.max(
     baseBuyMarkup * (1 - haggleCap),
@@ -49991,11 +50077,84 @@ function buildLightToggles(state, ranks, isGM) {
 
 function buildMarchSpacingGridContext(state, formationBoard) {
   const size = 12;
+  const encodedCellOffset = 1000;
   const centerCell = Math.floor(size / 2);
   const tokenPositions = getMarchingTokenPositions(state);
   const tokenEntries = Object.entries(tokenPositions);
   const gridUnitPixels = getMarchingGridUnitPixels();
   const actors = [];
+  const boardRows = Array.isArray(formationBoard?.rows) ? formationBoard.rows : [];
+  const getLowestNumericValue = (values) => {
+    const numeric = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
+    if (!numeric.length) return null;
+    return Math.min(...numeric);
+  };
+  const getHighestNumericValue = (values) => {
+    const numeric = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
+    if (!numeric.length) return null;
+    return Math.max(...numeric);
+  };
+
+  const getRankBandCenterRow = (rankId) => {
+    const rowIndex = Math.max(
+      0,
+      boardRows.findIndex((row) => row?.id === rankId)
+    );
+    return Math.max(
+      0,
+      Math.min(size - 1, Math.round(((rowIndex + 0.5) / Math.max(1, boardRows.length || 1)) * (size - 1)))
+    );
+  };
+
+  const decodeStoredCellPosition = (rankId, cellIndex, columnCount = 1) => {
+    const normalizedCellIndex = Number.parseInt(String(cellIndex ?? ""), 10);
+    if (!Number.isInteger(normalizedCellIndex) || normalizedCellIndex < 0) return null;
+    if (normalizedCellIndex >= encodedCellOffset) {
+      const encoded = normalizedCellIndex - encodedCellOffset;
+      return {
+        row: Math.max(0, Math.min(size - 1, Math.floor(encoded / size))),
+        column: Math.max(0, Math.min(size - 1, encoded % size))
+      };
+    }
+    return {
+      row: getRankBandCenterRow(rankId),
+      column: Math.max(
+        0,
+        Math.min(size - 1, Math.round(((normalizedCellIndex + 0.5) / Math.max(1, columnCount)) * (size - 1)))
+      )
+    };
+  };
+
+  const pushActor = ({ actorId, actor, row, column, offsetLabel }) => {
+    const actorView = buildActorView(actor, canAccessAllPlayerOps(), "names-passives");
+    const hasLight = Boolean(state.light?.[actorId]);
+    const lightRange = getMarchLightRange(state, actorId);
+    const statParts = [];
+    if (actorView.passivePerception) statParts.push(`PP ${actorView.passivePerception}`);
+    if (actorView.ac) statParts.push(`AC ${actorView.ac}`);
+    if (actorView.hpLabel) statParts.push(`HP ${actorView.hpLabel}`);
+    if (actorView.darkvision) statParts.push(`DV ${actorView.darkvision}`);
+    actors.push({
+      actorId,
+      name: actor.name,
+      img: actorView.img,
+      initial:
+        String(actor.name ?? "?")
+          .trim()
+          .slice(0, 1)
+          .toUpperCase() || "?",
+      row,
+      column,
+      offsetLabel,
+      passivePerception: actorView.passivePerception,
+      hasLight,
+      lightBright: lightRange.bright,
+      lightDim: lightRange.dim,
+      lightTooltip: hasLight ? `Torch active: Bright ${lightRange.bright} ft, Dim ${lightRange.dim} ft.` : "Torch off.",
+      statLabel: statParts.join(" | "),
+      title: `${actor.name}${statParts.length ? ` - ${statParts.join(", ")}` : ""}${hasLight ? ` - Torch ${lightRange.bright}/${lightRange.dim} ft` : ""} - ${offsetLabel}`
+    });
+  };
 
   if (tokenEntries.length > 0) {
     const centroid = tokenEntries.reduce(
@@ -50015,46 +50174,35 @@ function buildMarchSpacingGridContext(state, formationBoard) {
       const dyFeet = Math.round(((position.y - centroid.y) / gridUnitPixels) * 5);
       const column = Math.max(0, Math.min(size - 1, centerCell + Math.round(dxFeet / 5)));
       const row = Math.max(0, Math.min(size - 1, centerCell + Math.round(dyFeet / 5)));
-      actors.push({
+      pushActor({
         actorId,
-        name: actor.name,
-        initial:
-          String(actor.name ?? "?")
-            .trim()
-            .slice(0, 1)
-            .toUpperCase() || "?",
+        actor,
         row,
         column,
         offsetLabel: `${dxFeet >= 0 ? "+" : ""}${dxFeet} ft, ${dyFeet >= 0 ? "+" : ""}${dyFeet} ft`
       });
     }
   } else {
-    const rows = Array.isArray(formationBoard?.rows) ? formationBoard.rows : [];
-    rows.forEach((rankRow, rowIndex) => {
+    boardRows.forEach((rankRow) => {
       const cells = Array.isArray(rankRow?.cells) ? rankRow.cells : [];
       cells.forEach((cell) => {
         if (!cell?.hasActor || !cell?.actorId) return;
         const actor = game.actors.get(cell.actorId);
         if (!actor) return;
         const columnCount = Math.max(1, Number(formationBoard?.columnCount ?? cells.length) || cells.length || 1);
-        const column = Math.max(
-          0,
-          Math.min(size - 1, Math.round(((Number(cell.column ?? 0) + 0.5) / columnCount) * (size - 1)))
+        const storedPosition = decodeStoredCellPosition(
+          rankRow.id,
+          state?.rankPlacements?.[rankRow.id]?.[cell.actorId],
+          columnCount
         );
-        const row = Math.max(
-          0,
-          Math.min(size - 1, Math.round(((rowIndex + 0.5) / Math.max(1, rows.length)) * (size - 1)))
-        );
-        actors.push({
+        const fallbackPosition = decodeStoredCellPosition(rankRow.id, cell.column, columnCount);
+        const position = storedPosition ??
+          fallbackPosition ?? { row: getRankBandCenterRow(rankRow.id), column: centerCell };
+        pushActor({
           actorId: cell.actorId,
-          name: actor.name,
-          initial:
-            String(actor.name ?? "?")
-              .trim()
-              .slice(0, 1)
-              .toUpperCase() || "?",
-          row,
-          column,
+          actor,
+          row: position.row,
+          column: position.column,
           offsetLabel: `${rankRow.label}, column ${Number(cell.column ?? 0) + 1}`
         });
       });
@@ -50067,24 +50215,18 @@ function buildMarchSpacingGridContext(state, formationBoard) {
     if (!actorsByCell.has(key)) actorsByCell.set(key, []);
     actorsByCell.get(key).push(actor);
   }
-  const boardRows = Array.isArray(formationBoard?.rows) ? formationBoard.rows : [];
-  const columnCount = Math.max(1, Number(formationBoard?.columnCount ?? 1) || 1);
   const resolveSpacingCellTarget = (rowIndex, columnIndex) => {
     const boardRowIndex = Math.max(
       0,
       Math.min(boardRows.length - 1, Math.floor(((rowIndex + 0.5) / size) * Math.max(1, boardRows.length)))
     );
-    const boardColumnIndex = Math.max(
-      0,
-      Math.min(columnCount - 1, Math.floor(((columnIndex + 0.5) / size) * columnCount))
-    );
     const rankId = String(boardRows[boardRowIndex]?.id ?? "middle").trim() || "middle";
-    const boardCells = Array.isArray(boardRows[boardRowIndex]?.cells) ? boardRows[boardRowIndex].cells : [];
-    const boardCell = boardCells.find((cell) => Number(cell?.column) === boardColumnIndex) ?? null;
+    const existingRankActors = actors.filter((actor) => actor.row === rowIndex && actor.column === columnIndex);
+    const rankActorIds = new Set(state?.ranks?.[rankId] ?? []);
     return {
       rankId,
-      cellIndex: boardColumnIndex,
-      insertIndex: Number.isInteger(Number(boardCell?.insertIndex)) ? Number(boardCell.insertIndex) : 0
+      cellIndex: encodedCellOffset + rowIndex * size + columnIndex,
+      insertIndex: existingRankActors.filter((actor) => rankActorIds.has(actor.actorId)).length
     };
   };
 
@@ -50104,6 +50246,9 @@ function buildMarchSpacingGridContext(state, formationBoard) {
   return {
     rows,
     actors,
+    assignedActorCount: actors.length,
+    passivePerceptionLow: getLowestNumericValue(actors.map((actor) => actor?.passivePerception)),
+    passivePerceptionHigh: getHighestNumericValue(actors.map((actor) => actor?.passivePerception)),
     hasActors: actors.length > 0,
     sourceLabel: tokenEntries.length > 0 ? "Canvas token spacing" : "March board spacing"
   };
@@ -51411,7 +51556,7 @@ export function buildPartyOperationsReadyConfig() {
     handleAutomaticMerchantAutoRefreshTick,
     queueAudioLibraryMetadataWarmup,
     ensureOperationsJournalFolderTree,
-    scheduleLootManifestCompendiumTypeFolderSync,
+    scheduleLootManifestCompendiumTypeFolderSync: null,
     registerModuleSocketHandler,
     socketChannel: SOCKET_CHANNEL,
     socketHandler: handlePartyOperationsSocketMessage,

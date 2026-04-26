@@ -370,10 +370,9 @@
             </div>
             <label class="po-resource-row"><span>Manifest Pack</span><select class="po-select" data-action="set-loot-manifest-pack">{{#each operations.lootSources.manifestPackOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
             <div class="po-op-actions">
-              <button type="button" class="po-button po-button-secondary" data-action="import-loot-manifest-compendium">Import Built Items to World Folders</button>
-              <button type="button" class="po-button" data-action="clear-loot-manifest-imported-items">Clear Imported Built Items</button>
+              <button type="button" class="po-button" data-action="clear-loot-manifest-imported-items">Clear Legacy Imported Items</button>
             </div>
-            <div class="po-hint">The source compendium can appear flat because module packs are read-only. Import still rebuilds the world folder tree from Party Operations folder metadata, and Clear removes previously imported built items plus managed folders so you can start clean.</div>
+            <div class="po-hint">Built loot now runs directly from the Party Operations compendium. Module packs can be read-only on Forge, so the module does not need to rebuild those items into world folders. Clear only removes older imported world copies.</div>
           </div>
         </div>
         {{/if}}
