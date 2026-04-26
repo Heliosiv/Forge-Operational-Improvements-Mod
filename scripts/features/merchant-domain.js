@@ -1280,19 +1280,9 @@ export function generateRandomMerchantNameUnbound() {
   return `${first} ${last}`.trim();
 }
 
-export function getMerchantEditorSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
-  const value = normalizeMerchantSourceType(selected);
+export function getMerchantEditorSourceTypeOptions(_selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
+  const value = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
   return [
-    {
-      value: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
-      label: "All World Items",
-      selected: value === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-    },
-    {
-      value: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
-      label: "World Item Folder",
-      selected: value === MERCHANT_SOURCE_TYPES.WORLD_FOLDER
-    },
     {
       value: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
       label: "Compendium Pack",
@@ -1372,7 +1362,7 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
   );
   const sourceType = customMode
-    ? normalizeMerchantSourceType(blueprint?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER)
+    ? normalizeMerchantSourceType(blueprint?.sourceType ?? MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK)
     : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
   return {
     id,
@@ -1607,7 +1597,9 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     MERCHANT_DEFAULTS.stock.maxItems
   );
   const sourceType = customMode
-    ? normalizeMerchantSourceType(source?.sourceType ?? existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER)
+    ? normalizeMerchantSourceType(
+        source?.sourceType ?? existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
+      )
     : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
   const sourceRef = String(source?.sourceRef ?? "").trim();
   const sourceRefs =

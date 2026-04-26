@@ -12,7 +12,6 @@ export const LOOT_REGISTRY_TABS = Object.freeze({
 
 export const LOOT_SETTINGS_TABS = Object.freeze({
   SOURCES: "sources",
-  TABLES: "tables",
   FILTERS: "filters"
 });
 
@@ -25,12 +24,24 @@ export function createLootUiState({
 } = {}) {
   const allowedArchiveSorts = new Set(
     Array.isArray(lootClaimsArchiveSortOptions)
-      ? lootClaimsArchiveSortOptions.map((entry) => String(entry?.value ?? "").trim().toLowerCase()).filter(Boolean)
+      ? lootClaimsArchiveSortOptions
+          .map((entry) =>
+            String(entry?.value ?? "")
+              .trim()
+              .toLowerCase()
+          )
+          .filter(Boolean)
       : []
   );
   const allowedLiveSorts = new Set(
     Array.isArray(lootClaimsLiveSortOptions)
-      ? lootClaimsLiveSortOptions.map((entry) => String(entry?.value ?? "").trim().toLowerCase()).filter(Boolean)
+      ? lootClaimsLiveSortOptions
+          .map((entry) =>
+            String(entry?.value ?? "")
+              .trim()
+              .toLowerCase()
+          )
+          .filter(Boolean)
       : []
   );
   const allowedLootSettingsTabs = new Set(Object.values(lootSettingsTabs));
@@ -40,7 +51,10 @@ export function createLootUiState({
   }
 
   function normalizeLootPackSourcesFilter(value) {
-    return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+    return String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
   }
 
   function getLootPackSourcesUiState() {
@@ -96,17 +110,24 @@ export function createLootUiState({
   }
 
   function normalizeLootClaimsArchiveSort(value) {
-    const normalized = String(value ?? "").trim().toLowerCase();
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
     return allowedArchiveSorts.has(normalized) ? normalized : "archived-desc";
   }
 
   function normalizeLootClaimsLiveSort(value) {
-    const normalized = String(value ?? "").trim().toLowerCase();
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
     return allowedLiveSorts.has(normalized) ? normalized : "value-desc";
   }
 
   function normalizeLootClaimsLiveSearch(value) {
-    return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+    return String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80);
   }
 
   function getLootClaimActorSelection() {
@@ -215,9 +236,14 @@ export function createLootUiState({
   }
 
   function normalizeLootRegistryTab(tab, fallback = lootRegistryTabs.PREVIEW) {
-    const fallbackValue = String(fallback ?? lootRegistryTabs.PREVIEW).trim().toLowerCase();
-    const normalizedFallback = fallbackValue === lootRegistryTabs.SETTINGS ? lootRegistryTabs.SETTINGS : lootRegistryTabs.PREVIEW;
-    const value = String(tab ?? normalizedFallback).trim().toLowerCase();
+    const fallbackValue = String(fallback ?? lootRegistryTabs.PREVIEW)
+      .trim()
+      .toLowerCase();
+    const normalizedFallback =
+      fallbackValue === lootRegistryTabs.SETTINGS ? lootRegistryTabs.SETTINGS : lootRegistryTabs.PREVIEW;
+    const value = String(tab ?? normalizedFallback)
+      .trim()
+      .toLowerCase();
     return value === lootRegistryTabs.SETTINGS ? lootRegistryTabs.SETTINGS : lootRegistryTabs.PREVIEW;
   }
 
@@ -234,17 +260,18 @@ export function createLootUiState({
   }
 
   function normalizeLootSettingsTab(tab, fallback = lootSettingsTabs.SOURCES) {
-    const normalized = String(tab ?? "").trim().toLowerCase();
+    const normalized = String(tab ?? "")
+      .trim()
+      .toLowerCase();
     if (allowedLootSettingsTabs.has(normalized)) return normalized;
-    const normalizedFallback = String(fallback ?? lootSettingsTabs.SOURCES).trim().toLowerCase();
+    const normalizedFallback = String(fallback ?? lootSettingsTabs.SOURCES)
+      .trim()
+      .toLowerCase();
     return allowedLootSettingsTabs.has(normalizedFallback) ? normalizedFallback : lootSettingsTabs.SOURCES;
   }
 
   function getActiveLootSettingsTab() {
-    return normalizeLootSettingsTab(
-      readSessionValue(getLootSettingsTabStorageKey()),
-      lootSettingsTabs.SOURCES
-    );
+    return normalizeLootSettingsTab(readSessionValue(getLootSettingsTabStorageKey()), lootSettingsTabs.SOURCES);
   }
 
   function setActiveLootSettingsTab(tab) {

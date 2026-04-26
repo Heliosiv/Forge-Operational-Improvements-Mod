@@ -219,11 +219,11 @@
                   <span>Manual Source Tuning</span>
                   <input type="checkbox" name="merchantCustomMode" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.customMode}}checked{{/if}} />
                 </label>
-                <div class="po-op-summary">{{#if merchants.gm.editor.customMode}}Expert override active. Folder, pack, and rarity controls below are now driving stock.{{else}}Archetype-driven stock is active. Leave manual tuning off for simple shop generation.{{/if}}</div>
+                <div class="po-op-summary">{{#if merchants.gm.editor.customMode}}Expert override active. Compendium and rarity controls below are now driving stock.{{else}}Archetype-driven stock is active from the compendium. Leave manual tuning off for simple shop generation.{{/if}}</div>
                 <details class="po-panel-disclosure po-merchant-advanced-stock" {{#if merchants.gm.editor.customMode}}open{{/if}}>
                   <summary class="po-panel-disclosure-summary">
                     <span class="po-section-title">Advanced Stock Overrides</span>
-                    <span class="po-op-summary">Sources, packs, and custom item pools</span>
+                    <span class="po-op-summary">Compendium pool and rarity controls</span>
                   </summary>
                   <div class="po-panel-disclosure-body">
                 <label class="po-resource-row">
@@ -235,18 +235,18 @@
                   </select>
                 </label>
                 <div class="po-resource-row po-merchant-source-row">
-                  <span>Stock Sources (Folders or Packs)</span>
+                  <span>Stock Compendium</span>
                   <div class="po-merchant-source-picker">
                     {{#if merchants.gm.hasSourceRefSelectableOptions}}
                     <div class="po-merchant-source-filter-bar">
                       <label class="po-merchant-source-filter-field">
-                        <span>Filter Sources</span>
+                        <span>Filter Compendium</span>
                         <input
                           type="search"
                           name="merchantSourceFilter"
                           class="po-input"
                           value="{{merchants.gm.sourcePackFilter}}"
-                          placeholder="Type to filter folders or packs"
+                          placeholder="Type to filter compendium items"
                           autocomplete="off"
                           spellcheck="false"
                           data-merchant-source-filter
@@ -267,7 +267,7 @@
                       available.
                     </div>
                     {{#if merchants.gm.sourceRefIsFolderTree}}
-                    <div class="po-op-summary">Choose a parent folder for a broad stock pool or a child folder for a narrower one.</div>
+                    <div class="po-op-summary">Compendium stock is the supported source for merchant generation.</div>
                     {{/if}}
                     <div class="po-merchant-source-list {{#if merchants.gm.sourceRefIsFolderTree}}is-folder-tree{{/if}}" data-po-scroll-preserve="merchant-source-ref-list">
                       {{#each merchants.gm.sourceRefSelectableOptions}}

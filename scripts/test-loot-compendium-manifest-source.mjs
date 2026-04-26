@@ -6,8 +6,8 @@ const gmLootTemplate = readFileSync("templates/gm-loot.hbs", "utf8");
 
 assert.match(
   runtimeSource,
-  /packs:\s*\[\s*buildLootManifestSourceEntry\(\{\s*enabled:\s*true\s*\}\),\s*buildLootWorldItemSourceEntry\(\{\s*enabled:\s*false\s*\}\)\s*\]/,
-  "default loot source config should prefer the built-items compendium and leave imported world items off"
+  /packs:\s*\[\s*buildLootManifestSourceEntry\(\{\s*enabled:\s*true\s*\}\)\s*\]/,
+  "default loot source config should only use the built-items compendium"
 );
 
 assert.match(
@@ -38,6 +38,24 @@ assert.match(
   gmLootTemplate,
   /Built loot now runs directly from the Party Operations compendium\./,
   "GM Loot should explain that built loot is compendium-backed"
+);
+
+assert.equal(
+  gmLootTemplate.includes("Roll-Table Sources"),
+  false,
+  "GM Loot should not expose roll-table source controls when compendium-only mode is active"
+);
+
+assert.equal(
+  gmLootTemplate.includes("Item Pack Sources"),
+  false,
+  "GM Loot should not expose the old multi-pack source controls"
+);
+
+assert.match(
+  gmLootTemplate,
+  /data-action="set-loot-world-rarity-weight"/,
+  "GM Loot should expose world rarity sliders for compendium outcomes"
 );
 
 process.stdout.write("loot compendium manifest source validation passed\n");

@@ -91,8 +91,8 @@ assert.equal(uiState.getActiveLootRegistryTab(), "settings");
 uiState.setActiveLootRegistryTab("invalid");
 assert.equal(uiState.getActiveLootRegistryTab(), "preview");
 
-assert.equal(uiState.setActiveLootSettingsTab(LOOT_SETTINGS_TABS.TABLES), LOOT_SETTINGS_TABS.TABLES);
-assert.equal(uiState.getActiveLootSettingsTab(), LOOT_SETTINGS_TABS.TABLES);
+assert.equal(uiState.setActiveLootSettingsTab(LOOT_SETTINGS_TABS.FILTERS), LOOT_SETTINGS_TABS.FILTERS);
+assert.equal(uiState.getActiveLootSettingsTab(), LOOT_SETTINGS_TABS.FILTERS);
 assert.equal(uiState.setActiveLootSettingsTab("invalid"), LOOT_SETTINGS_TABS.SOURCES);
 assert.equal(uiState.getActiveLootSettingsTab(), LOOT_SETTINGS_TABS.SOURCES);
 

@@ -54,6 +54,7 @@ export function createGmLootPageApp(deps) {
     toggleLootItemType,
     setLootRarityFloor,
     setLootRarityCeiling,
+    setLootWorldRarityWeight,
     setLootManifestPack,
     importLootManifestCompendiumToWorld,
     clearLootManifestImportedWorldItems,
@@ -204,6 +205,7 @@ export function createGmLootPageApp(deps) {
         "toggle-loot-item-type": rerenderAlways(toggleLootItemType),
         "set-loot-rarity-floor": rerenderAlways(setLootRarityFloor),
         "set-loot-rarity-ceiling": rerenderAlways(setLootRarityCeiling),
+        "set-loot-world-rarity-weight": rerenderUnlessInput(setLootWorldRarityWeight),
         "set-loot-manifest-pack": rerenderAlways(setLootManifestPack),
         "import-loot-manifest-compendium": rerenderAlways(
           withActionStatus(() => importLootManifestCompendiumToWorld(), {
