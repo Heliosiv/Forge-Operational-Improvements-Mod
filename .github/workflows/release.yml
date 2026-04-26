@@ -90,3 +90,14 @@ jobs:
               --target "$GITHUB_SHA" \
               --generate-notes
           fi
+
+      - name: 12) Publish Foundry package listing
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          FOUNDRY_PACKAGE_RELEASE_TOKEN: ${{ secrets.FOUNDRY_PACKAGE_RELEASE_TOKEN }}
+        run: |
+          if [ -z "$FOUNDRY_PACKAGE_RELEASE_TOKEN" ]; then
+            echo "FOUNDRY_PACKAGE_RELEASE_TOKEN repository secret is required so Foundry and Forge see this release." >&2
+            exit 1
+          fi
+          npm run publish:foundry
