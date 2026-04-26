@@ -57,9 +57,11 @@ import { registerPartyOperationsUiHooks } from "./hooks/ui-hooks.js";
   );
 
   controls[0].tools[0].onClick();
+  controls[0].tools[1].onChange();
   controls[0].tools[3].onClick();
   assert.deepEqual(openedTabs, [
     { tabId: "rest-watch", options: { force: true } },
+    { tabId: "marching-order", options: { force: true } },
     { tabId: "gm", options: { force: true } }
   ]);
 
@@ -76,9 +78,15 @@ import { registerPartyOperationsUiHooks } from "./hooks/ui-hooks.js";
   assert.equal(launcherCalls.length, 4);
   assert.deepEqual(hiddenRoots, [{ nodeName: "sidebar-root" }, documentRef]);
   assert.deepEqual(timers, [30, 30, 30]);
-  assert.ok(perfEvents.some((entry) => entry.metricName === "launcher.ensure-request" && entry.meta?.reason === "renderSidebarTab"));
+  assert.ok(
+    perfEvents.some(
+      (entry) => entry.metricName === "launcher.ensure-request" && entry.meta?.reason === "renderSidebarTab"
+    )
+  );
   assert.ok(perfEvents.some((entry) => entry.metricName === "audio.playlist-hide" && entry.meta?.deferred));
-  assert.ok(perfEvents.some((entry) => entry.metricName === "launcher.ensure-skipped" && entry.meta?.reason === "canvasReady"));
+  assert.ok(
+    perfEvents.some((entry) => entry.metricName === "launcher.ensure-skipped" && entry.meta?.reason === "canvasReady")
+  );
 }
 
 {
@@ -102,4 +110,53 @@ import { registerPartyOperationsUiHooks } from "./hooks/ui-hooks.js";
     controls[0].tools.map((tool) => tool.name),
     ["po-rest-watch", "po-marching-order", "po-operations"]
   );
+}
+
+{
+  const registrations = new Map();
+  const openedTabs = [];
+
+  registerPartyOperationsUiHooks({
+    HooksRef: {
+      on(eventName, handler) {
+        registrations.set(eventName, handler);
+      }
+    },
+    openMainTab(tabId, options) {
+      openedTabs.push({ tabId, options });
+    },
+    canAccessAllPlayerOps() {
+      return true;
+    }
+  });
+
+  const controls = {
+    tokens: {
+      name: "tokens",
+      title: "Token Controls",
+      icon: "fas fa-user",
+      order: 0,
+      tools: {}
+    }
+  };
+  registrations.get("getSceneControlButtons")(controls);
+
+  assert.equal(controls["party-operations"].name, "party-operations");
+  assert.equal(controls["party-operations"].order, 1);
+  assert.deepEqual(Object.keys(controls["party-operations"].tools), [
+    "po-rest-watch",
+    "po-marching-order",
+    "po-operations",
+    "po-gm"
+  ]);
+
+  controls["party-operations"].tools["po-rest-watch"].onChange();
+  controls["party-operations"].tools["po-gm"].onChange();
+  assert.deepEqual(openedTabs, [
+    { tabId: "rest-watch", options: { force: true } },
+    { tabId: "gm", options: { force: true } }
+  ]);
+
+  registrations.get("getSceneControlButtons")(controls);
+  assert.equal(Object.keys(controls).length, 2);
 }

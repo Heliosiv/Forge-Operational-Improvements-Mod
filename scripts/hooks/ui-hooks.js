@@ -17,12 +17,92 @@ export function registerPartyOperationsUiHooks({
 
   const lastLauncherEnsureAtByFamily = new Map();
 
+  function createSceneControlTool({ name, title, icon, order, tabId }) {
+    const openToolTab = () => openMainTab?.(tabId, { force: true });
+    return {
+      name,
+      title,
+      icon,
+      order,
+      visible: true,
+      button: true,
+      onClick: openToolTab,
+      onChange: openToolTab
+    };
+  }
+
+  function createPartyOperationsSceneTools() {
+    const tools = [
+      createSceneControlTool({
+        name: "po-rest-watch",
+        title: "Open Rest Watch",
+        icon: "fas fa-moon",
+        order: 0,
+        tabId: "rest-watch"
+      }),
+      createSceneControlTool({
+        name: "po-marching-order",
+        title: "Open Marching Order",
+        icon: "fas fa-arrow-up",
+        order: 1,
+        tabId: "marching-order"
+      }),
+      createSceneControlTool({
+        name: "po-operations",
+        title: "Open Operations",
+        icon: "fas fa-clipboard-list",
+        order: 2,
+        tabId: "operations"
+      })
+    ];
+
+    if (canAccessGmPage?.()) {
+      tools.push(
+        createSceneControlTool({
+          name: "po-gm",
+          title: "Open GM",
+          icon: "fas fa-user-shield",
+          order: 3,
+          tabId: "gm"
+        })
+      );
+    }
+
+    return tools;
+  }
+
+  function addPartyOperationsSceneControlToArray(controls) {
+    if (controls.some((control) => control?.name === "party-operations")) return;
+    controls.push({
+      name: "party-operations",
+      title: "Party Operations",
+      icon: "fas fa-compass",
+      visible: true,
+      tools: createPartyOperationsSceneTools(),
+      activeTool: "po-rest-watch"
+    });
+  }
+
+  function addPartyOperationsSceneControlToRecord(controls) {
+    if (controls["party-operations"]) return;
+    const toolEntries = createPartyOperationsSceneTools().map((tool) => [tool.name, tool]);
+    controls["party-operations"] = {
+      name: "party-operations",
+      title: "Party Operations",
+      icon: "fas fa-compass",
+      order: Object.keys(controls).length,
+      visible: true,
+      tools: Object.fromEntries(toolEntries),
+      activeTool: "po-rest-watch"
+    };
+  }
+
   function requestLauncherEnsure(reason, meta = {}) {
     const family = String(meta?.family ?? "launcher-ui").trim() || "launcher-ui";
     const nowRaw = Number(nowFn?.() ?? Date.now());
     const now = Number.isFinite(nowRaw) ? nowRaw : Date.now();
     const lastAt = Number(lastLauncherEnsureAtByFamily.get(family) ?? Number.NEGATIVE_INFINITY);
-    if ((now - lastAt) < launcherEnsureCooldownMs) {
+    if (now - lastAt < launcherEnsureCooldownMs) {
       perfTracker.increment("launcher.ensure-skipped", 1, {
         reason,
         family,
@@ -44,60 +124,21 @@ export function registerPartyOperationsUiHooks({
     if (!eventName) return;
     HooksRef.on(eventName, () => {
       requestLauncherEnsure(eventName, { family: "ui-render" });
-      setTimeoutFn?.(() => requestLauncherEnsure(eventName, {
-        family: "ui-render",
-        deferred: true,
-        delayMs: 30
-      }), 30);
+      setTimeoutFn?.(
+        () =>
+          requestLauncherEnsure(eventName, {
+            family: "ui-render",
+            deferred: true,
+            delayMs: 30
+          }),
+        30
+      );
     });
   }
 
   HooksRef.on("getSceneControlButtons", (controls) => {
-    if (!Array.isArray(controls)) return;
-    if (controls.some((control) => control?.name === "party-operations")) return;
-
-    const tools = [
-      {
-        name: "po-rest-watch",
-        title: "Open Rest Watch",
-        icon: "fas fa-moon",
-        button: true,
-        onClick: () => openMainTab?.("rest-watch", { force: true })
-      },
-      {
-        name: "po-marching-order",
-        title: "Open Marching Order",
-        icon: "fas fa-arrow-up",
-        button: true,
-        onClick: () => openMainTab?.("marching-order", { force: true })
-      },
-      {
-        name: "po-operations",
-        title: "Open Operations",
-        icon: "fas fa-clipboard-list",
-        button: true,
-        onClick: () => openMainTab?.("operations", { force: true })
-      }
-    ];
-
-    if (canAccessGmPage?.()) {
-      tools.push({
-        name: "po-gm",
-        title: "Open GM",
-        icon: "fas fa-user-shield",
-        button: true,
-        onClick: () => openMainTab?.("gm", { force: true })
-      });
-    }
-
-    controls.push({
-      name: "party-operations",
-      title: "Party Operations",
-      icon: "fas fa-compass",
-      visible: true,
-      tools,
-      activeTool: "po-rest-watch"
-    });
+    if (Array.isArray(controls)) addPartyOperationsSceneControlToArray(controls);
+    else if (controls && typeof controls === "object") addPartyOperationsSceneControlToRecord(controls);
   });
 
   HooksRef.on("renderSceneControls", () => {
@@ -114,11 +155,15 @@ export function registerPartyOperationsUiHooks({
 
   HooksRef.on("renderSidebarTab", (_app, html) => {
     requestLauncherEnsure("renderSidebarTab", { family: "ui-render" });
-    setTimeoutFn?.(() => requestLauncherEnsure("renderSidebarTab", {
-      family: "ui-render",
-      deferred: true,
-      delayMs: 30
-    }), 30);
+    setTimeoutFn?.(
+      () =>
+        requestLauncherEnsure("renderSidebarTab", {
+          family: "ui-render",
+          deferred: true,
+          delayMs: 30
+        }),
+      30
+    );
     perfTracker.increment("audio.playlist-hide", 1, { reason: "renderSidebarTab" });
     hideManagedAudioMixPlaylistUi?.(html?.[0] ?? html ?? documentRef);
     setTimeoutFn?.(() => {
