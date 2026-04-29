@@ -7222,7 +7222,7 @@ function buildOperationsContextFallback() {
           barterFailureSellModifierPercent: Number(
             ((MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05) * 100).toFixed(2)
           ),
-          sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
+          sourceType: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
           sourceRef: "",
           sourcePackIds: [],
           allowedTypes: [...MERCHANT_ALLOWED_ITEM_TYPE_LIST],
@@ -7237,7 +7237,7 @@ function buildOperationsContextFallback() {
           rarityWeightLegendary: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.legendary ?? 1),
           actorId: ""
         },
-        sourceTypeOptions: getMerchantEditorSourceTypeOptions(MERCHANT_SOURCE_TYPES.WORLD_FOLDER),
+        sourceTypeOptions: getMerchantEditorSourceTypeOptions(MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK),
         accessModeOptions: getMerchantAccessModeOptions(MERCHANT_ACCESS_MODES.ALL),
         barterAbilityOptions: getMerchantBarterAbilityOptions(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
         raceOptions: getMerchantEditorRaceOptions(""),
@@ -10985,16 +10985,7 @@ function isValidLootManifestPackSelectionId(selectionId = "") {
       .filter(Boolean)
   );
   if (validPackIds.has(id)) return true;
-
-  const folderId = parseLootWorldItemsFolderFilterId(id);
-  if (!folderId) return false;
-
-  const folder = game.folders?.get?.(folderId) ?? null;
-  if (!folder) return true;
-  const folderType = String(folder?.type ?? folder?.documentName ?? "")
-    .trim()
-    .toLowerCase();
-  return folderType === "item";
+  return false;
 }
 
 function isLootManifestManagedWorldFolderSelection(selectionId = "") {
@@ -15356,15 +15347,10 @@ async function importLootManifestCompendiumToWorld() {
 
   await updateLootSourceConfig(
     (config) => {
-      if (!Array.isArray(config.packs)) config.packs = [];
-      let worldSource = config.packs.find((entry) => String(entry?.id ?? "").trim() === LOOT_WORLD_ITEMS_SOURCE_ID);
-      if (!worldSource) {
-        config.packs.unshift(buildLootWorldItemSourceEntry({ enabled: true }));
-        worldSource = config.packs[0];
-      }
-      worldSource.enabled = true;
+      config.packs = [buildLootManifestSourceEntry({ enabled: true })];
+      config.tables = [];
       if (!config.filters || typeof config.filters !== "object") config.filters = {};
-      config.filters.manifestPackId = buildLootWorldItemsFolderFilterId(rootFolder.id);
+      config.filters.manifestPackId = getLootManifestCompendiumPackId();
     },
     { skipLocalRefresh: true }
   );
@@ -15398,38 +15384,7 @@ function getAvailableLootItemPackSources() {
 }
 
 function getAvailableLootTableSources() {
-  const rows = [];
-
-  for (const table of game.tables?.contents ?? []) {
-    const uuid = String(table?.uuid ?? "").trim();
-    if (!uuid) continue;
-    const name = String(table?.name ?? "World Roll Table").trim() || "World Roll Table";
-    rows.push({
-      id: `world-table:${uuid}`,
-      label: `${name} (World Table)`,
-      sourceKind: "world-table"
-    });
-  }
-
-  for (const pack of getAllCompendiumPacks()) {
-    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
-      .trim()
-      .toLowerCase();
-    if (documentName !== "rolltable") continue;
-    const id = String(pack?.collection ?? "").trim();
-    if (!id) continue;
-    const packageLabel = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim();
-    const baseLabel = String(pack?.metadata?.label ?? pack?.title ?? id).trim() || id;
-    rows.push({
-      id: `table-pack:${id}`,
-      label: packageLabel ? `${baseLabel} (${packageLabel})` : baseLabel,
-      sourceKind: "table-pack"
-    });
-  }
-
-  return rows
-    .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
-    .sort((a, b) => a.label.localeCompare(b.label));
+  return [];
 }
 
 function normalizeLootSourceSearchText(value) {
@@ -20541,11 +20496,6 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   const ceiling = String(sourceConfig?.filters?.rarityCeiling ?? "");
   const manifestPackId = String(sourceConfig?.filters?.manifestPackId ?? "").trim();
   const manifestFolderId = parseLootWorldItemsFolderFilterId(manifestPackId);
-  const manifestFolderScopeIds = manifestFolderId ? buildLootWorldItemFolderScopeIds(manifestFolderId) : null;
-  const manifestFolder = manifestFolderId ? (game.folders?.get?.(manifestFolderId) ?? null) : null;
-  const manifestFolderLabel = manifestFolderId
-    ? String(manifestFolder?.name ?? manifestFolderId).trim() || manifestFolderId
-    : "";
   const includeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordIncludeTags ?? []);
   const excludeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordExcludeTags ?? []);
   const includeModeAll =
@@ -20564,15 +20514,16 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
     .trim()
     .toLowerCase();
   const includeMode = includeModeRaw === includeModeAny ? includeModeAny : includeModeAll;
-  let enabledSources = (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false);
+  let enabledSources = (sourceConfig?.packs ?? [])
+    .filter((entry) => entry?.enabled !== false)
+    .filter((entry) => String(entry?.sourceKind ?? "compendium-pack").trim() === "compendium-pack")
+    .filter((entry) => String(entry?.id ?? "").trim() !== LOOT_WORLD_ITEMS_SOURCE_ID);
   if (manifestPackId) {
-    const selectedSourceId = manifestFolderId ? LOOT_WORLD_ITEMS_SOURCE_ID : manifestPackId;
+    const selectedSourceId = manifestFolderId ? getLootManifestCompendiumPackId() : manifestPackId;
     const source = enabledSources.find((entry) => String(entry?.id ?? "").trim() === selectedSourceId);
     enabledSources = source ? [source] : [];
     if (!source) {
-      const selectedSourceLabel = manifestFolderId
-        ? `${LOOT_WORLD_ITEMS_SOURCE_LABEL}: ${manifestFolderLabel || manifestFolderId}`
-        : selectedSourceId;
+      const selectedSourceLabel = selectedSourceId;
       warnings.push(`Selected source is currently disabled: ${selectedSourceLabel}`);
     }
   }
@@ -20603,10 +20554,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
     try {
       const sourceId = String(source?.id ?? "").trim();
       const sourceLabelBase = String(source?.label ?? sourceId).trim() || sourceId;
-      const sourceLabel =
-        manifestFolderId && sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
-          ? `${sourceLabelBase}: ${manifestFolderLabel}`
-          : sourceLabelBase;
+      const sourceLabel = sourceLabelBase;
       const sourceWeight = Math.max(1, Math.floor(Number(source?.weight ?? 1) || 1));
       if (!sourceId) continue;
       const sourceCacheKey = buildSourceCacheKey(sourceId, baseFilterOptions);
@@ -20614,10 +20562,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
       if (!Array.isArray(sourceItems)) {
         metrics.sourceCacheMisses += 1;
         const loadStartedAt = getPerfNow();
-        const rawItems =
-          sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
-            ? (game.items?.contents ?? [])
-            : await loadItemsFromPack(sourceId, { warnings, sourceLabel });
+        const rawItems = await loadItemsFromPack(sourceId, { warnings, sourceLabel });
         metrics.sourceLoadMs += getPerfNow() - loadStartedAt;
         const filterStartedAt = getPerfNow();
         sourceItems = filterItems(rawItems, baseFilterOptions);
@@ -20630,14 +20575,8 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
       } else {
         metrics.sourceCacheHits += 1;
       }
-      const filteredItems =
-        sourceId === LOOT_WORLD_ITEMS_SOURCE_ID && manifestFolderId && manifestFolderScopeIds?.size
-          ? sourceItems.filter((item) => {
-              const itemFolderId = String(item?.folder?.id ?? item?.folder ?? item?.folderId ?? "").trim();
-              return itemFolderId && manifestFolderScopeIds.has(itemFolderId);
-            })
-          : sourceItems;
-      const fallbackUuidPrefix = sourceId === LOOT_WORLD_ITEMS_SOURCE_ID ? "World.Item" : `Compendium.${sourceId}.Item`;
+      const filteredItems = sourceItems;
+      const fallbackUuidPrefix = `Compendium.${sourceId}.Item`;
       for (const item of filteredItems) {
         const candidate = buildLootCandidateFromSourceItem(
           item,
@@ -22775,6 +22714,13 @@ function getLootEngineRarityWeightRatio(rarity = "") {
   return Math.max(0.01, Number(ratios[bucket] ?? 1) || 1);
 }
 
+function getMerchantWorldRarityPriceMultiplier(rarity = "", overrides = null) {
+  const baseMultiplier = getMerchantRarityPriceMultiplier(rarity, overrides);
+  const worldRarityRatio = getLootEngineRarityWeightRatio(rarity);
+  const availabilityPriceFactor = Math.max(0.5, Math.min(2, 1 / Math.sqrt(Math.max(0.01, worldRarityRatio))));
+  return Number((baseMultiplier * availabilityPriceFactor).toFixed(4));
+}
+
 function buildWorldRarityWeightContext() {
   const weights = getLootEngineRarityWeights();
   const rows = [
@@ -22868,10 +22814,7 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
         .map((entry) => String(entry?.id ?? "").trim())
         .filter(Boolean)
     );
-    const requestedSourceIds = normalizedPackIds.filter((sourceId) => {
-      if (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID) return true;
-      return availableSourceIds.has(sourceId);
-    });
+    const requestedSourceIds = normalizedPackIds.filter((sourceId) => availableSourceIds.has(sourceId));
     const manifestSourceId = getLootManifestCompendiumPackId();
     const sourceIds = requestedSourceIds.length > 0 ? requestedSourceIds : [manifestSourceId].filter(Boolean);
     const sourceWeightById = new Map(
@@ -22916,17 +22859,11 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
     const candidates = [];
     for (const sourceId of sourceIds) {
       const sourceMeta = getLootPackSourceMetaById(sourceId);
-      const sourceLabel =
-        String(
-          sourceMeta?.label ?? (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID ? LOOT_WORLD_ITEMS_SOURCE_LABEL : sourceId)
-        ).trim() || sourceId;
+      const sourceLabel = String(sourceMeta?.label ?? sourceId).trim() || sourceId;
       const sourceWeight = Math.max(1, Math.floor(Number(sourceWeightById.get(sourceId) ?? 1) || 1));
-      const rawItems =
-        sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
-          ? (game.items?.contents ?? [])
-          : await loadItemsFromPack(sourceId, { warnings, sourceLabel });
+      const rawItems = await loadItemsFromPack(sourceId, { warnings, sourceLabel });
       const sourceItems = filterItems(rawItems, sourceFilter);
-      const fallbackUuidPrefix = sourceId === LOOT_WORLD_ITEMS_SOURCE_ID ? "World.Item" : `Compendium.${sourceId}.Item`;
+      const fallbackUuidPrefix = `Compendium.${sourceId}.Item`;
       for (const item of sourceItems) {
         const candidate = buildLootCandidateFromSourceItem(
           item,
@@ -25945,7 +25882,7 @@ function buildMerchantCityOptions(cityList = [], selectedCity = "") {
   return buildMerchantCityOptionsDomain(cityList, selectedCity);
 }
 
-function getMerchantEditorSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
+function getMerchantEditorSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
   return getMerchantEditorSourceTypeOptionsDomain(selected);
 }
 
@@ -26008,8 +25945,6 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const customMode =
     source?.customMode === undefined
       ? Boolean(
-          normalizeMerchantSourceType(stock.sourceType ?? source.sourceType ?? MERCHANT_DEFAULTS.stock.sourceType) !==
-            MERCHANT_SOURCE_TYPES.WORLD_ITEMS ||
           normalizeMerchantSourcePackIds(
             stock.sourcePackIds ?? source.sourcePackIds ?? [],
             String(stock.sourceRef ?? source.sourceRef ?? "").trim()
@@ -26102,14 +26037,9 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const barterDc = Number.isFinite(barterDcRaw)
     ? Math.max(1, Math.min(40, Math.floor(barterDcRaw)))
     : Number(MERCHANT_DEFAULTS.pricing.barterDc);
-  const sourceType = customMode
-    ? normalizeMerchantSourceType(stock.sourceType ?? source.sourceType)
-    : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
+  const sourceType = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
   const sourceRef = String(stock.sourceRef ?? source.sourceRef ?? "").trim();
-  const sourcePackIds = normalizeMerchantSourcePackIds(
-    stock.sourcePackIds ?? source.sourcePackIds ?? [],
-    sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? "" : sourceRef
-  );
+  const sourcePackIds = normalizeMerchantSourcePackIds(stock.sourcePackIds ?? source.sourcePackIds ?? [], sourceRef);
   const includeTags = customMode ? normalizeMerchantTagList(stock.includeTags ?? source.includeTags ?? []) : [];
   const excludeTags = customMode ? normalizeMerchantTagList(stock.excludeTags ?? source.excludeTags ?? []) : [];
   const keywordInclude = customMode
@@ -26222,7 +26152,7 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     },
     stock: {
       sourceType,
-      sourceRef: sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? "" : String(sourcePackIds[0] ?? sourceRef).trim(),
+      sourceRef: String(sourcePackIds[0] ?? sourceRef).trim(),
       sourcePackIds,
       includeTags,
       excludeTags,
@@ -27017,19 +26947,9 @@ function getMerchantStockStateById(merchantIdInput, ledger = getOperationsLedger
   return stockState ? normalizeMerchantStockStateEntry(stockState) : null;
 }
 
-function getMerchantSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_ITEMS) {
+function getMerchantSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
   const value = normalizeMerchantSourceType(selected);
   return [
-    {
-      value: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
-      label: "World Items",
-      selected: value === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-    },
-    {
-      value: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
-      label: "World Folder",
-      selected: value === MERCHANT_SOURCE_TYPES.WORLD_FOLDER
-    },
     {
       value: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
       label: "Compendium Pack",
@@ -27090,8 +27010,7 @@ function formatMerchantTimestampLabel(value) {
 function getMerchantSourceTypeLabel(value) {
   const normalized = normalizeMerchantSourceType(value);
   if (normalized === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return "Compendium Pack";
-  if (normalized === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) return "World Folder";
-  return "World Items";
+  return "Compendium Pack";
 }
 
 function normalizeMerchantTradeLineItems(raw = []) {
@@ -27359,8 +27278,6 @@ function getMerchantItemUnitPriceCp(itemData = {}, rate = 1) {
 }
 
 function getMerchantSourceRefIdsFromStock(stock = {}) {
-  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return [];
   const sourceRef = String(stock?.sourceRef ?? "").trim();
   return normalizeMerchantSourcePackIds(stock?.sourcePackIds ?? [], sourceRef);
 }
@@ -27408,7 +27325,7 @@ function buildMerchantPresetPackIndexDocument(packId = "", entry = {}, sourceLab
 }
 
 function getMerchantWorldItemPresetFallbackDocuments() {
-  return [...(game.items?.contents ?? [])];
+  return [];
 }
 
 function getMerchantPresetSourceDocumentsSync() {
@@ -27425,7 +27342,7 @@ function getMerchantPresetSourceDocumentsSync() {
       if (documentRef) documents.push(documentRef);
     }
   }
-  return documents.length > 0 ? documents : getMerchantWorldItemPresetFallbackDocuments();
+  return documents;
 }
 
 async function getMerchantPresetSourceDocuments() {
@@ -27445,14 +27362,13 @@ async function getMerchantPresetSourceDocuments() {
       })
     );
   }
-  return documents.length > 0 ? documents : getMerchantWorldItemPresetFallbackDocuments();
+  return documents;
 }
 
 function getMerchantSourceRefLabel(merchant = {}) {
   if (isMerchantPresetStockMode(merchant)) return "Preset Compendiums";
   const stock = merchant?.stock ?? {};
   const sourceType = normalizeMerchantSourceType(stock?.sourceType);
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return "All World Items";
   if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
     const packIds = getMerchantCompendiumPackIdsFromStock(stock);
     if (!packIds.length) return "Pack not selected";
@@ -27461,24 +27377,7 @@ function getMerchantSourceRefLabel(merchant = {}) {
     if (labels.length <= 1) return labels[0] ?? packIds[0];
     return `${labels.length} packs selected`;
   }
-  const folderIds = getMerchantSourceRefIdsFromStock(stock);
-  if (!folderIds.length) return "Folder not selected";
-  const folderLabelMap = new Map(
-    (game.folders?.contents ?? [])
-      .filter((folder) => {
-        const type = String(folder?.type ?? folder?.documentName ?? "")
-          .trim()
-          .toLowerCase();
-        return type === "item";
-      })
-      .map((folder) => [
-        String(folder?.id ?? "").trim(),
-        String(folder?.name ?? folder?.id ?? "").trim() || String(folder?.id ?? "").trim()
-      ])
-  );
-  const labels = folderIds.map((id) => folderLabelMap.get(id) ?? id).filter(Boolean);
-  if (labels.length <= 1) return labels[0] ?? folderIds[0];
-  return `${labels.length} folders selected`;
+  return "Compendium Pack";
 }
 
 function getMerchantCompendiumPackOptionsForEditor(stock = {}) {
@@ -28293,7 +28192,7 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
           .toLowerCase() === "loot"
           ? 1
           : rarityPricingEnabled
-            ? getMerchantRarityPriceMultiplier(getLootRarityFromData(itemData), pricing?.rarityPriceMultipliers)
+            ? getMerchantWorldRarityPriceMultiplier(getLootRarityFromData(itemData), pricing?.rarityPriceMultipliers)
             : 1;
       const buyCp = getMerchantItemUnitPriceCp(itemData, buyMarkup * rarityMult * stockPressureMult * taxFactor);
       const weight = Math.max(0, Number(getItemWeightValue(itemData) || getItemWeightValue(item) || 0));
@@ -28954,16 +28853,14 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     return getMerchantDefinitionDraftSource(merged);
   })();
   const editorCustomMode = Boolean(editorDraft?.customMode);
-  const editorSourceType = editorCustomMode ? MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
-  const editorSourceRefs = editorCustomMode
-    ? (() => {
-        const selected = getMerchantCompendiumPackIdsFromStock({
-          ...(editorDraft?.stock ?? {}),
-          sourceType: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
-        });
-        return selected.length > 0 ? selected : [getLootManifestCompendiumPackId()].filter(Boolean);
-      })()
-    : [];
+  const editorSourceType = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
+  const editorSourceRefs = (() => {
+    const selected = getMerchantCompendiumPackIdsFromStock({
+      ...(editorDraft?.stock ?? {}),
+      sourceType: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
+    });
+    return selected.length > 0 ? selected : [getLootManifestCompendiumPackId()].filter(Boolean);
+  })();
   const editorSourceFilter = getMerchantEditorSourceFilter();
   const editorSourcePackOptions = getMerchantCompendiumPackOptionsForEditor(editorDraft?.stock ?? {});
   const editorSourceRefOptions = getMerchantSourceRefOptionsForEditor(
@@ -28978,7 +28875,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorSourceRefSelectableOptions = editorSourceRefOptions.filter(
     (entry) => String(entry?.value ?? "").trim().length > 0
   );
-  const editorSourceRefIsFolderTree = editorSourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER;
+  const editorSourceRefIsFolderTree = false;
   const editorSourceRefSelectedCount = editorSourceRefSelectableOptions.filter((entry) =>
     Boolean(entry?.selected)
   ).length;
@@ -29419,10 +29316,10 @@ function readMerchantDefinitionPatchFromElement(element) {
     Number(existingPricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
   );
   const sourceType = getText("select[name='merchantSourceType']", {
-    missing: existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+    missing: existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
   });
   const previousSourceType = normalizeMerchantSourceType(
-    existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+    existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
   );
   const existingSourceRefs = getMerchantSourceRefIdsFromStock(existingStock);
   const hasSourceRefCheckboxes = pageRoot.querySelectorAll("input[name='merchantSourceRef']").length > 0;
@@ -30641,7 +30538,7 @@ async function applyMerchantTradeForUser(user, payload = {}) {
     const rarity = getLootRarityFromData(itemData);
     const rarityMult =
       !itemIsLiquidation && rarityPricingEnabled
-        ? getMerchantRarityPriceMultiplier(rarity, pricing?.rarityPriceMultipliers)
+        ? getMerchantWorldRarityPriceMultiplier(rarity, pricing?.rarityPriceMultipliers)
         : 1.0;
     const effectiveBuyMult = itemIsLiquidation
       ? 1.0
@@ -30914,7 +30811,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
           .toLowerCase() === "loot";
       const rarityMult =
         !itemIsLiquidation && rarityPricingEnabled
-          ? getMerchantRarityPriceMultiplier(rarity, pricing?.rarityPriceMultipliers)
+          ? getMerchantWorldRarityPriceMultiplier(rarity, pricing?.rarityPriceMultipliers)
           : 1.0;
       const effectiveBuyMult = itemIsLiquidation ? 1.0 : buyMarkup * rarityMult * stockPressureMult * taxFeeFactor;
       const unitCp = getMerchantItemUnitPriceCp(itemData, effectiveBuyMult);
@@ -31817,9 +31714,9 @@ function applyMerchantPresetDefaultsFromElement(element) {
   };
   draft.stock = {
     ...(draft.stock && typeof draft.stock === "object" ? draft.stock : {}),
-    sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
+    sourceType: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
     sourceRef: "",
-    sourcePackIds: [],
+    sourcePackIds: [getLootManifestCompendiumPackId()].filter(Boolean),
     allowedTypes: normalizeMerchantAllowedItemTypes(definition?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST),
     maxItems: Math.max(
       1,
@@ -47436,6 +47333,15 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
       }
       const state = foundry.utils.deepClone(getRestWatchState());
       mutatorOrRequest(state);
+      if (!hasActiveGmClient()) {
+        stampUpdate(state, game.user);
+        const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+        if (!saved) return false;
+        scheduleIntegrationSync("rest-watch-player-mutate");
+        if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+        return true;
+      }
       game.socket.emit(SOCKET_CHANNEL, {
         type: "rest:mutate",
         userId: game.user.id,
@@ -47454,7 +47360,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
     });
     if (!normalizedRequest) return;
     if (!hasActiveGmClient()) {
-      await applyRestRequest(normalizedRequest, game.user.id, {
+      const result = await applyRestRequest(normalizedRequest, game.user.id, {
         getRestWatchState,
         game,
         resolveRequester,
@@ -47470,7 +47376,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
         emitSocketRefresh,
         logUiDebug
       });
-      return true;
+      return Boolean(result?.ok);
     }
     game.socket.emit(SOCKET_CHANNEL, {
       type: "rest:mutate",
@@ -47526,6 +47432,15 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       }
       const state = foundry.utils.deepClone(getMarchingOrderState());
       mutatorOrRequest(state);
+      if (!hasActiveGmClient()) {
+        stampUpdate(state, game.user);
+        const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+        if (!saved) return false;
+        scheduleIntegrationSync("marching-order-player-mutate");
+        if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        return true;
+      }
       game.socket.emit(SOCKET_CHANNEL, {
         type: "march:mutate",
         userId: game.user.id,
@@ -47560,7 +47475,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
     });
     if (!normalizedRequest) return;
     if (!hasActiveGmClient()) {
-      await applyMarchRequest(normalizedRequest, game.user.id, {
+      const result = await applyMarchRequest(normalizedRequest, game.user.id, {
         getMarchingOrderState,
         game,
         resolveRequester,
@@ -47577,7 +47492,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
         emitSocketRefresh,
         logUiDebug
       });
-      return true;
+      return Boolean(result?.ok);
     }
     game.socket.emit(SOCKET_CHANNEL, {
       type: "march:mutate",

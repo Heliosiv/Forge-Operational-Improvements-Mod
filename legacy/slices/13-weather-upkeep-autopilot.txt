@@ -7,28 +7,6 @@ Target Modules: scripts/features/weather-*, scripts/features/upkeep-*
 Weather quick panel actions, automatic upkeep chat flow, calendar notes, operational brief, and session autopilot.
 
 ----- legacy source begins -----
-async function postLootItemClaimToChat(outcome = {}) {
-  const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
-  const actorId = String(outcome?.actorId ?? "").trim();
-  const actorUuid = String(outcome?.actorUuid ?? "").trim();
-  const itemName = String(outcome?.itemName ?? "Item").trim() || "Item";
-  const quantity = Math.max(1, Math.floor(Number(outcome?.quantity ?? 1) || 1));
-  const itemLabel = quantity > 1 ? `${itemName} x${quantity}` : itemName;
-  const itemUuid = String(outcome?.itemUuid ?? "").trim();
-  const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
-  const actor = actorId ? game.actors.get(actorId) : null;
-  const actorImg = normalizeFoundryAssetImagePath(actor?.img, { fallback: "icons/svg/item-bag.svg" });
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `
-      <div class="po-chat-claim">
-        <p><strong>Loot Claimed</strong></p>
-        <p><img src="${poEscapeHtml(actorImg)}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemLabel)}</strong>.</p>
-        <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
-      </div>
-    `
-  });
-  await createOperationsJournalEntry({
     category: "loot-claims",
     title: `Loot Claimed - ${actorName}`,
     summary: `${actorName} received ${itemLabel}`,
@@ -1038,3 +1016,25 @@ async function showOperationalBrief() {
   });
 }
 
+const INJURY_TABLE = [
+  {
+    key: "lost-limb",
+    min: 1,
+    max: 5,
+    label: "Lost Limb",
+    effect: "Lose an arm or leg (1d4). Limb is unusable. Movement halved if leg, no weapons/shields if arm.",
+    recovery: "Permanent. Only Regenerate or divine magic can restore.",
+    permanent: true,
+    kitCharges: 0
+  },
+  {
+    key: "crippling-injury",
+    min: 6,
+    max: 10,
+    label: "Crippling Injury",
+    effect: "Disadvantage on actions with that limb. Halved speed if leg. Shield bonus halved if arm.",
+    recovery: "1d4 days or 2 kit charges + DC 12 Medicine.",
+    dayMin: 1,
+    dayMax: 4,
+    kitCharges: 2,
+    treatmentDc: 12,

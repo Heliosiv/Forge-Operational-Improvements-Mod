@@ -7,8 +7,6 @@ Target Modules: scripts/features/operations-*, scripts/features/loot-claims-*
 Loot preview context, claim board context, operations ledger defaults, journal helpers, and claim actor selectors.
 
 ----- legacy source begins -----
-function buildLootPreviewContext() {
-  const draft = getLootPreviewDraft();
   const result = getLootPreviewResult();
   const hasResult = Boolean(result && typeof result === "object");
   const previewSort = normalizeLootPreviewSort(draft?.sort);
@@ -2780,3 +2778,5 @@ function ensureBaseOperationsState(ledger) {
   return ledger.baseOperations;
 }
 
+function normalizeMerchantTagList(values = []) {
+  return normalizeMerchantTagListDomain(values);

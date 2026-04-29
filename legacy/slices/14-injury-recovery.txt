@@ -7,28 +7,6 @@ Target Modules: scripts/features/injury-*
 Injury tables, healer kit tracking, recovery state, Simple Calendar sync, treatment checks, and recovery cycle.
 
 ----- legacy source begins -----
-const INJURY_TABLE = [
-  {
-    key: "lost-limb",
-    min: 1,
-    max: 5,
-    label: "Lost Limb",
-    effect: "Lose an arm or leg (1d4). Limb is unusable. Movement halved if leg, no weapons/shields if arm.",
-    recovery: "Permanent. Only Regenerate or divine magic can restore.",
-    permanent: true,
-    kitCharges: 0
-  },
-  {
-    key: "crippling-injury",
-    min: 6,
-    max: 10,
-    label: "Crippling Injury",
-    effect: "Disadvantage on actions with that limb. Halved speed if leg. Shield bonus halved if arm.",
-    recovery: "1d4 days or 2 kit charges + DC 12 Medicine.",
-    dayMin: 1,
-    dayMax: 4,
-    kitCharges: 2,
-    treatmentDc: 12,
     treatmentSkill: "med"
   },
   {
@@ -1297,3 +1275,25 @@ async function showRecoveryBrief() {
   });
 }
 
+function getRestActivities() {
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_ACTIVITIES);
+  return foundry.utils.mergeObject(buildDefaultActivityState(), stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+}
+
+function buildActivityView(actor, activityState) {
+  if (!activityState) activityState = {};
+  const exhaustion = activityState.exhaustion ?? 0;
+  const activity = activityState.activity ?? "rested";
+  const spellSlots = activityState.spellSlots ?? {};
+  const hitDice = activityState.hitDice ?? {};
+  const activityOptions = [
+    { value: "rested", label: "Rested" },
+    { value: "light", label: "Light Activity" },
+    { value: "heavy", label: "Heavy Activity" },
+    { value: "strenuous", label: "Strenuous" }
+  ].map((option) => ({
+    ...option,

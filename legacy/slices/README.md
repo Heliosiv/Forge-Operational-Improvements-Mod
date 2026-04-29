@@ -18,5 +18,5 @@ They are reference-only text files. Do not import them from active runtime code.
 - legacy/slices/12-loot-runtime-actions.txt: Loot Runtime Actions (41501-44578)
 - legacy/slices/13-weather-upkeep-autopilot.txt: Weather, Upkeep, And Session Autopilot (44579-45609)
 - legacy/slices/14-injury-recovery.txt: Injury Recovery (45610-46899)
-- legacy/slices/15-rest-march-runtime.txt: Rest Watch And March Runtime (46900-51041)
-- legacy/slices/16-api-socket-bootstrap.txt: API, Socket Handler, And Runtime Bootstrap (51042-51671)
+- legacy/slices/15-rest-march-runtime.txt: Rest Watch And March Runtime (46900-51037)
+- legacy/slices/16-api-socket-bootstrap.txt: API, Socket Handler, And Runtime Bootstrap (51038-51667)

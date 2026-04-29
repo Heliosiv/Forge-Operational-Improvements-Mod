@@ -7,15 +7,6 @@ Target Modules: scripts/features/loot-source-*
 Loot source normalization, manifest compendium folders, source documents, and source registry context.
 
 ----- legacy source begins -----
-function normalizeLootKeywordTag(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeLootKeywordTagList(values = []) {
-  const source = Array.isArray(values) ? values : [values];
-  return source
     .flatMap((entry) => String(entry ?? "").split(/[\n,;]+/))
     .map((entry) => normalizeLootKeywordTag(entry))
     .filter((entry, index, rows) => entry.length > 0 && rows.indexOf(entry) === index);
@@ -1375,38 +1366,7 @@ function getAvailableLootItemPackSources() {
 }
 
 function getAvailableLootTableSources() {
-  const rows = [];
-
-  for (const table of game.tables?.contents ?? []) {
-    const uuid = String(table?.uuid ?? "").trim();
-    if (!uuid) continue;
-    const name = String(table?.name ?? "World Roll Table").trim() || "World Roll Table";
-    rows.push({
-      id: `world-table:${uuid}`,
-      label: `${name} (World Table)`,
-      sourceKind: "world-table"
-    });
-  }
-
-  for (const pack of getAllCompendiumPacks()) {
-    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "")
-      .trim()
-      .toLowerCase();
-    if (documentName !== "rolltable") continue;
-    const id = String(pack?.collection ?? "").trim();
-    if (!id) continue;
-    const packageLabel = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim();
-    const baseLabel = String(pack?.metadata?.label ?? pack?.title ?? id).trim() || id;
-    rows.push({
-      id: `table-pack:${id}`,
-      label: packageLabel ? `${baseLabel} (${packageLabel})` : baseLabel,
-      sourceKind: "table-pack"
-    });
-  }
-
-  return rows
-    .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
-    .sort((a, b) => a.label.localeCompare(b.label));
+  return [];
 }
 
 function normalizeLootSourceSearchText(value) {
@@ -2181,3 +2141,43 @@ function buildAutoInventoryTypeWeights(creatureType, role) {
   return merged;
 }
 
+function getLootBuilderItemTypeWeight(draft = {}, itemType = "") {
+  const normalizedType = String(itemType ?? "")
+    .trim()
+    .toLowerCase();
+  const map =
+    draft?.itemTypeWeights && typeof draft.itemTypeWeights === "object" && !Array.isArray(draft.itemTypeWeights)
+      ? draft.itemTypeWeights
+      : null;
+  if (!map || !normalizedType) return 1;
+  const raw = Number(map[normalizedType] ?? map.default ?? 1);
+  if (!Number.isFinite(raw)) return 1;
+  return Math.max(0, raw);
+}
+
+function buildAutoInventoryCurrencyBundle(crBand = "cr-0-1", scalarPercent = 100) {
+  const table = {
+    "cr-0-1": () => ({ gp: rollIntRange(0, 4), sp: rollIntRange(1, 10), cp: rollIntRange(0, 20) }),
+    "cr-2-4": () => ({ gp: rollIntRange(2, 12), sp: rollIntRange(2, 18), cp: rollIntRange(0, 15) }),
+    "cr-5-8": () => ({ gp: rollIntRange(8, 35), sp: rollIntRange(0, 20), cp: rollIntRange(0, 10) }),
+    "cr-9-12": () => ({ pp: rollIntRange(0, 4), gp: rollIntRange(18, 65), sp: rollIntRange(0, 12), cp: 0 }),
+    "cr-13+": () => ({ pp: rollIntRange(2, 12), gp: rollIntRange(45, 180), sp: rollIntRange(0, 10), cp: 0 })
+  };
+  const rolled = (table[crBand] ?? table["cr-0-1"])();
+  const scale = autoInventoryPercentSettingToScale(scalarPercent, AUTO_INV_DEFAULT_CURRENCY_SCALAR);
+  const apply = (value) => Math.max(0, Math.floor((Number(value) || 0) * scale));
+  return {
+    pp: apply(rolled.pp),
+    gp: apply(rolled.gp),
+    sp: apply(rolled.sp),
+    cp: apply(rolled.cp)
+  };
+}
+
+function buildAutoInventoryDraftForActor(actor, crValue, creatureType, role) {
+  const cr = Math.max(0, Number(crValue) || 0);
+  const challenge = getAutoInventoryChallengeFromCr(cr);
+  const scale = cr >= 13 ? "major" : cr >= 6 ? "medium" : "small";
+  const type = String(creatureType ?? "unknown")
+    .trim()
+    .toLowerCase();

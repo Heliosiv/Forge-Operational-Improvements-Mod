@@ -128,7 +128,7 @@
   {
     "id": "rest-march-runtime",
     "label": "Rest Watch And March Runtime",
-    "source": "legacy/party-operations-monolith.js:46900-51041",
+    "source": "legacy/party-operations-monolith.js:46900-51037",
     "slicePath": "legacy/slices/15-rest-march-runtime.txt",
     "featureIds": ["rest-watch", "march"],
     "targetModules": ["scripts/features/rest-feature.js", "scripts/features/march-feature.js", "scripts/apps"],
@@ -137,7 +137,7 @@
   {
     "id": "api-socket-bootstrap",
     "label": "API, Socket Handler, And Runtime Bootstrap",
-    "source": "legacy/party-operations-monolith.js:51042-51671",
+    "source": "legacy/party-operations-monolith.js:51038-51667",
     "slicePath": "legacy/slices/16-api-socket-bootstrap.txt",
     "featureIds": ["runtime-shell", "sockets", "hooks", "rest-watch"],
     "targetModules": ["scripts/runtime", "scripts/core/socket-*", "scripts/bootstrap"],

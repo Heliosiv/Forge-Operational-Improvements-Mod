@@ -7,28 +7,6 @@ Target Modules: scripts/features/loot-runtime-*
 Loot source form actions, item preview editing, item sheet fallbacks, loot publishing, claims, split, and undo flows.
 
 ----- legacy source begins -----
-function getLootPackSourceMetaById(packId) {
-  const id = String(packId ?? "").trim();
-  if (!id) return null;
-  return getLootGenerationItemPackSources().find((entry) => entry.id === id) ?? null;
-}
-
-function getLootTableSourceMetaById(tableId) {
-  const id = String(tableId ?? "").trim();
-  if (!id) return null;
-  return getAvailableLootTableSources().find((entry) => entry.id === id) ?? null;
-}
-
-async function setLootManifestPack(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can configure loot sources.");
-    return;
-  }
-  const packId = String(element?.value ?? "").trim();
-  const selectedFolderId = parseLootWorldItemsFolderFilterId(packId);
-  const normalizedPackId = selectedFolderId ? buildLootWorldItemsFolderFilterId(selectedFolderId) : packId;
-  const nextPackId = normalizedPackId && isValidLootManifestPackSelectionId(normalizedPackId) ? normalizedPackId : "";
-  await updateLootSourceConfig((config) => {
     if (!config.filters || typeof config.filters !== "object") config.filters = {};
     config.filters.manifestPackId = nextPackId;
   });
@@ -3085,3 +3063,25 @@ function formatLootCurrencyBundleLabel(bundle = {}) {
   return `${pp}pp ${gp}gp ${sp}sp ${cp}cp`;
 }
 
+async function postLootItemClaimToChat(outcome = {}) {
+  const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
+  const actorId = String(outcome?.actorId ?? "").trim();
+  const actorUuid = String(outcome?.actorUuid ?? "").trim();
+  const itemName = String(outcome?.itemName ?? "Item").trim() || "Item";
+  const quantity = Math.max(1, Math.floor(Number(outcome?.quantity ?? 1) || 1));
+  const itemLabel = quantity > 1 ? `${itemName} x${quantity}` : itemName;
+  const itemUuid = String(outcome?.itemUuid ?? "").trim();
+  const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
+  const actor = actorId ? game.actors.get(actorId) : null;
+  const actorImg = normalizeFoundryAssetImagePath(actor?.img, { fallback: "icons/svg/item-bag.svg" });
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim">
+        <p><strong>Loot Claimed</strong></p>
+        <p><img src="${poEscapeHtml(actorImg)}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemLabel)}</strong>.</p>
+        <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
+      </div>
+    `
+  });
+  await createOperationsJournalEntry({

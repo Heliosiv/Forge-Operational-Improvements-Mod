@@ -22,6 +22,7 @@ const capturedIncludeModes = [];
 
 const context = vm.createContext({
   LOOT_WORLD_ITEMS_SOURCE_ID: "__world_items__",
+  getLootManifestCompendiumPackId: () => "pack.magic",
   game: {
     items: {
       contents: [{ name: "World Torch", itemValueGp: 0.01, itemWeightLb: 1, folder: null }]
@@ -74,11 +75,11 @@ const mixedCandidates = await buildLootItemCandidates(
 );
 
 assert.equal(warnings.length, 0);
-assert.equal(mixedCandidates.length, 3, "Enabled world and compendium sources should both contribute candidates.");
+assert.equal(mixedCandidates.length, 2, "World item sources should be ignored once loot uses the compendium source.");
 assert.equal(
-  mixedCandidates.some((entry) => entry.sourceId === "pack.magic" && entry.name === "Pack Sword"),
+  mixedCandidates.every((entry) => entry.sourceId === "pack.magic"),
   true,
-  "Enabled compendium packs should provide loot candidates."
+  "Enabled compendium packs should provide all loot candidates."
 );
 assert.equal(
   mixedCandidates.find((entry) => entry.sourceId === "pack.magic")?.sourceWeight,

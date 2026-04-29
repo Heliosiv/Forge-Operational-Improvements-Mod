@@ -7,8 +7,6 @@ Target Modules: scripts/features/merchant-domain.js, scripts/features/merchants-
 Merchant definitions, stock state, shop sessions, city catalogs, inventory rows, restock, barter, and editor actions.
 
 ----- legacy source begins -----
-function normalizeMerchantTagList(values = []) {
-  return normalizeMerchantTagListDomain(values);
 }
 
 function normalizeMerchantKeywordList(values = []) {
@@ -1222,19 +1220,9 @@ function getMerchantStockStateById(merchantIdInput, ledger = getOperationsLedger
   return stockState ? normalizeMerchantStockStateEntry(stockState) : null;
 }
 
-function getMerchantSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_ITEMS) {
+function getMerchantSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
   const value = normalizeMerchantSourceType(selected);
   return [
-    {
-      value: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
-      label: "World Items",
-      selected: value === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-    },
-    {
-      value: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
-      label: "World Folder",
-      selected: value === MERCHANT_SOURCE_TYPES.WORLD_FOLDER
-    },
     {
       value: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
       label: "Compendium Pack",
@@ -1295,8 +1283,7 @@ function formatMerchantTimestampLabel(value) {
 function getMerchantSourceTypeLabel(value) {
   const normalized = normalizeMerchantSourceType(value);
   if (normalized === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return "Compendium Pack";
-  if (normalized === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) return "World Folder";
-  return "World Items";
+  return "Compendium Pack";
 }
 
 function normalizeMerchantTradeLineItems(raw = []) {
@@ -1599,7 +1586,7 @@ function getMerchantPresetPackIds() {
 }
 
 function getMerchantPresetSourceDocumentsSync() {
-  const documents = [...(game.items?.contents ?? [])];
+  const documents = [];
   const packLabelMap = getMerchantCompendiumPackLabelMap();
   for (const packId of getMerchantPresetPackIds()) {
     const pack = game.packs?.get(packId);
@@ -1608,24 +1595,15 @@ function getMerchantPresetSourceDocumentsSync() {
     const indexRows = getCollectionValues(pack.index);
     for (const indexRow of indexRows) {
       const entry = Array.isArray(indexRow) ? indexRow[1] : indexRow;
-      const docId = String(entry?._id ?? entry?.id ?? "").trim();
-      if (!docId) continue;
-      documents.push({
-        uuid: `Compendium.${packId}.Item.${docId}`,
-        name: String(entry?.name ?? docId).trim() || docId,
-        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
-        type: String(entry?.type ?? "").trim(),
-        flags: foundry.utils.deepClone(entry?.flags ?? {}),
-        system: foundry.utils.deepClone(entry?.system ?? {}),
-        _merchantSourceLabel: sourceLabel
-      });
+      const documentRef = buildMerchantPresetPackIndexDocument(packId, entry, sourceLabel);
+      if (documentRef) documents.push(documentRef);
     }
   }
   return documents;
 }
 
 async function getMerchantPresetSourceDocuments() {
-  const documents = [...(game.items?.contents ?? [])];
+  const documents = [];
   const packLabelMap = getMerchantCompendiumPackLabelMap();
   for (const packId of getMerchantPresetPackIds()) {
     const sourceLabel = packLabelMap.get(packId) ?? packId;
@@ -5983,9 +5961,9 @@ function applyMerchantPresetDefaultsFromElement(element) {
   };
   draft.stock = {
     ...(draft.stock && typeof draft.stock === "object" ? draft.stock : {}),
-    sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
+    sourceType: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
     sourceRef: "",
-    sourcePackIds: [],
+    sourcePackIds: [getLootManifestCompendiumPackId()].filter(Boolean),
     allowedTypes: normalizeMerchantAllowedItemTypes(definition?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST),
     maxItems: Math.max(
       1,
@@ -7377,3 +7355,25 @@ function getDowntimePlannedHoursSummary(downtimeState = {}, actorId = "", option
   };
 }
 
+function normalizeLootClaimCurrencyRecord(value = {}, fallback = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const base = fallback && typeof fallback === "object" ? fallback : {};
+  const pp = Math.max(0, Math.floor(Number(source.pp ?? base.pp ?? 0) || 0));
+  const gp = Math.max(0, Math.floor(Number(source.gp ?? base.gp ?? 0) || 0));
+  const sp = Math.max(0, Math.floor(Number(source.sp ?? base.sp ?? 0) || 0));
+  const cp = Math.max(0, Math.floor(Number(source.cp ?? base.cp ?? 0) || 0));
+  const gpEquivalentRaw = Number(source.gpEquivalent ?? base.gpEquivalent);
+  const gpEquivalent =
+    Number.isFinite(gpEquivalentRaw) && gpEquivalentRaw >= 0 ? gpEquivalentRaw : pp * 10 + gp + sp * 0.1 + cp * 0.01;
+  return { pp, gp, sp, cp, gpEquivalent };
+}
+
+function normalizeLootClaimActorIdList(values = []) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((entry) => String(entry ?? "").trim())
+    .filter((entry, index, arr) => entry.length > 0 && arr.indexOf(entry) === index);
+}
+
+function normalizeLootClaimItemsList(values = []) {
+  const source = Array.isArray(values) ? values : [];

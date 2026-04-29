@@ -135,16 +135,7 @@ function isValidLootManifestPackSelectionId(selectionId = "") {
       .filter(Boolean)
   );
   if (validPackIds.has(id)) return true;
-
-  const folderId = parseLootWorldItemsFolderFilterId(id);
-  if (!folderId) return false;
-
-  const folder = game.folders?.get?.(folderId) ?? null;
-  if (!folder) return true;
-  const folderType = String(folder?.type ?? folder?.documentName ?? "")
-    .trim()
-    .toLowerCase();
-  return folderType === "item";
+  return false;
 }
 
 function buildLootManifestPackOptions(manifestPackId = "", itemPackOptions = []) {
@@ -3227,3 +3218,12 @@ function filteredFallback(tracks = []) {
   return Array.isArray(tracks) && tracks.length > 0 ? tracks[0] : null;
 }
 
+function normalizeLootKeywordTag(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeLootKeywordTagList(values = []) {
+  const source = Array.isArray(values) ? values : [values];
+  return source

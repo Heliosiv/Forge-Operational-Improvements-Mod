@@ -1,7 +1,5 @@
 export const MERCHANT_SOURCE_TYPES = Object.freeze({
-  COMPENDIUM_PACK: "compendium-pack",
-  WORLD_FOLDER: "world-folder",
-  WORLD_ITEMS: "world-items"
+  COMPENDIUM_PACK: "compendium-pack"
 });
 
 export const MERCHANT_SCARCITY_LEVELS = Object.freeze({
@@ -642,7 +640,7 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     barterFailureSellModifier: -0.1
   }),
   stock: Object.freeze({
-    sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
+    sourceType: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
     sourceRef: "",
     sourcePackIds: Object.freeze([]),
     includeTags: [],
@@ -781,12 +779,8 @@ export function getMerchantArchetypeOptions(selectedInput = MERCHANT_DEFAULTS.ar
 
 function merchantHasAdvancedStockConfig(source = {}) {
   const stock = source?.stock && typeof source.stock === "object" ? source.stock : source;
-  const sourceType = normalizeMerchantSourceType(
-    stock?.sourceType ?? source?.sourceType ?? MERCHANT_DEFAULTS.stock.sourceType
-  );
   const sourceRef = String(stock?.sourceRef ?? source?.sourceRef ?? "").trim();
   const sourcePackIds = normalizeMerchantSourcePackIds(stock?.sourcePackIds ?? source?.sourcePackIds ?? [], sourceRef);
-  if (sourceType !== MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return true;
   if (sourcePackIds.length > 0) return true;
   if (normalizeMerchantTagList(stock?.includeTags ?? source?.includeTags ?? []).length > 0) return true;
   if (normalizeMerchantTagList(stock?.excludeTags ?? source?.excludeTags ?? []).length > 0) return true;
@@ -817,7 +811,7 @@ function getMerchantArchetypeDefaults(archetypeInput = MERCHANT_DEFAULTS.archety
       )
     },
     stock: {
-      sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
+      sourceType: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK,
       sourceRef: "",
       sourcePackIds: [],
       allowedTypes: normalizeMerchantAllowedItemTypes(definition.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST),
@@ -862,7 +856,7 @@ function mergeMerchantArchetypeDefaults(
     }
   };
   if (!customMode) {
-    merged.stock.sourceType = MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
+    merged.stock.sourceType = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
     merged.stock.sourceRef = "";
     merged.stock.sourcePackIds = [];
     merged.stock.includeTags = [];
@@ -1132,8 +1126,7 @@ export function normalizeMerchantSourceType(value) {
     .trim()
     .toLowerCase();
   if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) return MERCHANT_SOURCE_TYPES.WORLD_FOLDER;
-  return MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
+  return MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
 }
 
 export function normalizeMerchantScarcity(value) {
@@ -1280,7 +1273,7 @@ export function generateRandomMerchantNameUnbound() {
   return `${first} ${last}`.trim();
 }
 
-export function getMerchantEditorSourceTypeOptions(_selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
+export function getMerchantEditorSourceTypeOptions(_selected = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
   const value = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
   return [
     {
@@ -1335,7 +1328,7 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     typeof options?.resolveFolderByAliases === "function"
       ? options.resolveFolderByAliases
       : () => ({ id: "", name: "" });
-  const sourceFolder = resolver(blueprint?.folderAliases ?? []);
+  resolver(blueprint?.folderAliases ?? []);
   const archetype = normalizeMerchantArchetype(blueprint?.archetype ?? MERCHANT_DEFAULTS.archetype);
   const archetypeDefaults = getMerchantArchetypeDefaults(archetype);
   const id = String(blueprint?.id ?? `starter-merchant-${index + 1}`).trim() || `starter-merchant-${index + 1}`;
@@ -1361,9 +1354,7 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       archetypeDefaults?.pricing?.buybackAllowedTypes ??
       MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
   );
-  const sourceType = customMode
-    ? normalizeMerchantSourceType(blueprint?.sourceType ?? MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK)
-    : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
+  const sourceType = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
   return {
     id,
     name,
@@ -1426,11 +1417,8 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     },
     stock: {
       sourceType,
-      sourceRef: sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER ? String(sourceFolder?.id ?? "").trim() : "",
-      sourcePackIds:
-        sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
-          ? normalizeMerchantSourcePackIds(blueprint?.sourcePackIds ?? [], "")
-          : [],
+      sourceRef: "",
+      sourcePackIds: normalizeMerchantSourcePackIds(blueprint?.sourcePackIds ?? [], ""),
       includeTags: [],
       excludeTags: [],
       keywordInclude: [],
@@ -1596,18 +1584,10 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     source?.stockCount ?? source?.maxItems ?? existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems,
     MERCHANT_DEFAULTS.stock.maxItems
   );
-  const sourceType = customMode
-    ? normalizeMerchantSourceType(
-        source?.sourceType ?? existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
-      )
-    : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
+  const sourceType = MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
   const sourceRef = String(source?.sourceRef ?? "").trim();
-  const sourceRefs =
-    sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-      ? []
-      : normalizeMerchantSourcePackIds(source?.sourceRefs ?? source?.sourcePackIds ?? [], sourceRef);
-  const resolvedSourceRef =
-    sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? "" : String(sourceRefs[0] ?? sourceRef).trim();
+  const sourceRefs = normalizeMerchantSourcePackIds(source?.sourceRefs ?? source?.sourcePackIds ?? [], sourceRef);
+  const resolvedSourceRef = String(sourceRefs[0] ?? sourceRef).trim();
   const sourcePackIds = sourceRefs;
   const allowedTypes = normalizeMerchantAllowedItemTypes(
     source?.allowedTypes ??
@@ -1889,39 +1869,10 @@ export function getMerchantItemUnitPriceCp(itemData = {}, rate = 1, options = {}
   return Math.max(0, Math.round(baseGp * scalar * 100));
 }
 
-export function getMerchantSourceRefOptionsForEditor(
-  sourceTypeInput,
-  selectedSourceRefs = [],
-  sourcePackOptions = [],
-  options = {}
-) {
-  const sourceType = normalizeMerchantSourceType(sourceTypeInput);
+export function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRefs = [], sourcePackOptions = []) {
+  normalizeMerchantSourceType(sourceTypeInput);
   const selectedValues = normalizeMerchantSourcePackIds(selectedSourceRefs);
   const selectedSet = new Set(selectedValues);
-  const selectedPrimary = String(selectedValues[0] ?? "").trim();
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) {
-    const worldOptions = [
-      {
-        value: "",
-        label: "All World Items",
-        selected: !selectedPrimary
-      }
-    ];
-    if (selectedPrimary) {
-      worldOptions.push({
-        value: selectedPrimary,
-        label: `${selectedPrimary} (Custom)`,
-        selected: true
-      });
-    }
-    return worldOptions;
-  }
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
-    const getWorldFolderOptions =
-      typeof options?.getWorldFolderOptions === "function" ? options.getWorldFolderOptions : () => [];
-    const rows = getWorldFolderOptions(selectedValues);
-    return Array.isArray(rows) ? rows : [];
-  }
   const packOptions = (Array.isArray(sourcePackOptions) ? sourcePackOptions : [])
     .map((entry) => {
       const id = String(entry?.id ?? "").trim();

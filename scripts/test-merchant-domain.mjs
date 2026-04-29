@@ -85,7 +85,7 @@ const presetPatch = buildMerchantDefinitionPatchFromEditorForm({
 });
 assert.equal(presetPatch.archetype, "outfitter");
 assert.equal(presetPatch.customMode, false);
-assert.equal(presetPatch.stock.sourceType, "world-items");
+assert.equal(presetPatch.stock.sourceType, "compendium-pack");
 assert.ok(presetPatch.stock.maxItems >= 1);
 assert.ok(presetPatch.stock.targetValueGp > 0);
 

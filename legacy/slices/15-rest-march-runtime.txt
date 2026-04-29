@@ -1,34 +1,12 @@
 # Rest Watch And March Runtime
 
-Source: legacy/party-operations-monolith.js:46900-51041
+Source: legacy/party-operations-monolith.js:46900-51037
 Feature IDs: rest-watch, march
 Target Modules: scripts/features/rest-feature.js, scripts/features/march-feature.js, scripts/apps
 
 Rest activities, marching state, rest/march update writes, assignment actions, formation board, passives, clock, and inventory hooks.
 
 ----- legacy source begins -----
-function getRestActivities() {
-  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_ACTIVITIES);
-  return foundry.utils.mergeObject(buildDefaultActivityState(), stored ?? {}, {
-    inplace: false,
-    insertKeys: true,
-    insertValues: true
-  });
-}
-
-function buildActivityView(actor, activityState) {
-  if (!activityState) activityState = {};
-  const exhaustion = activityState.exhaustion ?? 0;
-  const activity = activityState.activity ?? "rested";
-  const spellSlots = activityState.spellSlots ?? {};
-  const hitDice = activityState.hitDice ?? {};
-  const activityOptions = [
-    { value: "rested", label: "Rested" },
-    { value: "light", label: "Light Activity" },
-    { value: "heavy", label: "Heavy Activity" },
-    { value: "strenuous", label: "Strenuous" }
-  ].map((option) => ({
-    ...option,
     selected: option.value === activity
   }));
 
@@ -412,6 +390,15 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
       }
       const state = foundry.utils.deepClone(getRestWatchState());
       mutatorOrRequest(state);
+      if (!hasActiveGmClient()) {
+        stampUpdate(state, game.user);
+        const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+        if (!saved) return false;
+        scheduleIntegrationSync("rest-watch-player-mutate");
+        if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+        return true;
+      }
       game.socket.emit(SOCKET_CHANNEL, {
         type: "rest:mutate",
         userId: game.user.id,
@@ -430,7 +417,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
     });
     if (!normalizedRequest) return;
     if (!hasActiveGmClient()) {
-      await applyRestRequest(normalizedRequest, game.user.id, {
+      const result = await applyRestRequest(normalizedRequest, game.user.id, {
         getRestWatchState,
         game,
         resolveRequester,
@@ -446,7 +433,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
         emitSocketRefresh,
         logUiDebug
       });
-      return true;
+      return Boolean(result?.ok);
     }
     game.socket.emit(SOCKET_CHANNEL, {
       type: "rest:mutate",
@@ -502,6 +489,15 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       }
       const state = foundry.utils.deepClone(getMarchingOrderState());
       mutatorOrRequest(state);
+      if (!hasActiveGmClient()) {
+        stampUpdate(state, game.user);
+        const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+        if (!saved) return false;
+        scheduleIntegrationSync("marching-order-player-mutate");
+        if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        return true;
+      }
       game.socket.emit(SOCKET_CHANNEL, {
         type: "march:mutate",
         userId: game.user.id,
@@ -536,7 +532,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
     });
     if (!normalizedRequest) return;
     if (!hasActiveGmClient()) {
-      await applyMarchRequest(normalizedRequest, game.user.id, {
+      const result = await applyMarchRequest(normalizedRequest, game.user.id, {
         getMarchingOrderState,
         game,
         resolveRequester,
@@ -553,7 +549,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
         emitSocketRefresh,
         logUiDebug
       });
-      return true;
+      return Boolean(result?.ok);
     }
     game.socket.emit(SOCKET_CHANNEL, {
       type: "march:mutate",

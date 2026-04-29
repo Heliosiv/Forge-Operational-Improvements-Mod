@@ -124,7 +124,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "rest-march-runtime",
     label: "Rest Watch And March Runtime",
-    lines: { start: 46900, end: 51041 },
+    lines: { start: 46900, end: 51037 },
     featureIds: ["rest-watch", "march"],
     targetModules: ["scripts/features/rest-feature.js", "scripts/features/march-feature.js", "scripts/apps"],
     notes:
@@ -133,7 +133,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "api-socket-bootstrap",
     label: "API, Socket Handler, And Runtime Bootstrap",
-    lines: { start: 51042, end: 51671 },
+    lines: { start: 51038, end: 51667 },
     featureIds: ["runtime-shell", "sockets", "hooks", "rest-watch"],
     targetModules: ["scripts/runtime", "scripts/core/socket-*", "scripts/bootstrap"],
     notes:

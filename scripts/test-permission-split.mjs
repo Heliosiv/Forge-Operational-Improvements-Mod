@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 
 const source = readLegacyRuntimeSource([
@@ -115,6 +116,10 @@ const applyNonGmOperationsReadonly = instantiateFunction(
   ["game", "getAppRootElement", "NON_GM_READONLY_ACTIONS", "canAccessAllPlayerOps"],
   [{ user: { id: "player-1", isGM: false } }, (root) => root, new Set(["toggle-sop"]), () => sharedPageAccess]
 );
+const updateRestWatchStateSource = extractFunction(source, "updateRestWatchState");
+const updateMarchingOrderStateSource = extractFunction(source, "updateMarchingOrderState");
+const restWatchTemplate = readFileSync(new URL("../templates/rest-watch.hbs", import.meta.url), "utf8");
+const marchingOrderTemplate = readFileSync(new URL("../templates/marching-order.hbs", import.meta.url), "utf8");
 
 const ownerActor = {
   id: "actor-owner",
@@ -324,5 +329,34 @@ function createOperationsRoot(...elements) {
   );
   assert.equal(actionButton.getAttribute("aria-disabled"), "true");
 }
+
+assert.match(
+  updateRestWatchStateSource,
+  /if \(!hasActiveGmClient\(\)\) \{[\s\S]*setModuleSettingWithLocalRefreshSuppressed\(SETTINGS\.REST_STATE, state\)[\s\S]*return true;[\s\S]*game\.socket\.emit\(SOCKET_CHANNEL,[\s\S]*type: "rest:mutate"/,
+  "shared rest-watch function mutations should apply locally when no GM client is active before using GM socket relay"
+);
+assert.match(
+  updateMarchingOrderStateSource,
+  /if \(!hasActiveGmClient\(\)\) \{[\s\S]*setModuleSettingWithLocalRefreshSuppressed\(SETTINGS\.MARCH_STATE, state\)[\s\S]*return true;[\s\S]*game\.socket\.emit\(SOCKET_CHANNEL,[\s\S]*type: "march:mutate"/,
+  "shared marching-order function mutations should apply locally when no GM client is active before using GM socket relay"
+);
+assert(
+  updateRestWatchStateSource.includes("return Boolean(result?.ok);"),
+  "no-GM rest-watch object mutations should return the apply result instead of masking rejected writes"
+);
+assert(
+  updateMarchingOrderStateSource.includes("return Boolean(result?.ok);"),
+  "no-GM marching-order object mutations should return the apply result instead of masking rejected writes"
+);
+assert(
+  restWatchTemplate.includes('{{#if showGmPageTab}}\r\n  <div class="po-overview-actions">') ||
+    restWatchTemplate.includes('{{#if showGmPageTab}}\n  <div class="po-overview-actions">'),
+  "shared rest-watch editors should not see the GM-only header settings toolbar"
+);
+assert(
+  marchingOrderTemplate.includes('{{#if showGmPageTab}}\r\n      <details class="po-rest-settings-menu') ||
+    marchingOrderTemplate.includes('{{#if showGmPageTab}}\n      <details class="po-rest-settings-menu'),
+  "shared marching-order editors should not see the GM-only header settings toolbar"
+);
 
 process.stdout.write("permission split validation passed\n");

@@ -46,6 +46,24 @@ assert.equal(
   "GM Loot should not expose roll-table source controls when compendium-only mode is active"
 );
 
+assert.match(
+  runtimeSource,
+  /function getAvailableLootTableSources\(\) \{\s*return \[\];\s*\}/,
+  "roll-table sources should stay disabled in the compendium-backed source path"
+);
+
+assert.match(
+  runtimeSource,
+  /String\(entry\?\.sourceKind \?\? "compendium-pack"\)[\s\S]+!== LOOT_WORLD_ITEMS_SOURCE_ID/,
+  "loot candidate generation should filter out world-item source rows"
+);
+
+assert.match(
+  runtimeSource,
+  /function getMerchantWorldRarityPriceMultiplier/,
+  "merchant pricing should read the same world rarity weights used by loot selection"
+);
+
 assert.equal(
   gmLootTemplate.includes("Item Pack Sources"),
   false,
