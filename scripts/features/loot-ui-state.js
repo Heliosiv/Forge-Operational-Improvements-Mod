@@ -50,11 +50,29 @@ export function createLootUiState({
     return `po-loot-pack-sources-ui-${getCurrentUserId()}`;
   }
 
+  function getLootItemOverridesUiStorageKey() {
+    return `po-loot-item-overrides-ui-${getCurrentUserId()}`;
+  }
+
   function normalizeLootPackSourcesFilter(value) {
     return String(value ?? "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 120);
+  }
+
+  function normalizeLootItemOverrideSearch(value) {
+    return String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+  }
+
+  function normalizeLootItemOverrideQuickFilter(value) {
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
+    return normalized === "modified" || normalized === "disabled" ? normalized : "all";
   }
 
   function getLootPackSourcesUiState() {
@@ -79,6 +97,30 @@ export function createLootUiState({
       filter: patch?.filter === undefined ? previous.filter : normalizeLootPackSourcesFilter(patch.filter)
     };
     writeSessionValue(getLootPackSourcesUiStorageKey(), JSON.stringify(next));
+  }
+
+  function getLootItemOverridesUiState() {
+    const defaults = { search: "", filter: "all" };
+    const raw = readSessionValue(getLootItemOverridesUiStorageKey());
+    if (!raw) return defaults;
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        search: normalizeLootItemOverrideSearch(parsed?.search),
+        filter: normalizeLootItemOverrideQuickFilter(parsed?.filter)
+      };
+    } catch {
+      return defaults;
+    }
+  }
+
+  function setLootItemOverridesUiState(patch = {}) {
+    const previous = getLootItemOverridesUiState();
+    const next = {
+      search: patch?.search === undefined ? previous.search : normalizeLootItemOverrideSearch(patch.search),
+      filter: patch?.filter === undefined ? previous.filter : normalizeLootItemOverrideQuickFilter(patch.filter)
+    };
+    writeSessionValue(getLootItemOverridesUiStorageKey(), JSON.stringify(next));
   }
 
   function getLootClaimActorStorageKey() {
@@ -285,6 +327,10 @@ export function createLootUiState({
     normalizeLootPackSourcesFilter,
     getLootPackSourcesUiState,
     setLootPackSourcesUiState,
+    normalizeLootItemOverrideSearch,
+    normalizeLootItemOverrideQuickFilter,
+    getLootItemOverridesUiState,
+    setLootItemOverridesUiState,
     normalizeLootClaimActorId,
     normalizeLootClaimRunId,
     getLootClaimActorSelection,

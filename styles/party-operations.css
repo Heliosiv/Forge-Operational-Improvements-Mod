@@ -8262,6 +8262,108 @@
   gap: 12px;
 }
 
+.party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page .po-loot-item-overrides-panel {
+  grid-column: 1 / -1;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-segmented-control {
+  display: inline-flex;
+  border: 1px solid var(--po-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--po-surface) 70%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-segment {
+  min-width: 76px;
+  border: 0;
+  border-right: 1px solid color-mix(in srgb, var(--po-border) 75%, transparent);
+  border-radius: 0;
+  padding: 6px 9px;
+  background: transparent;
+  color: var(--po-text);
+  font-weight: 700;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-segment:last-child {
+  border-right: 0;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-segment.is-active {
+  background: color-mix(in srgb, var(--po-brass-soft) 80%, var(--po-surface));
+  color: var(--po-text-strong);
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table-shell {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 48%, var(--po-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--po-surface-elevated) 72%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table th,
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--po-border) 35%, transparent);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--po-bg-alt) 88%, var(--po-surface));
+  color: var(--po-text-strong);
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table tr.is-modified {
+  background: color-mix(in srgb, var(--po-brass-soft) 20%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table tr.is-disabled {
+  color: color-mix(in srgb, var(--po-muted) 78%, var(--po-text));
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-item-cell {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 220px;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-item-cell img {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border: 1px solid var(--po-border);
+  border-radius: 6px;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-price-input {
+  width: 110px;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-muted-cell {
+  color: var(--po-muted);
+  text-align: center;
+}
+
 .party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page :is(.po-loot-pack-grid, .po-roll-table-grid) {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
@@ -8280,6 +8382,10 @@
 
   .party-operations .po-window[data-tool="gm-loot"] .po-loot-action-bar-sticky {
     top: calc(var(--po-sticky-offset) + 6px);
+  }
+
+  .party-operations .po-window[data-tool="gm-loot"] .po-loot-override-toolbar {
+    grid-template-columns: 1fr;
   }
 }
 

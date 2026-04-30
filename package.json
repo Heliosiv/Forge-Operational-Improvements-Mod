@@ -93,6 +93,7 @@
     "check:loot-horde-budget-reconciliation": "node scripts/test-loot-horde-budget-reconciliation.mjs",
     "check:loot-budget-corrective-picks": "node scripts/test-loot-budget-corrective-picks.mjs",
     "check:loot-valuables-allocation": "node scripts/test-loot-valuables-allocation.mjs",
+    "check:loot-item-overrides": "node scripts/test-loot-item-overrides.mjs",
     "check:loot-rarity-caps": "node scripts/test-loot-rarity-caps.mjs",
     "check:loot-variable-treasure": "node scripts/test-loot-variable-treasure.mjs",
     "check:loot-selection-intelligence": "node scripts/test-loot-selection-intelligence.mjs",

@@ -58,6 +58,11 @@ export function createGmLootPageApp(deps) {
     setLootManifestPack,
     importLootManifestCompendiumToWorld,
     clearLootManifestImportedWorldItems,
+    setLootItemOverrideSearch,
+    setLootItemOverrideFilter,
+    setLootItemOverridePrice,
+    toggleLootItemOverrideEnabled,
+    resetLootItemOverride,
     setLootKeywordIncludeMode,
     setLootKeywordIncludeTags,
     setLootKeywordExcludeTags,
@@ -142,7 +147,11 @@ export function createGmLootPageApp(deps) {
     }
 
     _shouldHandleInputAction(action) {
-      return action === "set-loot-pack-filter" || action === "set-loot-preview-field";
+      return (
+        action === "set-loot-pack-filter" ||
+        action === "set-loot-preview-field" ||
+        action === "set-loot-item-override-search"
+      );
     }
 
     _getActionHandlers() {
@@ -221,6 +230,21 @@ export function createGmLootPageApp(deps) {
             failure: "Unable to clear imported world items."
           })
         ),
+        "set-loot-item-override-search": async (actionElement) => {
+          setLootItemOverrideSearch(actionElement);
+          rerender();
+        },
+        "clear-loot-item-override-search": async () => {
+          setLootItemOverrideSearch({ value: "" });
+          rerender();
+        },
+        "set-loot-item-override-filter": async (actionElement) => {
+          setLootItemOverrideFilter(actionElement);
+          rerender();
+        },
+        "set-loot-item-override-price": rerenderUnlessInput(setLootItemOverridePrice),
+        "toggle-loot-item-override-enabled": rerenderAlways(toggleLootItemOverrideEnabled),
+        "reset-loot-item-override": rerenderAlways(resetLootItemOverride),
         "set-loot-keyword-include-mode": rerenderAlways(setLootKeywordIncludeMode),
         "set-loot-keyword-include-tags": rerenderAlways(setLootKeywordIncludeTags),
         "set-loot-keyword-exclude-tags": rerenderAlways(setLootKeywordExcludeTags),

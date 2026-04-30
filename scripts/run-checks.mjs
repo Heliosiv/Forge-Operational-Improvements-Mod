@@ -69,6 +69,7 @@ const CHECK_COMMANDS = [
   [process.execPath, ["scripts/test-loot-compendium-manifest-source.mjs"]],
   [process.execPath, ["scripts/test-loot-item-count.mjs"]],
   [process.execPath, ["scripts/test-loot-item-candidate-sources.mjs"]],
+  [process.execPath, ["scripts/test-loot-item-overrides.mjs"]],
   [process.execPath, ["scripts/test-loot-picker-item-cap.mjs"]],
   [process.execPath, ["scripts/test-loot-preview-display.mjs"]],
   [process.execPath, ["scripts/test-loot-preview-draft-storage.mjs"]],

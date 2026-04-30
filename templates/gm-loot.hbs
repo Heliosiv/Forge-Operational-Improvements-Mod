@@ -338,6 +338,68 @@
             </div>
             <div class="po-hint">Built loot now runs directly from the Party Operations compendium. Module packs can be read-only on Forge, so the module does not need to rebuild those items into world folders. Clear only removes older imported world copies.</div>
           </div>
+
+          <div class="po-op-role-row po-loot-item-overrides-panel">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Item Overrides</div>
+                <div class="po-hint">Change the effective GP value or remove specific compendium items from loot and merchant candidate pools.</div>
+              </div>
+              <div class="po-loot-builder-status">
+                <span class="po-pill">{{operations.lootSources.itemOverrides.modifiedCount}} modified</span>
+                <span class="po-pill">{{operations.lootSources.itemOverrides.disabledCount}} disabled</span>
+              </div>
+            </div>
+            <div class="po-loot-override-toolbar">
+              <input type="search" class="po-input" placeholder="Search item, type, rarity, tag, or price" value="{{operations.lootSources.itemOverrides.search}}" data-action="set-loot-item-override-search" />
+              <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-item-override-search">Clear</button>
+              <div class="po-segmented-control" role="group" aria-label="Item override filters">
+                <button type="button" class="po-segment {{#if operations.lootSources.itemOverrides.filterAll}}is-active{{/if}}" data-action="set-loot-item-override-filter" data-filter="all">All</button>
+                <button type="button" class="po-segment {{#if operations.lootSources.itemOverrides.filterModified}}is-active{{/if}}" data-action="set-loot-item-override-filter" data-filter="modified">Modified</button>
+                <button type="button" class="po-segment {{#if operations.lootSources.itemOverrides.filterDisabled}}is-active{{/if}}" data-action="set-loot-item-override-filter" data-filter="disabled">Disabled</button>
+              </div>
+            </div>
+            <div class="po-op-summary">Showing {{operations.lootSources.itemOverrides.visibleCount}} of {{operations.lootSources.itemOverrides.filteredCount}} matching items{{#if operations.lootSources.itemOverrides.hiddenCount}}; refine search to see the remaining {{operations.lootSources.itemOverrides.hiddenCount}}{{/if}}.</div>
+            <div class="po-loot-override-table-shell">
+              <table class="po-loot-override-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Type</th>
+                    <th>Rarity</th>
+                    <th>Compendium Price</th>
+                    <th>Override GP</th>
+                    <th>Enabled</th>
+                    <th>Reset</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#if operations.lootSources.itemOverrides.hasRows}}
+                  {{#each operations.lootSources.itemOverrides.rows}}
+                  <tr class="{{#if modified}}is-modified{{/if}} {{#if disabled}}is-disabled{{/if}}">
+                    <td>
+                      <div class="po-loot-override-item-cell">
+                        <img src="{{img}}" alt="" />
+                        <span>{{name}}</span>
+                      </div>
+                    </td>
+                    <td>{{itemTypeLabel}}</td>
+                    <td>{{rarityLabel}}</td>
+                    <td>{{basePriceLabel}}</td>
+                    <td><input type="number" min="0" step="0.01" class="po-input po-loot-override-price-input" placeholder="{{basePriceGp}}" value="{{overridePriceInput}}" data-action="set-loot-item-override-price" data-override-key="{{overrideKey}}" /></td>
+                    <td><input type="checkbox" data-action="toggle-loot-item-override-enabled" data-override-key="{{overrideKey}}" {{#if enabled}}checked{{/if}} /></td>
+                    <td><button type="button" class="po-btn po-btn-sm" data-action="reset-loot-item-override" data-override-key="{{overrideKey}}" {{#if resetDisabled}}disabled{{/if}}>Reset</button></td>
+                  </tr>
+                  {{/each}}
+                  {{else}}
+                  <tr>
+                    <td colspan="7" class="po-muted-cell">No compendium items match the current override filters.</td>
+                  </tr>
+                  {{/if}}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
         {{/if}}
 

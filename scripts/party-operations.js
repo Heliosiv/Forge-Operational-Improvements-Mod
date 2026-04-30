@@ -36,6 +36,15 @@ import {
 } from "./features/gmscreen-weather-model.js";
 import { createAudioStore } from "./features/audio-store.js";
 import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
+import {
+  LOOT_ITEM_OVERRIDE_FILTERS,
+  applyLootItemOverridesToDocuments,
+  normalizeLootItemOverrideFilter,
+  normalizeLootItemOverrideKey,
+  normalizeLootItemOverridePrice,
+  normalizeLootItemOverrides,
+  resolveLootItemOverrideKey
+} from "./features/loot-item-overrides.js";
 import { flushExpiredRecentRolls, recordHordeRollItems } from "./features/loot-recent-rolls-cache.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
@@ -399,6 +408,7 @@ const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
 const lootSourceItemsCache = new Map();
 const lootCandidateBuildCache = new Map();
+const lootOverrideIndexLoadRequests = new Set();
 const activeLootClaimRequestKeys = new Set();
 const LOOT_SOURCE_ITEMS_CACHE_TTL_MS = 30000;
 const LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES = 64;
@@ -1204,6 +1214,10 @@ const {
   normalizeLootPackSourcesFilter,
   getLootPackSourcesUiState,
   setLootPackSourcesUiState,
+  normalizeLootItemOverrideSearch,
+  normalizeLootItemOverrideQuickFilter,
+  getLootItemOverridesUiState,
+  setLootItemOverridesUiState,
   normalizeLootClaimActorId,
   normalizeLootClaimRunId,
   getLootClaimActorSelection,
@@ -10362,6 +10376,11 @@ export const GmLootPageApp = createGmLootPageApp({
   setLootManifestPack,
   importLootManifestCompendiumToWorld,
   clearLootManifestImportedWorldItems,
+  setLootItemOverrideSearch,
+  setLootItemOverrideFilter,
+  setLootItemOverridePrice,
+  toggleLootItemOverrideEnabled,
+  resetLootItemOverride,
   setLootKeywordIncludeMode,
   setLootKeywordIncludeTags,
   setLootKeywordExcludeTags,
@@ -11391,6 +11410,7 @@ function buildDefaultLootSourceConfig() {
       keywordIncludeTags: [],
       keywordExcludeTags: []
     },
+    itemOverrides: {},
     updatedAt: 0,
     updatedBy: ""
   };
@@ -14640,6 +14660,7 @@ function normalizeLootSourceConfig(config = {}) {
       keywordIncludeTags: normalizeLootKeywordTagList(config?.filters?.keywordIncludeTags ?? []),
       keywordExcludeTags: normalizeLootKeywordTagList(config?.filters?.keywordExcludeTags ?? [])
     },
+    itemOverrides: normalizeLootItemOverrides(config?.itemOverrides ?? fallback.itemOverrides),
     updatedAt: Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0,
     updatedBy: String(config?.updatedBy ?? "")
   };
@@ -14648,6 +14669,11 @@ function normalizeLootSourceConfig(config = {}) {
 function getLootSourceConfig() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.LOOT_SOURCE_CONFIG);
   return normalizeLootSourceConfig(stored ?? buildDefaultLootSourceConfig());
+}
+
+function clearLootItemSourceCaches() {
+  lootSourceItemsCache.clear();
+  lootCandidateBuildCache.clear();
 }
 
 async function updateLootSourceConfig(mutator, options = {}) {
@@ -14662,8 +14688,22 @@ async function updateLootSourceConfig(mutator, options = {}) {
   next.updatedAt = Date.now();
   next.updatedBy = String(game.user?.name ?? "GM");
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.LOOT_SOURCE_CONFIG, next);
-  if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
-  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  clearLootItemSourceCaches();
+  const refreshScope = options.refreshScope ?? REFRESH_SCOPE_KEYS.LOOT;
+  if (!options.skipLocalRefresh) refreshOpenApps({ scope: refreshScope });
+  emitSocketRefresh({ scope: refreshScope });
+}
+
+function getLootItemOverridesFromConfig(config = getLootSourceConfig()) {
+  return normalizeLootItemOverrides(config?.itemOverrides ?? {});
+}
+
+function applyConfiguredLootItemOverrides(documents = [], sourceId = "", options = {}) {
+  if (options?.applyOverrides === false) return Array.isArray(documents) ? documents : [];
+  return applyLootItemOverridesToDocuments(documents, getLootItemOverridesFromConfig(), {
+    sourceId,
+    moduleId: MODULE_ID
+  });
 }
 
 function getAllCompendiumPacks() {
@@ -15879,6 +15919,7 @@ function getLootSourceDocumentsForEditor(config = getLootSourceConfig()) {
   if (!manifestEnabled) return [];
   const pack = game.packs?.get?.(manifestPackId);
   if (!pack) return [];
+  ensureLootOverrideEditorIndexFieldsLoaded(manifestPackId, pack);
   const sourceLabel = String(pack?.metadata?.label ?? pack?.title ?? LOOT_MANIFEST_PACK_LABEL).trim();
   const rows = getCollectionValues(pack.index);
   return rows
@@ -15899,6 +15940,47 @@ function getLootSourceDocumentsForEditor(config = getLootSourceConfig()) {
     .filter(Boolean);
 }
 
+function ensureLootOverrideEditorIndexFieldsLoaded(packId = "", pack = null) {
+  const resolvedPackId = String(packId ?? "").trim();
+  if (!resolvedPackId || !pack || typeof pack.getIndex !== "function") return;
+  if (lootOverrideIndexLoadRequests.has(resolvedPackId)) return;
+  const rows = getCollectionValues(pack.index);
+  const needsPriceFields = rows.some((indexRow) => {
+    const entry = Array.isArray(indexRow) ? indexRow[1] : indexRow;
+    return entry && entry.system?.price === undefined;
+  });
+  if (!needsPriceFields) return;
+  lootOverrideIndexLoadRequests.add(resolvedPackId);
+  void pack
+    .getIndex({
+      fields: [
+        "type",
+        "name",
+        "img",
+        "system.price",
+        "system.rarity",
+        "system.details.rarity",
+        "system.traits.rarity",
+        "rarity",
+        "flags.party-operations.gpValue",
+        "flags.party-operations.priceDenomination",
+        "flags.party-operations.keywords",
+        "flags"
+      ]
+    })
+    .then(() => {
+      refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    })
+    .catch((error) => {
+      if (isModuleDebugEnabled()) {
+        console.warn(`${MODULE_ID}: failed to preload loot override editor index`, {
+          packId: resolvedPackId,
+          error
+        });
+      }
+    });
+}
+
 function buildLootTagCatalogForEditor(config = getLootSourceConfig()) {
   const tags = new Set();
   const documents = getLootSourceDocumentsForEditor(config);
@@ -15916,6 +15998,103 @@ function buildLootTagCatalogForEditor(config = getLootSourceConfig()) {
   return Array.from(tags)
     .sort((a, b) => String(a).localeCompare(String(b)))
     .slice(0, 400);
+}
+
+function formatLootOverrideGpLabel(value = 0) {
+  const numeric = Math.max(0, Number(value) || 0);
+  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} gp`;
+}
+
+function getLootRarityLabel(value = "") {
+  const normalized = normalizeLootRarity(value);
+  return (
+    String(LOOT_RARITY_OPTIONS.find((entry) => entry.value === normalized)?.label ?? "").trim() ||
+    String(value ?? "").trim() ||
+    "Unspecified"
+  );
+}
+
+function buildLootItemOverrideRowsForEditor(config = getLootSourceConfig()) {
+  const documents = getLootSourceDocumentsForEditor(config);
+  const overrides = getLootItemOverridesFromConfig(config);
+  const uiState = getLootItemOverridesUiState();
+  const search = normalizeLootItemOverrideSearch(uiState.search);
+  const filter = normalizeLootItemOverrideFilter(
+    normalizeLootItemOverrideQuickFilter(uiState.filter),
+    LOOT_ITEM_OVERRIDE_FILTERS.ALL
+  );
+  const searchNeedle = search.toLowerCase();
+  const rows = documents
+    .map((documentRef) => {
+      const data = getMerchantItemData(documentRef);
+      const overrideKey = normalizeLootItemOverrideKey(
+        resolveLootItemOverrideKey(documentRef, { sourceId: getLootManifestCompendiumPackId() })
+      );
+      if (!overrideKey) return null;
+      const override = overrides[overrideKey] ?? null;
+      const basePriceGp = Math.max(0, Number(getLootItemGpValueFromData(data, { raw: true }) || 0));
+      const overridePriceGp = normalizeLootItemOverridePrice(override?.priceGp);
+      const disabled = override?.disabled === true;
+      const modified = overridePriceGp !== null || disabled;
+      const itemType = String(data?.type ?? "")
+        .trim()
+        .toLowerCase();
+      const rarity = getLootRarityFromData(data);
+      const keywords = getLootKeywordsFromData(data);
+      const name = String(data?.name ?? overrideKey).trim() || overrideKey;
+      const searchBlob = [name, itemType, rarity, overrideKey, basePriceGp, overridePriceGp ?? "", ...keywords]
+        .join(" ")
+        .toLowerCase();
+      return {
+        overrideKey,
+        name,
+        img: normalizeFoundryAssetImagePath(data?.img, { fallback: "icons/svg/item-bag.svg" }),
+        itemType,
+        itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType).trim() || "Item",
+        rarity,
+        rarityLabel: getLootRarityLabel(rarity),
+        basePriceGp,
+        basePriceLabel: formatLootOverrideGpLabel(basePriceGp),
+        overridePriceInput: overridePriceGp === null ? "" : String(overridePriceGp),
+        effectivePriceLabel: formatLootOverrideGpLabel(overridePriceGp ?? basePriceGp),
+        disabled,
+        enabled: !disabled,
+        modified,
+        resetDisabled: !modified,
+        searchBlob
+      };
+    })
+    .filter(Boolean);
+  const modifiedCount = rows.filter((entry) => entry.modified).length;
+  const disabledCount = rows.filter((entry) => entry.disabled).length;
+  const filteredRows = rows
+    .filter((entry) => {
+      if (filter === LOOT_ITEM_OVERRIDE_FILTERS.MODIFIED && !entry.modified) return false;
+      if (filter === LOOT_ITEM_OVERRIDE_FILTERS.DISABLED && !entry.disabled) return false;
+      if (searchNeedle && !entry.searchBlob.includes(searchNeedle)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const modifiedDelta = Number(Boolean(b.modified)) - Number(Boolean(a.modified));
+      if (modifiedDelta !== 0) return modifiedDelta;
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    });
+  const visibleRows = filteredRows.slice(0, 300);
+  return {
+    rows: visibleRows,
+    search,
+    filter,
+    filterAll: filter === LOOT_ITEM_OVERRIDE_FILTERS.ALL,
+    filterModified: filter === LOOT_ITEM_OVERRIDE_FILTERS.MODIFIED,
+    filterDisabled: filter === LOOT_ITEM_OVERRIDE_FILTERS.DISABLED,
+    totalCount: rows.length,
+    filteredCount: filteredRows.length,
+    visibleCount: visibleRows.length,
+    hiddenCount: Math.max(0, filteredRows.length - visibleRows.length),
+    modifiedCount,
+    disabledCount,
+    hasRows: visibleRows.length > 0
+  };
 }
 
 function buildLootSourceRegistryContext() {
@@ -16027,6 +16206,7 @@ function buildLootSourceRegistryContext() {
   );
   const keywordIncludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordIncludeTags ?? []);
   const keywordExcludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordExcludeTags ?? []);
+  const itemOverridesContext = buildLootItemOverrideRowsForEditor(config);
   const updatedAt = Number(config.updatedAt ?? 0);
   const updatedAtLabel = updatedAt > 0 ? new Date(updatedAt).toLocaleString() : "Not set";
   return {
@@ -16069,6 +16249,7 @@ function buildLootSourceRegistryContext() {
     manifestPackId,
     keywordIncludeTagsInput,
     keywordExcludeTagsInput,
+    itemOverrides: itemOverridesContext,
     keywordIncludeTagCount: normalizeLootKeywordTagList(config.filters?.keywordIncludeTags ?? []).length,
     keywordExcludeTagCount: normalizeLootKeywordTagList(config.filters?.keywordExcludeTags ?? []).length,
     summary: {
@@ -17897,7 +18078,7 @@ async function loadItemsFromPack(packId, options = {}) {
   try {
     if (typeof pack.getDocuments === "function") {
       const docs = await pack.getDocuments();
-      return Array.isArray(docs) ? docs : [];
+      return applyConfiguredLootItemOverrides(Array.isArray(docs) ? docs : [], resolvedPackId, options);
     }
     const index = await pack.getIndex({
       fields: [
@@ -17905,15 +18086,18 @@ async function loadItemsFromPack(packId, options = {}) {
         "name",
         "img",
         "system.description.value",
+        "system.price",
         "system.rarity",
         "system.details.rarity",
         "system.traits.rarity",
         "rarity",
+        "flags.party-operations.gpValue",
+        "flags.party-operations.priceDenomination",
         "flags.party-operations.keywords",
         "flags"
       ]
     });
-    return getCollectionValues(index);
+    return applyConfiguredLootItemOverrides(getCollectionValues(index), resolvedPackId, options);
   } catch (error) {
     if (Array.isArray(options.warnings)) {
       options.warnings.push(`Could not read item source: ${String(options.sourceLabel ?? resolvedPackId)}.`);
@@ -27780,12 +27964,14 @@ function getMerchantPresetSourceDocumentsSync() {
     const pack = game.packs?.get(packId);
     if (!pack) continue;
     const sourceLabel = packLabelMap.get(packId) ?? packId;
+    const packDocuments = [];
     const indexRows = getCollectionValues(pack.index);
     for (const indexRow of indexRows) {
       const entry = Array.isArray(indexRow) ? indexRow[1] : indexRow;
       const documentRef = buildMerchantPresetPackIndexDocument(packId, entry, sourceLabel);
-      if (documentRef) documents.push(documentRef);
+      if (documentRef) packDocuments.push(documentRef);
     }
+    documents.push(...applyConfiguredLootItemOverrides(packDocuments, packId));
   }
   return documents;
 }
@@ -28378,12 +28564,13 @@ function getMerchantSourceDocumentsSync(merchant = {}) {
       const pack = game.packs?.get(packId);
       if (!pack) continue;
       const sourceLabel = packLabelMap.get(packId) ?? packId;
+      const packDocuments = [];
       const indexRows = getCollectionValues(pack.index);
       for (const indexRow of indexRows) {
         const entry = Array.isArray(indexRow) ? indexRow[1] : indexRow;
         const docId = String(entry?._id ?? entry?.id ?? "").trim();
         if (!docId) continue;
-        documents.push({
+        packDocuments.push({
           uuid: `Compendium.${packId}.Item.${docId}`,
           name: String(entry?.name ?? docId).trim() || docId,
           img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
@@ -28393,6 +28580,7 @@ function getMerchantSourceDocumentsSync(merchant = {}) {
           _merchantSourceLabel: sourceLabel
         });
       }
+      documents.push(...applyConfiguredLootItemOverrides(packDocuments, packId));
     }
     return documents;
   }
@@ -42362,6 +42550,86 @@ async function setLootKeywordExcludeTags(element) {
     if (!config.filters || typeof config.filters !== "object") config.filters = {};
     config.filters.keywordExcludeTags = next;
   });
+}
+
+function pruneLootItemOverrideRecord(record = {}) {
+  const priceGp = normalizeLootItemOverridePrice(record?.priceGp);
+  const disabled = record?.disabled === true;
+  if (priceGp === null && !disabled) return null;
+  return {
+    priceGp,
+    disabled,
+    updatedAt: Number(record?.updatedAt ?? Date.now()) || Date.now(),
+    updatedBy: String(record?.updatedBy ?? game.user?.name ?? "GM").trim() || "GM"
+  };
+}
+
+async function updateLootItemOverrideFromElement(element, mutator) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure item overrides.");
+    return;
+  }
+  const overrideKey = normalizeLootItemOverrideKey(element?.dataset?.overrideKey);
+  if (!overrideKey || typeof mutator !== "function") return;
+  await updateLootSourceConfig(
+    (config) => {
+      const overrides = normalizeLootItemOverrides(config.itemOverrides ?? {});
+      const previous = overrides[overrideKey] ?? {
+        priceGp: null,
+        disabled: false,
+        updatedAt: 0,
+        updatedBy: ""
+      };
+      const nextDraft = {
+        ...previous,
+        updatedAt: Date.now(),
+        updatedBy: String(game.user?.name ?? "GM").trim() || "GM"
+      };
+      mutator(nextDraft);
+      const nextRecord = pruneLootItemOverrideRecord(nextDraft);
+      if (nextRecord) overrides[overrideKey] = nextRecord;
+      else delete overrides[overrideKey];
+      config.itemOverrides = overrides;
+    },
+    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS }
+  );
+}
+
+function setLootItemOverrideSearch(element) {
+  setLootItemOverridesUiState({ search: element?.value ?? "" });
+}
+
+function setLootItemOverrideFilter(element) {
+  setLootItemOverridesUiState({ filter: element?.dataset?.filter ?? element?.value ?? LOOT_ITEM_OVERRIDE_FILTERS.ALL });
+}
+
+async function setLootItemOverridePrice(element) {
+  await updateLootItemOverrideFromElement(element, (record) => {
+    record.priceGp = normalizeLootItemOverridePrice(element?.value);
+  });
+}
+
+async function toggleLootItemOverrideEnabled(element) {
+  await updateLootItemOverrideFromElement(element, (record) => {
+    record.disabled = element?.checked !== true;
+  });
+}
+
+async function resetLootItemOverride(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure item overrides.");
+    return;
+  }
+  const overrideKey = normalizeLootItemOverrideKey(element?.dataset?.overrideKey);
+  if (!overrideKey) return;
+  await updateLootSourceConfig(
+    (config) => {
+      const overrides = normalizeLootItemOverrides(config.itemOverrides ?? {});
+      delete overrides[overrideKey];
+      config.itemOverrides = overrides;
+    },
+    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS }
+  );
 }
 
 async function toggleLootPackSource(element) {
