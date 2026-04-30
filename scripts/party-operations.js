@@ -19,6 +19,21 @@ import { createLootPreviewDraftStorage } from "./features/loot-preview-draft-sto
 import { createNoteDraftCache } from "./features/note-draft-cache.js";
 import { createReputationDraftStorage } from "./features/reputation-draft-storage.js";
 import { createWeatherPresetHelpers } from "./features/weather-preset-helpers.js";
+import {
+  analyzeGmScreenWeatherTerrainImageData,
+  buildGmScreenWeatherPreset,
+  buildGmScreenWeatherRecord,
+  buildGmScreenWeatherSnapshot,
+  buildGmScreenWeatherSnapshotDetailLines,
+  getActiveGmScreenWeatherTerrains,
+  getGmScreenWeatherClimateOptions,
+  getGmScreenWeatherTerrainRows,
+  normalizeGmScreenWeatherClimate,
+  normalizeGmScreenWeatherTerrainImageAnalysis,
+  normalizeGmScreenWeatherTerrainCounts,
+  recommendGmScreenWeatherClimateForTerrain,
+  resolveGmScreenCalendarContext
+} from "./features/gmscreen-weather-model.js";
 import { createAudioStore } from "./features/audio-store.js";
 import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
 import { flushExpiredRecentRolls, recordHordeRollItems } from "./features/loot-recent-rolls-cache.js";
@@ -109,6 +124,7 @@ import {
   getCalendarClockContext as getCalendarClockContextBridge,
   getCalendarDayKey as getCalendarDayKeyBridge,
   getCalendarDueCount as getCalendarDueCountBridge,
+  getCalendarSecondsPerDay as getCalendarSecondsPerDayBridge,
   getCurrentWorldTimestamp as getCurrentWorldTimestampBridge,
   getElapsedCalendarDays as getElapsedCalendarDaysBridge,
   getSimpleCalendarApi as getSimpleCalendarApiBridge,
@@ -1063,10 +1079,16 @@ const JOURNAL_SORT_OPTIONS = [
 const OPERATIONS_JOURNAL_ROOT_NAME = "Party Operations Logs";
 const OPERATIONS_JOURNAL_ROOT_NAME_LEGACY = ["GM Folder"];
 const OPERATIONS_JOURNAL_CATEGORIES = {
+  audio: "Audio",
   downtime: "Downtime",
+  gather: "Gather",
   reputation: "Reputation",
   environment: "Environment",
+  loot: "Loot",
   "loot-claims": "Loot Claims",
+  march: "March",
+  merchants: "Merchants",
+  rest: "Rest",
   session: "Session"
 };
 
@@ -1243,6 +1265,23 @@ const {
   FolderClass: Folder,
   JournalEntryClass: JournalEntry
 });
+
+async function recordOperationsEvent(options = {}) {
+  if (!canAccessAllPlayerOps()) return null;
+  try {
+    const category = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, options?.category)
+      ? options.category
+      : "session";
+    return await createOperationsJournalEntry({
+      category,
+      sensitivity: "party",
+      ...options
+    });
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed recording operations event`, error);
+    return null;
+  }
+}
 const {
   getOperationsJournalViewState,
   setOperationsJournalViewState,
@@ -1378,8 +1417,11 @@ const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
 });
 const NON_GM_READONLY_ACTIONS = new Set([
   "toggle-sop",
+  "post-rest-watch-summary",
   "set-resource",
+  "call-gather-requests",
   "gather-resource-check",
+  "resend-gather-call",
   "run-gather-preset",
   "clear-gather-history",
   "remove-gather-history-entry",
@@ -1463,6 +1505,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "reset-loot-source-config",
   "set-loot-preview-field",
   "roll-loot-preview",
+  "apply-loot-preview-quality",
   "generate-loot-preview-item",
   "add-loot-preview-item",
   "remove-loot-preview-item",
@@ -1504,7 +1547,18 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-quick-weather-select",
   "gm-quick-weather-set",
   "gm-quick-weather-save-preset",
-  "gm-quick-weather-delete-preset"
+  "gm-quick-weather-delete-preset",
+  "gm-calendar-weather-set-climate",
+  "gm-calendar-weather-set-terrain",
+  "gm-calendar-weather-clear-terrain",
+  "gm-calendar-weather-set-terrain-image",
+  "gm-calendar-weather-browse-terrain-image",
+  "gm-calendar-weather-preview-terrain-image",
+  "gm-calendar-weather-import-terrain-image",
+  "gm-calendar-weather-toggle-auto-climate",
+  "gm-calendar-weather-apply-suggested-climate",
+  "gm-calendar-weather-toggle-auto",
+  "gm-calendar-weather-roll"
 ]);
 const UPKEEP_DUSK_MINUTES = 20 * 60;
 const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
@@ -2081,6 +2135,7 @@ function normalizeGatherRequestPayload(input = {}) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   return {
     id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    callId: String(source.callId ?? "").trim(),
     actorId: String(source.actorId ?? "").trim(),
     actorName: String(source.actorName ?? "").trim(),
     requesterUserId: String(source.requesterUserId ?? "").trim(),
@@ -2104,6 +2159,48 @@ function normalizeGatherRequestPayload(input = {}) {
     duringTravel: Boolean(source.duringTravel),
     travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff),
     applyToLedger: source.applyToLedger !== false
+  };
+}
+
+function normalizeGatherCallRecipient(input = {}) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const statusRaw = String(source.status ?? "")
+    .trim()
+    .toLowerCase();
+  const respondedAt = Math.max(0, Number(source.respondedAt ?? 0) || 0);
+  const status = ["sent", "received", "missed", "resent"].includes(statusRaw)
+    ? statusRaw
+    : respondedAt > 0
+      ? "received"
+      : "sent";
+  return {
+    userId: String(source.userId ?? source.id ?? "").trim(),
+    userName: String(source.userName ?? source.name ?? "Player").trim() || "Player",
+    active: Boolean(source.active),
+    status,
+    sentAt: Math.max(0, Number(source.sentAt ?? 0) || 0),
+    respondedAt,
+    lastResentAt: Math.max(0, Number(source.lastResentAt ?? 0) || 0),
+    requestId: String(source.requestId ?? "").trim()
+  };
+}
+
+function normalizeGatherDeliveryCall(input = {}) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const sentAt = Math.max(0, Number(source.sentAt ?? source.createdAt ?? Date.now()) || Date.now());
+  const recipients = Array.isArray(source.recipients)
+    ? source.recipients
+        .map((entry) => normalizeGatherCallRecipient({ sentAt, ...entry }))
+        .filter((entry) => entry.userId)
+    : [];
+  return {
+    id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    sentAt,
+    promptedByUserId: String(source.promptedByUserId ?? "").trim(),
+    promptedBy: String(source.promptedBy ?? "GM").trim() || "GM",
+    recipients,
+    resendCount: Math.max(0, Math.floor(Number(source.resendCount ?? 0) || 0)),
+    lastResentAt: Math.max(0, Number(source.lastResentAt ?? 0) || 0)
   };
 }
 
@@ -2139,6 +2236,7 @@ function ensureOperationalResourceConfig(resources) {
       const requestedAt = Number.isFinite(requestedAtRaw) ? requestedAtRaw : Date.now();
       return {
         id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        callId: String(source.callId ?? "").trim(),
         actorId: String(source.actorId ?? "").trim(),
         actorName: String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
         requesterUserId: String(source.requesterUserId ?? "").trim(),
@@ -2165,6 +2263,12 @@ function ensureOperationalResourceConfig(resources) {
       };
     })
     .sort((a, b) => Number(b.requestedAt ?? 0) - Number(a.requestedAt ?? 0));
+  if (!Array.isArray(resources.gather.calls)) resources.gather.calls = [];
+  resources.gather.calls = resources.gather.calls
+    .map((entry) => normalizeGatherDeliveryCall(entry))
+    .filter((entry) => entry.recipients.length > 0)
+    .sort((a, b) => Number(b.sentAt ?? 0) - Number(a.sentAt ?? 0))
+    .slice(0, 20);
   if (!Array.isArray(resources.gather.history)) resources.gather.history = [];
   resources.gather.history = resources.gather.history
     .map((entry) => {
@@ -2178,6 +2282,7 @@ function ensureOperationalResourceConfig(resources) {
         resultRaw === "success" || resultRaw === "fail" ? resultRaw : Boolean(source.success) ? "success" : "fail";
       return {
         id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        callId: String(source.callId ?? "").trim(),
         timestamp,
         actorId: String(source.actorId ?? "").trim(),
         actorName: String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
@@ -2833,6 +2938,93 @@ function buildGatherRequestContext(resourcesState = null, options = {}) {
     count: rows.length,
     isManager: canManage,
     emptyMessage: canManage ? "No pending gather requests." : "You have no pending gather requests."
+  };
+}
+
+function markGatherCallRecipientReceived(resources, callIdInput, userIdInput, requestIdInput = "") {
+  const callId = String(callIdInput ?? "").trim();
+  const userId = String(userIdInput ?? "").trim();
+  if (!callId || !userId) return false;
+  ensureOperationalResourceConfig(resources);
+  const call = (resources.gather?.calls ?? []).find((entry) => String(entry?.id ?? "").trim() === callId);
+  if (!call) return false;
+  const recipient = (call.recipients ?? []).find((entry) => String(entry?.userId ?? "").trim() === userId);
+  if (!recipient) return false;
+  recipient.status = "received";
+  recipient.respondedAt = Date.now();
+  recipient.requestId = String(requestIdInput ?? "").trim();
+  return true;
+}
+
+function buildGatherDeliveryContext(resourcesState = null) {
+  const calls = Array.isArray(resourcesState?.gather?.calls)
+    ? resourcesState.gather.calls.map((entry) => normalizeGatherDeliveryCall(entry))
+    : [];
+  const pendingRequests = Array.isArray(resourcesState?.gather?.requests) ? resourcesState.gather.requests : [];
+  const activePlayerUsers = getConnectedNonGmUsers();
+  const activeUserIds = new Set(activePlayerUsers.map((user) => String(user?.id ?? "").trim()).filter(Boolean));
+  const pendingByCallAndUser = new Set(
+    pendingRequests
+      .map((entry) => {
+        const callId = String(entry?.callId ?? "").trim();
+        const userId = String(entry?.requesterUserId ?? "").trim();
+        return callId && userId ? `${callId}:${userId}` : "";
+      })
+      .filter(Boolean)
+  );
+  const rows = calls.slice(0, 8).map((call) => {
+    const sentAtDate = new Date(Number(call.sentAt ?? 0));
+    const recipients = call.recipients.map((recipient) => {
+      const key = `${call.id}:${recipient.userId}`;
+      const hasPendingRequest = pendingByCallAndUser.has(key);
+      const received = recipient.status === "received" || hasPendingRequest || Number(recipient.respondedAt ?? 0) > 0;
+      const active = activeUserIds.has(String(recipient.userId ?? "").trim());
+      const status = received ? "received" : active ? (recipient.lastResentAt > 0 ? "resent" : "sent") : "missed";
+      return {
+        ...recipient,
+        active,
+        status,
+        statusLabel:
+          status === "received"
+            ? "Responded"
+            : status === "resent"
+              ? "Resent"
+              : status === "missed"
+                ? "Missed"
+                : "Sent",
+        statusClass:
+          status === "received"
+            ? "is-ready"
+            : status === "missed"
+              ? "is-missing"
+              : status === "resent"
+                ? "is-warn"
+                : "",
+        hasPendingRequest
+      };
+    });
+    const respondedCount = recipients.filter((entry) => entry.status === "received").length;
+    const missedCount = recipients.filter((entry) => entry.status === "missed").length;
+    const awaitingCount = Math.max(0, recipients.length - respondedCount);
+    return {
+      ...call,
+      sentAtLabel: Number.isFinite(sentAtDate.getTime()) ? sentAtDate.toLocaleString() : "Unknown",
+      recipientCount: recipients.length,
+      respondedCount,
+      missedCount,
+      awaitingCount,
+      hasAwaitingRecipients: awaitingCount > 0,
+      summaryLabel: `${respondedCount}/${recipients.length} responded`,
+      recipients
+    };
+  });
+  return {
+    rows,
+    hasRows: rows.length > 0,
+    canCall: canAccessAllPlayerOps(),
+    activePlayerCount: activePlayerUsers.length,
+    activePlayerLabel: `${activePlayerUsers.length} active player${activePlayerUsers.length === 1 ? "" : "s"}`,
+    emptyMessage: "No gather calls have been sent this session."
   };
 }
 
@@ -4391,7 +4583,9 @@ function ensureEnvironmentState(ledger) {
             : 0,
           note: String(entry?.note ?? ""),
           createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
-          createdBy: String(entry?.createdBy ?? "GM")
+          createdBy: String(entry?.createdBy ?? "GM"),
+          calendarEntryId: String(entry?.calendarEntryId ?? "").trim(),
+          journalEntryId: String(entry?.journalEntryId ?? "").trim()
         };
       }
       const actorIds = Array.isArray(entry?.actorIds)
@@ -6826,6 +7020,40 @@ function buildOperationsContextFallback() {
     note: "",
     presetName: ""
   };
+  let fallbackWeatherCalendar = {
+    climate: "Temperate",
+    configuredClimate: "Temperate",
+    climateOptions: getGmScreenWeatherClimateOptions("Temperate"),
+    climateAutoApply: false,
+    climateModeLabel: "Manual",
+    climateRecommendation: recommendGmScreenWeatherClimateForTerrain({}),
+    recommendedClimate: "Temperate",
+    recommendedClimateConfidence: "Low",
+    recommendedClimateReason: "No terrain profile; using Temperate as the safest default.",
+    canApplyRecommendedClimate: false,
+    season: "Spring",
+    dayKey: "",
+    dateLabel: "-",
+    simpleCalendarActive: false,
+    autoApply: false,
+    lastDayKey: "",
+    lastRolledAtLabel: "Never",
+    terrainRows: getGmScreenWeatherTerrainRows({}),
+    terrainSummary: "No regional terrain profile.",
+    hasTerrainProfile: false,
+    terrainImagePath: "",
+    hasTerrainImagePath: false,
+    terrainImportedAt: 0,
+    terrainImportedAtLabel: "Never",
+    terrainImportedSummary: "",
+    terrainJournalEntryId: "",
+    hasTerrainJournalEntry: false,
+    terrainImageAnalysis: normalizeGmScreenWeatherTerrainImageAnalysis({}),
+    terrainAnalysisRows: [],
+    terrainAnalysisSummary: "No terrain image analysis.",
+    terrainAnalysisModeLabel: "",
+    hasTerrainImageAnalysis: false
+  };
   try {
     const weatherState = ensureWeatherState(ledger);
     const currentWeather = weatherState.current ?? null;
@@ -6843,6 +7071,18 @@ function buildOperationsContextFallback() {
         : 0
     };
     const weatherQuickOptions = buildWeatherSelectionCatalog(weatherState, weatherSceneSnapshot);
+    const calendarWeather = buildCalendarWeatherContext(weatherState);
+    fallbackWeatherCalendar = {
+      ...calendarWeather,
+      lastRolledAtLabel:
+        Number(calendarWeather.lastRolledAt ?? 0) > 0
+          ? new Date(Number(calendarWeather.lastRolledAt)).toLocaleString()
+          : "Never",
+      terrainImportedAtLabel:
+        Number(calendarWeather.terrainImportedAt ?? 0) > 0
+          ? new Date(Number(calendarWeather.terrainImportedAt)).toLocaleString()
+          : "Never"
+    };
     const storedWeatherDraft = getGmQuickWeatherDraft();
     const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
     const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
@@ -7091,6 +7331,7 @@ function buildOperationsContextFallback() {
   const fallbackGatherHistoryView = getGatherHistoryViewState();
   const fallbackGatherDefaults = buildGatherDefaultsContext(fallbackResourcesState);
   const fallbackGatherRequests = buildGatherRequestContext(fallbackResourcesState, { viewer: game.user });
+  const fallbackGatherDelivery = buildGatherDeliveryContext(fallbackResourcesState);
   const fallbackGatherHistory = buildGatherHistoryContext(fallbackResourcesState, {
     viewState: fallbackGatherHistoryView
   });
@@ -7286,6 +7527,7 @@ function buildOperationsContextFallback() {
       gatherWaterCoveredNextUpkeep: fallbackGatherWaterCoveredNextUpkeep,
       gatherPresets: fallbackGatherDefaults.presets,
       hasGatherPresets: fallbackGatherDefaults.hasPresets,
+      gatherDelivery: fallbackGatherDelivery,
       gatherRequests: fallbackGatherRequests,
       hasGatherRequests: fallbackGatherRequests.hasRows,
       gatherHistory: fallbackGatherHistory,
@@ -7357,7 +7599,8 @@ function buildOperationsContextFallback() {
       modifierAddLog: [],
       weatherSceneSnapshot: fallbackWeatherSceneSnapshot,
       weatherOptions: fallbackWeatherOptions,
-      weatherDraft: fallbackWeatherDraft
+      weatherDraft: fallbackWeatherDraft,
+      weatherCalendar: fallbackWeatherCalendar
     },
     lootSources: fallbackLootSources,
     lootClaims: fallbackLootClaims,
@@ -7718,6 +7961,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           if (!event.target?.matches("input[data-merchant-item-filter]")) return false;
           setMerchantEditorItemFilter(event.target?.value ?? "");
           applyMerchantEditorFilters(this.element);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[type='range'][data-action='merchant-editor-draft-change']")) return false;
+          syncMerchantEditorRangeDraftFromElement(event.target);
           return true;
         },
         (event) => {
@@ -8099,6 +8347,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "copy-md": async () => {
             await copyRestWatchText(true);
           },
+          "post-rest-watch-summary": async () => {
+            await postRestWatchSummaryToChat();
+          },
           "clear-all": async () => {
             await clearRestWatchAll();
           },
@@ -8432,6 +8683,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             triggerGatherResourceButtonAnimation(element);
             await runGatherResourceCheck();
           },
+          "call-gather-requests": async () => {
+            const sent = await callGatherRequestsForActivePlayers();
+            if (sent) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "resend-gather-call": async () => {
+            const resent = await resendGatherCallFromElement(element);
+            if (resent) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "run-gather-preset": async () => {
             await runGatherPresetAction(element);
           },
@@ -8645,6 +8904,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await rollLootPreview(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "apply-loot-preview-quality": async () => {
+            await applyLootPreviewQualityAction(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "generate-loot-preview-item": async () => {
             const added = await generateLootPreviewItemFromSnapshot();
             if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8787,6 +9050,50 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           },
           "gm-quick-weather-set": async () => {
             gmQuickUpdateWeatherDraftField(element);
+          },
+          "gm-calendar-weather-set-climate": async () => {
+            await gmCalendarWeatherSetClimate(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-set-terrain": async () => {
+            await gmCalendarWeatherSetTerrain(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-clear-terrain": async () => {
+            await gmCalendarWeatherClearTerrain();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-set-terrain-image": async () => {
+            await gmCalendarWeatherSetTerrainImage(element);
+            if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-browse-terrain-image": async () => {
+            await gmCalendarWeatherBrowseTerrainImage();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-preview-terrain-image": async () => {
+            await gmCalendarWeatherPreviewTerrainImage();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-import-terrain-image": async () => {
+            await gmCalendarWeatherImportTerrainImage();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-toggle-auto-climate": async () => {
+            await gmCalendarWeatherToggleAutoClimate(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-apply-suggested-climate": async () => {
+            await gmCalendarWeatherApplySuggestedClimate();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-toggle-auto": async () => {
+            await gmCalendarWeatherToggleAuto(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-calendar-weather-roll": async () => {
+            await gmCalendarWeatherRoll();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "gm-quick-weather-save-preset": async () => {
             await gmQuickSaveWeatherPreset(element);
@@ -9007,6 +9314,40 @@ function buildGmEnvironmentPageContext() {
       visibilityModifier: 0,
       note: "",
       presetName: ""
+    },
+    weatherCalendar: {
+      climate: "Temperate",
+      configuredClimate: "Temperate",
+      climateOptions: getGmScreenWeatherClimateOptions("Temperate"),
+      climateAutoApply: false,
+      climateModeLabel: "Manual",
+      climateRecommendation: recommendGmScreenWeatherClimateForTerrain({}),
+      recommendedClimate: "Temperate",
+      recommendedClimateConfidence: "Low",
+      recommendedClimateReason: "No terrain profile; using Temperate as the safest default.",
+      canApplyRecommendedClimate: false,
+      season: "Spring",
+      dayKey: "",
+      dateLabel: "-",
+      simpleCalendarActive: false,
+      autoApply: false,
+      lastDayKey: "",
+      lastRolledAtLabel: "Never",
+      terrainRows: getGmScreenWeatherTerrainRows({}),
+      terrainSummary: "No regional terrain profile.",
+      hasTerrainProfile: false,
+      terrainImagePath: "",
+      hasTerrainImagePath: false,
+      terrainImportedAt: 0,
+      terrainImportedAtLabel: "Never",
+      terrainImportedSummary: "",
+      terrainJournalEntryId: "",
+      hasTerrainJournalEntry: false,
+      terrainImageAnalysis: normalizeGmScreenWeatherTerrainImageAnalysis({}),
+      terrainAnalysisRows: [],
+      terrainAnalysisSummary: "No terrain image analysis.",
+      terrainAnalysisModeLabel: "",
+      hasTerrainImageAnalysis: false
     }
   };
   const logs = Array.isArray(environment.logs) ? environment.logs : [];
@@ -9740,8 +10081,20 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   gmQuickSubmitWeather,
   gmQuickSelectWeatherPreset,
   gmQuickUpdateWeatherDraftField,
+  gmCalendarWeatherSetClimate,
+  gmCalendarWeatherToggleAutoClimate,
+  gmCalendarWeatherApplySuggestedClimate,
+  gmCalendarWeatherSetTerrain,
+  gmCalendarWeatherClearTerrain,
+  gmCalendarWeatherSetTerrainImage,
+  gmCalendarWeatherBrowseTerrainImage,
+  gmCalendarWeatherPreviewTerrainImage,
+  gmCalendarWeatherImportTerrainImage,
+  gmCalendarWeatherToggleAuto,
+  gmCalendarWeatherRoll,
   loadWeatherLogToQuickPanel,
   removeWeatherLogById,
+  openJournalEntryFromElement,
   openGmPanelByKey
 });
 
@@ -9918,6 +10271,16 @@ export const GmAudioPageApp = createGmAudioPageApp({
       const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
       setAudioLibraryError(message);
       ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  playAudioScenePreset: async (actionElement) => {
+    try {
+      clearAudioLibraryError();
+      await playAudioScenePresetFromElement(actionElement);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio scene preset failed: ${message}`);
     }
   },
   playSelectedAudioMixCandidate: async (actionElement) => {
@@ -10349,6 +10712,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       ranks,
       formationBoard,
       spacingGrid,
+      spacingPresets: buildMarchSpacingPresetContext(),
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
@@ -10594,6 +10958,10 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
           break;
         case "formation-set":
           await applyMarchingFormation({ type: element?.dataset?.formationId });
+          break;
+        case "apply-spacing-preset":
+          await applyMarchSpacingPresetFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
           break;
         case "sync-rest-watch":
           await syncMarchingOrderFromRestWatch();
@@ -13272,6 +13640,25 @@ async function playAudioMixPresetById(presetId, options = {}) {
   };
 }
 
+async function playAudioScenePresetFromElement(actionElement) {
+  const presetId = String(actionElement?.dataset?.presetId ?? "").trim();
+  const preset = getAudioMixPresetById(presetId);
+  if (!preset) {
+    ui.notifications?.warn("Audio scene preset not found.");
+    return false;
+  }
+  setSelectedAudioMixPresetId(preset.id);
+  const result = await playAudioMixPresetById(preset.id);
+  if (!result) return false;
+  await recordOperationsEvent({
+    category: "audio",
+    title: `Audio Scene - ${preset.label}`,
+    summary: `Started ${preset.label} audio scene preset.`,
+    details: String(preset.description ?? "").trim() || "Audio scene preset started."
+  });
+  return true;
+}
+
 async function stopAudioMixPlayback(options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can stop Party Operations mix playback.");
@@ -13920,6 +14307,17 @@ function buildAudioMixContext(catalog) {
       playbackModeLabel: getAudioMixPlaybackModeLabel(preset.playbackMode),
       hasSavedTrackList: Array.isArray(preset.trackIds) && preset.trackIds.length > 0
     })),
+    scenePresets: getAllAudioMixPresets()
+      .filter((preset) => !preset.isCustom)
+      .map((preset) => ({
+        id: preset.id,
+        label: preset.label,
+        selected: preset.id === selectedPreset.id,
+        candidateCount:
+          Array.isArray(preset.trackIds) && preset.trackIds.length > 0
+            ? buildAudioMixAssignedCandidates(catalog, preset).length
+            : buildAudioMixCandidates(catalog, preset).length
+      })),
     selectedPreset: {
       ...selectedPreset,
       candidateCount: suggestedCandidates.length,
@@ -23781,7 +24179,19 @@ function buildDefaultOperationsLedger() {
     },
     weather: {
       current: null,
-      logs: []
+      logs: [],
+      customPresets: [],
+      calendarClimate: "Temperate",
+      calendarClimateAutoApply: false,
+      calendarTerrainCounts: {},
+      calendarTerrainImagePath: "",
+      calendarTerrainImportedAt: 0,
+      calendarTerrainImportedSummary: "",
+      calendarTerrainJournalEntryId: "",
+      calendarTerrainImageAnalysis: null,
+      calendarAutoApply: false,
+      calendarLastDayKey: "",
+      calendarLastRolledAt: 0
     },
     partyHealth: {
       syncToSceneNonParty: true,
@@ -24547,6 +24957,7 @@ function buildOperationsContext() {
   const gatherHistoryView = getGatherHistoryViewState();
   const gatherDefaults = buildGatherDefaultsContext(resourcesState);
   const gatherRequests = buildGatherRequestContext(resourcesState, { viewer: game.user });
+  const gatherDelivery = buildGatherDeliveryContext(resourcesState);
   const gatherHistory = buildGatherHistoryContext(resourcesState, { viewState: gatherHistoryView });
   const foodDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.foodPerMember * upkeep.foodMultiplier));
   const waterDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.waterPerMember * upkeep.waterMultiplier));
@@ -24606,13 +25017,45 @@ function buildOperationsContext() {
   const currentWeather = weatherState.current ?? null;
   const weatherLogs = (weatherState.logs ?? []).map((entry) => {
     const loggedAtDate = new Date(Number(entry.loggedAt ?? Date.now()));
+    const hazardText = Array.isArray(entry.hazards) && entry.hazards.length > 0 ? entry.hazards.join(", ") : "";
+    const detailsText =
+      String(entry.source ?? "") === "gmscreen"
+        ? [
+            `${String(entry.climate ?? "Temperate")} ${String(entry.season ?? "")}`.trim(),
+            Number.isFinite(Number(entry.temperatureC))
+              ? `Temp ${Number(entry.temperatureC)}C (H ${Number(entry.dailyHighC)} / L ${Number(entry.dailyLowC)})`
+              : "",
+            String(entry.wind ?? "").trim() ? `Wind ${String(entry.wind)} ${Number(entry.windSpeed ?? 0)} km/h` : "",
+            String(entry.visibility ?? "").trim() ? `Visibility ${String(entry.visibility)}` : "",
+            String(entry.terrainSummary ?? "").trim() ? `Terrain ${String(entry.terrainSummary)}` : "",
+            hazardText ? `Hazards ${hazardText}` : ""
+          ]
+            .filter(Boolean)
+            .join(" - ")
+        : "";
     return {
       ...entry,
-      loggedAtLabel: Number.isFinite(loggedAtDate.getTime()) ? loggedAtDate.toLocaleString() : "Unknown"
+      journalEntryId: String(entry.journalEntryId ?? "").trim(),
+      hasJournalEntry: String(entry.journalEntryId ?? "").trim().length > 0,
+      loggedAtLabel: Number.isFinite(loggedAtDate.getTime()) ? loggedAtDate.toLocaleString() : "Unknown",
+      hasDetailsText: detailsText.length > 0,
+      detailsText
     };
   });
   const weatherSceneSnapshot = resolveCurrentSceneWeatherSnapshot();
   const weatherQuickOptions = buildWeatherSelectionCatalog(weatherState, weatherSceneSnapshot);
+  const calendarWeather = buildCalendarWeatherContext(weatherState);
+  const weatherCalendar = {
+    ...calendarWeather,
+    lastRolledAtLabel:
+      Number(calendarWeather.lastRolledAt ?? 0) > 0
+        ? new Date(Number(calendarWeather.lastRolledAt)).toLocaleString()
+        : "Never",
+    terrainImportedAtLabel:
+      Number(calendarWeather.terrainImportedAt ?? 0) > 0
+        ? new Date(Number(calendarWeather.terrainImportedAt)).toLocaleString()
+        : "Never"
+  };
   const storedWeatherDraft = getGmQuickWeatherDraft();
   const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
   const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
@@ -24854,6 +25297,7 @@ function buildOperationsContext() {
       gatherWaterCoveredNextUpkeep,
       gatherPresets: gatherDefaults.presets,
       hasGatherPresets: gatherDefaults.hasPresets,
+      gatherDelivery,
       gatherRequests,
       hasGatherRequests: gatherRequests.hasRows,
       gatherHistory,
@@ -25090,7 +25534,8 @@ function buildOperationsContext() {
         effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
         selected: option.key === weatherQuickDraft.selectedKey
       })),
-      weatherDraft: weatherQuickDraft
+      weatherDraft: weatherQuickDraft,
+      weatherCalendar
     },
     downtime,
     operationsJournal,
@@ -28573,6 +29018,11 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     const availabilityActionHint = availableNow
       ? "Remove this merchant from the current live shop list."
       : `Mark this merchant tradable and ${shopSession.isOpen ? "leave shops open" : "open shops"} immediately.`;
+    const stockStale = Boolean(autoRefreshOverdue || (autoRefreshEnabled && lastRefreshedWorldTs <= 0));
+    const stockFreshnessLabel =
+      stockItemCount <= 0 ? "Empty" : stockStale ? "Refresh Due" : lastRefreshedWorldTs > 0 ? "Fresh" : "Untracked";
+    const stockFreshnessToneClass =
+      stockItemCount <= 0 ? "is-missing" : stockStale ? "is-warn" : lastRefreshedWorldTs > 0 ? "is-ready" : "";
     return {
       ...merchant,
       archetype: merchantArchetype,
@@ -28640,6 +29090,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       valueTolerancePercent: Math.max(1, Number(valueTolerance?.percent ?? 10) || 10),
       stockItemCount,
       hasStock: stockItemCount > 0,
+      stockStale,
+      stockFreshnessLabel,
+      stockFreshnessToneClass,
       autoRefreshEnabled,
       autoRefreshIntervalDays,
       autoRefreshSummaryLabel,
@@ -28740,6 +29193,18 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     (sum, merchant) => sum + (merchant?.shopTradable === false ? 0 : 1),
     0
   );
+  const merchantAvailabilityDashboard = {
+    shopOpen: Boolean(shopSession.isOpen),
+    liveCount: definitionsForDisplay.filter((merchant) => merchant?.availableNow).length,
+    tradableCount: tradableMerchantCount,
+    stockedCount: definitionsForDisplay.filter((merchant) => merchant?.hasStock).length,
+    staleCount: definitionsForDisplay.filter((merchant) => merchant?.stockStale).length,
+    emptyCount: definitionsForDisplay.filter((merchant) => !merchant?.hasStock).length,
+    totalCount: definitionsForDisplay.length
+  };
+  merchantAvailabilityDashboard.summaryLabel = merchantAvailabilityDashboard.shopOpen
+    ? `${merchantAvailabilityDashboard.liveCount} live, ${merchantAvailabilityDashboard.stockedCount} stocked, ${merchantAvailabilityDashboard.staleCount} refresh due`
+    : `${merchantAvailabilityDashboard.tradableCount} ready, ${merchantAvailabilityDashboard.stockedCount} stocked, workspace closed`;
   const cityCatalogRows = buildMerchantCityCatalogRows(merchantsState, definitionsForDisplay);
   const viewerAssignedSettlement = resolveMerchantSettlementForUser(user, merchantsState, undefined, {
     allowStoredPreference: true
@@ -29051,6 +29516,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       hasFilteredDefinitions: gmFilteredDefinitions.length > 0,
       totalDefinitionCount: definitionsForDisplay.length,
       filteredDefinitionCount: gmFilteredDefinitions.length,
+      availabilityDashboard: merchantAvailabilityDashboard,
       collectionFilterSearch: gmCollectionFilter.search,
       collectionFilterCity: gmCollectionFilter.city,
       collectionFilterAccess: gmCollectionFilter.access,
@@ -31799,6 +32265,18 @@ function cacheMerchantEditorDraftChangeFromElement(element, options = {}) {
   return draft;
 }
 
+function syncMerchantEditorRangeDraftFromElement(element) {
+  if (!(element instanceof HTMLInputElement)) return null;
+  const draft = cacheMerchantEditorDraftChangeFromElement(element, { suppressMissingFormWarning: true });
+  const valueNode = element.closest?.(".po-merchant-range-option")?.querySelector?.("em");
+  if (valueNode) {
+    const value = Number(element.value);
+    const label = Number.isFinite(value) ? String(value) : String(element.value ?? "");
+    valueNode.textContent = String(element.name ?? "").includes("Price") ? `${label}%` : label;
+  }
+  return draft;
+}
+
 async function persistMerchantEditorPatchFromElement(element, options = {}) {
   if (!canAccessGmPage()) {
     ui.notifications?.warn("Only the GM can save merchants.");
@@ -32136,6 +32614,12 @@ async function setMerchantAvailableNowById(merchantIdInput, available = true) {
   if (!saved?.id) return { ok: false, message: "Merchant could not be updated." };
   if (!enabled) {
     ui.notifications?.info(`${merchantName} is no longer available in the live shop list.`);
+    await recordOperationsEvent({
+      category: "merchants",
+      title: `Merchant Hidden - ${merchantName}`,
+      summary: `${merchantName} was removed from live merchant availability.`,
+      details: "Live shop list updated."
+    });
     return { ok: true, merchantId, availableNow: false, sessionOpened: false };
   }
   const { session, opened } = await ensureMerchantShopsOpenNow();
@@ -32145,6 +32629,12 @@ async function setMerchantAvailableNowById(merchantIdInput, available = true) {
       ? `${merchantName} is now available. Shops opened for ${audienceLabel}.`
       : `${merchantName} is now available while shops remain open for ${audienceLabel}.`
   );
+  await recordOperationsEvent({
+    category: "merchants",
+    title: `Merchant Available - ${merchantName}`,
+    summary: `${merchantName} is available to ${audienceLabel}.`,
+    details: opened ? "Merchant workspace opened." : "Merchant workspace was already open."
+  });
   return { ok: true, merchantId, availableNow: true, sessionOpened: opened };
 }
 
@@ -34690,30 +35180,91 @@ function setDowntimeSubmissionMaterialDropsInUi(root, drops = []) {
   field.value = serializeDowntimeItemRewardDrops(drops);
 }
 
+function clearElementChildren(element) {
+  if (!element) return;
+  if (typeof element.replaceChildren === "function") {
+    element.replaceChildren();
+    return;
+  }
+  while (element.firstChild) element.removeChild(element.firstChild);
+}
+
+function appendDowntimeDropEmptyState(list, message) {
+  clearElementChildren(list);
+  const documentRef = list?.ownerDocument ?? document;
+  const summary = documentRef.createElement("div");
+  summary.className = "po-op-summary";
+  summary.textContent = String(message ?? "");
+  list.appendChild(summary);
+}
+
+function normalizeDowntimeDropImageSrc(value) {
+  const source = String(value ?? "").trim();
+  if (!source) return "icons/svg/item-bag.svg";
+  const lowered = source.toLowerCase();
+  if (lowered.startsWith("javascript:") || lowered.startsWith("vbscript:") || lowered.startsWith("data:text/html")) {
+    return "icons/svg/item-bag.svg";
+  }
+  return source;
+}
+
+function appendDowntimeDropListRow(list, entry, { removeAction }) {
+  const documentRef = list?.ownerDocument ?? document;
+  const row = documentRef.createElement("div");
+  row.className = "po-op-role-row";
+
+  const head = documentRef.createElement("div");
+  head.className = "po-op-role-head";
+
+  const name = documentRef.createElement("div");
+  name.className = "po-op-role-name";
+  const image = documentRef.createElement("img");
+  image.src = normalizeDowntimeDropImageSrc(entry?.img);
+  image.width = 18;
+  image.height = 18;
+  image.alt = "";
+  name.appendChild(image);
+  name.appendChild(documentRef.createTextNode(` ${String(entry?.name ?? "Item")}`));
+
+  const status = documentRef.createElement("div");
+  status.className = "po-op-role-status";
+  status.textContent = `x${Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1))}`;
+
+  head.appendChild(name);
+  head.appendChild(status);
+
+  const summary = documentRef.createElement("div");
+  summary.className = "po-op-summary";
+  summary.textContent = String(entry?.uuid ?? "").trim() || "World Item / Snapshot";
+
+  const actionRow = documentRef.createElement("div");
+  actionRow.className = "po-op-action-row";
+  const button = documentRef.createElement("button");
+  button.type = "button";
+  button.className = "po-btn po-btn-sm is-danger";
+  button.dataset.action = removeAction;
+  button.dataset.dropId = String(entry?.id ?? "");
+  button.textContent = "Remove";
+  actionRow.appendChild(button);
+
+  row.appendChild(head);
+  row.appendChild(summary);
+  row.appendChild(actionRow);
+  list.appendChild(row);
+}
+
 function renderDowntimeSubmissionMaterialDropList(root) {
   const list = root?.querySelector("[data-downtime-material-drop-list]");
   if (!list) return;
   const drops = getDowntimeSubmissionMaterialDropsFromUi(root);
   if (!drops.length) {
-    list.innerHTML = "<div class='po-op-summary'>No materials selected.</div>";
+    appendDowntimeDropEmptyState(list, "No materials selected.");
     return;
   }
-  list.innerHTML = drops
-    .map(
-      (entry) => `
-    <div class="po-op-role-row">
-      <div class="po-op-role-head">
-        <div class="po-op-role-name"><img src="${poEscapeHtml(String(entry.img ?? "icons/svg/item-bag.svg"))}" width="18" height="18" /> ${poEscapeHtml(String(entry.name ?? "Item"))}</div>
-        <div class="po-op-role-status">x${Math.max(1, Math.floor(Number(entry.quantity ?? 1) || 1))}</div>
-      </div>
-      <div class="po-op-summary">${poEscapeHtml(String(entry.uuid ?? "").trim() || "World Item / Snapshot")}</div>
-      <div class="po-op-action-row">
-        <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-material-drop" data-drop-id="${poEscapeHtml(String(entry.id ?? ""))}">Remove</button>
-      </div>
-    </div>
-  `
-    )
-    .join("");
+  clearElementChildren(list);
+  for (const entry of drops) {
+    appendDowntimeDropListRow(list, entry, { removeAction: "remove-downtime-material-drop" });
+  }
 }
 
 function renderDowntimeSubmissionMaterialDropLists(root) {
@@ -34915,10 +35466,98 @@ const {
   getConfigWeatherEffects: () => CONFIG.weatherEffects ?? {}
 });
 
+function normalizeWeatherSnapshot(entry = {}, defaults = {}) {
+  const id = String(entry?.id ?? defaults?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID();
+  const loggedAt = Number(entry?.loggedAt ?? defaults?.loggedAt ?? Date.now());
+  const visibilityModifier = Number(entry?.visibilityModifier ?? defaults?.visibilityModifier ?? 0);
+  const darkness = Number(entry?.darkness ?? defaults?.darkness ?? 0);
+  const source = String(entry?.source ?? defaults?.source ?? "").trim();
+  const hazardsSource = entry?.hazards ?? defaults?.hazards;
+  const hazards = Array.isArray(hazardsSource)
+    ? hazardsSource
+        .map((hazard) => String(hazard ?? "").trim())
+        .filter((hazard, index, arr) => hazard && arr.indexOf(hazard) === index)
+    : [];
+
+  return {
+    id,
+    label: String(entry?.label ?? defaults?.label ?? "Unknown Weather").trim() || "Unknown Weather",
+    weatherId: String(entry?.weatherId ?? defaults?.weatherId ?? "").trim(),
+    darkness: Number.isFinite(darkness) ? Math.max(0, Math.min(1, darkness)) : 0,
+    visibilityModifier: Number.isFinite(visibilityModifier)
+      ? Math.max(-5, Math.min(5, Math.floor(visibilityModifier)))
+      : 0,
+    note: String(entry?.note ?? defaults?.note ?? ""),
+    loggedAt: Number.isFinite(loggedAt) ? loggedAt : Date.now(),
+    loggedBy: String(entry?.loggedBy ?? defaults?.loggedBy ?? "GM"),
+    source,
+    calendarDayKey: String(entry?.calendarDayKey ?? defaults?.calendarDayKey ?? "").trim(),
+    calendarDateLabel: String(entry?.calendarDateLabel ?? defaults?.calendarDateLabel ?? "").trim(),
+    calendarEntryId: String(entry?.calendarEntryId ?? defaults?.calendarEntryId ?? "").trim(),
+    journalEntryId: String(entry?.journalEntryId ?? defaults?.journalEntryId ?? "").trim(),
+    climate: normalizeGmScreenWeatherClimate(entry?.climate ?? defaults?.climate ?? "Temperate"),
+    season: String(entry?.season ?? defaults?.season ?? "").trim(),
+    temperatureC: Number.isFinite(Number(entry?.temperatureC ?? defaults?.temperatureC))
+      ? Number(entry?.temperatureC ?? defaults?.temperatureC)
+      : 0,
+    dailyHighC: Number.isFinite(Number(entry?.dailyHighC ?? defaults?.dailyHighC))
+      ? Number(entry?.dailyHighC ?? defaults?.dailyHighC)
+      : 0,
+    dailyLowC: Number.isFinite(Number(entry?.dailyLowC ?? defaults?.dailyLowC))
+      ? Number(entry?.dailyLowC ?? defaults?.dailyLowC)
+      : 0,
+    wind: String(entry?.wind ?? defaults?.wind ?? ""),
+    windSpeed: Number.isFinite(Number(entry?.windSpeed ?? defaults?.windSpeed))
+      ? Number(entry?.windSpeed ?? defaults?.windSpeed)
+      : 0,
+    humidity: Number.isFinite(Number(entry?.humidity ?? defaults?.humidity))
+      ? Number(entry?.humidity ?? defaults?.humidity)
+      : 0,
+    rainAmount: Number.isFinite(Number(entry?.rainAmount ?? defaults?.rainAmount))
+      ? Number(entry?.rainAmount ?? defaults?.rainAmount)
+      : 0,
+    visibility: String(entry?.visibility ?? defaults?.visibility ?? ""),
+    hazards,
+    terrainSummary: String(entry?.terrainSummary ?? defaults?.terrainSummary ?? ""),
+    travelImpact: String(entry?.travelImpact ?? defaults?.travelImpact ?? ""),
+    encounterImpact: String(entry?.encounterImpact ?? defaults?.encounterImpact ?? "")
+  };
+}
+
 function ensureWeatherState(ledger) {
   if (!ledger.weather || typeof ledger.weather !== "object") {
     ledger.weather = { current: null, logs: [], customPresets: [] };
   }
+  ledger.weather.calendarClimate = normalizeGmScreenWeatherClimate(ledger.weather.calendarClimate ?? "Temperate");
+  ledger.weather.calendarClimateAutoApply = ledger.weather.calendarClimateAutoApply === true;
+  ledger.weather.calendarTerrainCounts = normalizeGmScreenWeatherTerrainCounts(ledger.weather.calendarTerrainCounts);
+  ledger.weather.calendarTerrainImagePath = String(ledger.weather.calendarTerrainImagePath ?? "").trim();
+  ledger.weather.calendarTerrainImportedAt = Number.isFinite(Number(ledger.weather.calendarTerrainImportedAt))
+    ? Number(ledger.weather.calendarTerrainImportedAt)
+    : 0;
+  ledger.weather.calendarTerrainImportedSummary = String(ledger.weather.calendarTerrainImportedSummary ?? "").trim();
+  ledger.weather.calendarTerrainJournalEntryId = String(ledger.weather.calendarTerrainJournalEntryId ?? "").trim();
+  ledger.weather.calendarTerrainImageAnalysis =
+    ledger.weather.calendarTerrainImageAnalysis && typeof ledger.weather.calendarTerrainImageAnalysis === "object"
+      ? {
+          ...normalizeGmScreenWeatherTerrainImageAnalysis(ledger.weather.calendarTerrainImageAnalysis),
+          sourcePath: String(ledger.weather.calendarTerrainImageAnalysis.sourcePath ?? "").trim(),
+          mode: String(ledger.weather.calendarTerrainImageAnalysis.mode ?? "").trim(),
+          analyzedAt: Number.isFinite(Number(ledger.weather.calendarTerrainImageAnalysis.analyzedAt))
+            ? Number(ledger.weather.calendarTerrainImageAnalysis.analyzedAt)
+            : 0,
+          journalEntryId: String(
+            ledger.weather.calendarTerrainImageAnalysis.journalEntryId ??
+              ledger.weather.calendarTerrainJournalEntryId ??
+              ""
+          ).trim()
+        }
+      : null;
+  ledger.weather.calendarAutoApply = ledger.weather.calendarAutoApply === true;
+  ledger.weather.calendarLastDayKey = String(ledger.weather.calendarLastDayKey ?? "").trim();
+  ledger.weather.calendarLastRolledAt = Number.isFinite(Number(ledger.weather.calendarLastRolledAt))
+    ? Number(ledger.weather.calendarLastRolledAt)
+    : 0;
   if (!Array.isArray(ledger.weather.customPresets)) ledger.weather.customPresets = [];
   ledger.weather.customPresets = ledger.weather.customPresets
     .map((entry) => normalizeWeatherPreset(entry, { isBuiltIn: false }))
@@ -34929,35 +35568,13 @@ function ensureWeatherState(ledger) {
     });
   if (!Array.isArray(ledger.weather.logs)) ledger.weather.logs = [];
   ledger.weather.logs = ledger.weather.logs
-    .map((entry) => ({
-      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-      label: String(entry?.label ?? "Unknown Weather").trim() || "Unknown Weather",
-      weatherId: String(entry?.weatherId ?? "").trim(),
-      darkness: Number.isFinite(Number(entry?.darkness)) ? Math.max(0, Math.min(1, Number(entry.darkness))) : 0,
-      visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier))
-        ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier))))
-        : 0,
-      note: String(entry?.note ?? ""),
-      loggedAt: Number.isFinite(Number(entry?.loggedAt)) ? Number(entry.loggedAt) : Date.now(),
-      loggedBy: String(entry?.loggedBy ?? "GM")
-    }))
+    .map((entry) => normalizeWeatherSnapshot(entry))
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
     .slice(0, 100);
 
   const current = ledger.weather.current;
   if (current && typeof current === "object") {
-    ledger.weather.current = {
-      id: String(current?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-      label: String(current?.label ?? "Unknown Weather").trim() || "Unknown Weather",
-      weatherId: String(current?.weatherId ?? "").trim(),
-      darkness: Number.isFinite(Number(current?.darkness)) ? Math.max(0, Math.min(1, Number(current.darkness))) : 0,
-      visibilityModifier: Number.isFinite(Number(current?.visibilityModifier))
-        ? Math.max(-5, Math.min(5, Math.floor(Number(current.visibilityModifier))))
-        : 0,
-      note: String(current?.note ?? ""),
-      loggedAt: Number.isFinite(Number(current?.loggedAt)) ? Number(current.loggedAt) : Date.now(),
-      loggedBy: String(current?.loggedBy ?? "GM")
-    };
+    ledger.weather.current = normalizeWeatherSnapshot(current);
   } else {
     ledger.weather.current = null;
   }
@@ -35843,25 +36460,13 @@ function renderDowntimeResolverItemDropList(root) {
   if (!list) return;
   const drops = getDowntimeResolverItemDropsFromUi(root);
   if (!drops.length) {
-    list.innerHTML = "<div class='po-op-summary'>No direct item grants queued.</div>";
+    appendDowntimeDropEmptyState(list, "No direct item grants queued.");
     return;
   }
-  list.innerHTML = drops
-    .map(
-      (entry) => `
-    <div class="po-op-role-row">
-      <div class="po-op-role-head">
-        <div class="po-op-role-name"><img src="${poEscapeHtml(String(entry.img ?? "icons/svg/item-bag.svg"))}" width="18" height="18" /> ${poEscapeHtml(String(entry.name ?? "Item"))}</div>
-        <div class="po-op-role-status">x${Math.max(1, Math.floor(Number(entry.quantity ?? 1) || 1))}</div>
-      </div>
-      <div class="po-op-summary">${poEscapeHtml(String(entry.uuid ?? "").trim() || "World Item / Snapshot")}</div>
-      <div class="po-op-action-row">
-        <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-item-drop" data-drop-id="${poEscapeHtml(String(entry.id ?? ""))}">Remove</button>
-      </div>
-    </div>
-  `
-    )
-    .join("");
+  clearElementChildren(list);
+  for (const entry of drops) {
+    appendDowntimeDropListRow(list, entry, { removeAction: "remove-downtime-item-drop" });
+  }
 }
 
 function removeDowntimeResolverItemDropFromUi(element) {
@@ -39254,12 +39859,20 @@ async function applyPlayerGatherRequest(message, requesterRef = null) {
     ensureOperationalResourceConfig(ledger.resources);
     const current = Array.isArray(ledger.resources.gather?.requests) ? ledger.resources.gather.requests : [];
     if (current.some((entry) => String(entry?.id ?? "").trim() === request.id)) return;
+    markGatherCallRecipientReceived(ledger.resources, request.callId, request.requesterUserId, request.id);
     current.unshift(request);
     ledger.resources.gather.requests = current.slice(0, 100);
     added = true;
   });
 
   if (added) {
+    await recordOperationsEvent({
+      category: "gather",
+      title: `Gather Request - ${request.actorName}`,
+      summary: `${request.requesterName} requested ${getGatherResourceTypeLabel(request.resourceType).toLowerCase()} gathering for ${request.actorName}.`,
+      details: `${GATHER_ENVIRONMENT_LABELS[request.environment] ?? request.environment} | ${request.duringTravel ? "during travel" : "stopping to gather"}`,
+      actorIds: [request.actorId].filter(Boolean)
+    });
     ui.notifications?.info(`Gather request received from ${request.requesterName} for ${request.actorName}.`);
     const gmIds = ChatMessage.getWhisperRecipients("GM")
       .map((user) => user.id)
@@ -39335,6 +39948,7 @@ async function executeGatherResourcesAction(options = {}) {
   const rollMode = String(options?.rollMode ?? getGatherRollModeSetting() ?? "prefer-monks");
   const requesterUserId = String(options?.requesterUserId ?? "").trim();
   const requesterName = String(options?.requesterName ?? "").trim();
+  const callId = String(options?.callId ?? "").trim();
   const approvedBy = String(options?.approvedBy ?? game.user?.name ?? "GM").trim() || "GM";
   const promptCheckRoll = Boolean(options?.promptCheckRoll === true && requesterUserId);
   const survival = promptCheckRoll
@@ -39474,6 +40088,7 @@ async function executeGatherResourcesAction(options = {}) {
 
   const historyEntryBase = {
     id: foundry.utils.randomID(),
+    callId,
     timestamp: Date.now(),
     actorId: actor.id,
     actorName: String(actor.name ?? "").trim() || "Unknown Actor",
@@ -39579,6 +40194,13 @@ async function executeGatherResourcesAction(options = {}) {
       content: buildGatherResourceChatCard(result)
     });
   }
+  await recordOperationsEvent({
+    category: "gather",
+    title: `Gather Result - ${result.actorName}`,
+    summary: `${result.actorName}: ${outcome.success ? "success" : "failure"} (${checkTotal} vs DC ${effectiveDc}), ${outcome.finalRations} ${resourceType} ration(s).`,
+    details: outcome.notes.join(" | ") || "No additional notes.",
+    actorIds: [actor.id].filter(Boolean)
+  });
   return result;
 }
 
@@ -40141,6 +40763,146 @@ async function runGatherResourceCheck() {
   });
 }
 
+async function callGatherRequestsForActivePlayers() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can call for gather requests.");
+    return false;
+  }
+  const players = getConnectedNonGmUsers();
+  if (players.length <= 0) {
+    ui.notifications?.warn("No active players are connected for gather delivery.");
+    return false;
+  }
+  const callId = foundry.utils.randomID();
+  const sentAt = Date.now();
+  const promptedByUserId = String(game.user?.id ?? "").trim();
+  const promptedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  const call = normalizeGatherDeliveryCall({
+    id: callId,
+    sentAt,
+    promptedByUserId,
+    promptedBy,
+    recipients: players.map((user) => ({
+      userId: String(user?.id ?? "").trim(),
+      userName: String(user?.name ?? "Player").trim() || "Player",
+      active: Boolean(user?.active),
+      status: "sent",
+      sentAt
+    }))
+  });
+
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    ledger.resources.gather.calls = [call, ...(ledger.resources.gather.calls ?? [])].slice(0, 20);
+  });
+
+  for (const player of players) {
+    emitModuleSocket(
+      {
+        type: "players:openGatherResources",
+        userId: String(player?.id ?? "").trim(),
+        gmUserId: promptedByUserId,
+        options: {
+          callId,
+          promptedAt: sentAt,
+          promptedByUserId,
+          promptedBy
+        }
+      },
+      { channel: SOCKET_CHANNEL }
+    );
+  }
+
+  await recordOperationsEvent({
+    category: "gather",
+    title: "Gather Call",
+    summary: `Called ${players.length} active player${players.length === 1 ? "" : "s"} for gather requests.`,
+    details: call.recipients.map((entry) => entry.userName).join(", ")
+  });
+  ui.notifications?.info(
+    `Gather request prompt sent to ${players.length} active player${players.length === 1 ? "" : "s"}.`
+  );
+  return true;
+}
+
+async function resendGatherCallFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can resend gather calls.");
+    return false;
+  }
+  const callId = String(element?.dataset?.callId ?? "").trim();
+  if (!callId) return false;
+  const ledger = getOperationsLedger();
+  const resources = foundry.utils.deepClone(ledger.resources ?? {});
+  ensureOperationalResourceConfig(resources);
+  const call = (resources.gather?.calls ?? []).find((entry) => String(entry?.id ?? "").trim() === callId);
+  if (!call) {
+    ui.notifications?.warn("Gather call not found.");
+    return false;
+  }
+  const activeByUserId = new Map(getConnectedNonGmUsers().map((user) => [String(user?.id ?? "").trim(), user]));
+  const targets = (call.recipients ?? []).filter((recipient) => {
+    const userId = String(recipient?.userId ?? "").trim();
+    return userId && recipient.status !== "received" && activeByUserId.has(userId);
+  });
+  if (targets.length <= 0) {
+    ui.notifications?.warn("No missed active players are available for resend.");
+    return false;
+  }
+
+  const resentAt = Date.now();
+  await updateOperationsLedger((nextLedger) => {
+    if (!nextLedger.resources) nextLedger.resources = {};
+    ensureOperationalResourceConfig(nextLedger.resources);
+    const targetCall = (nextLedger.resources.gather.calls ?? []).find(
+      (entry) => String(entry?.id ?? "").trim() === callId
+    );
+    if (!targetCall) return;
+    targetCall.resendCount = Math.max(0, Math.floor(Number(targetCall.resendCount ?? 0) || 0)) + 1;
+    targetCall.lastResentAt = resentAt;
+    const targetIds = new Set(targets.map((entry) => String(entry.userId ?? "").trim()));
+    targetCall.recipients = (targetCall.recipients ?? []).map((recipient) =>
+      targetIds.has(String(recipient?.userId ?? "").trim())
+        ? {
+            ...recipient,
+            status: "resent",
+            lastResentAt: resentAt,
+            active: true
+          }
+        : recipient
+    );
+  });
+
+  const promptedByUserId = String(game.user?.id ?? "").trim();
+  const promptedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  for (const target of targets) {
+    emitModuleSocket(
+      {
+        type: "players:openGatherResources",
+        userId: String(target.userId ?? "").trim(),
+        gmUserId: promptedByUserId,
+        options: {
+          callId,
+          promptedAt: resentAt,
+          promptedByUserId,
+          promptedBy
+        }
+      },
+      { channel: SOCKET_CHANNEL }
+    );
+  }
+
+  await recordOperationsEvent({
+    category: "gather",
+    title: "Gather Call Resent",
+    summary: `Resent gather request prompt to ${targets.length} active player${targets.length === 1 ? "" : "s"}.`,
+    details: targets.map((entry) => entry.userName).join(", ")
+  });
+  ui.notifications?.info(`Gather request prompt resent to ${targets.length} player${targets.length === 1 ? "" : "s"}.`);
+  return true;
+}
+
 async function submitQuickPlayerGatherRequest(options = {}) {
   const actors = getGatherSelectableActorsForUser(game.user);
   if (actors.length <= 0) {
@@ -40167,6 +40929,7 @@ async function submitQuickPlayerGatherRequest(options = {}) {
 
   const request = normalizeGatherRequestPayload({
     id: foundry.utils.randomID(),
+    callId: String(options?.callId ?? "").trim(),
     actorId: String(actor.id ?? "").trim(),
     actorName: String(actor.name ?? "").trim() || "Unknown Actor",
     requesterUserId: String(game.user?.id ?? "").trim(),
@@ -40280,6 +41043,7 @@ async function promptPlayerGatherRequestDialog(options = {}) {
           }
           const request = normalizeGatherRequestPayload({
             id: foundry.utils.randomID(),
+            callId: String(options?.callId ?? "").trim(),
             actorId,
             actorName: String(actor.name ?? "").trim() || "Unknown Actor",
             requesterUserId: String(game.user?.id ?? "").trim(),
@@ -41961,6 +42725,59 @@ async function rollLootPreview(element) {
   ui.notifications?.info(
     `Loot builder generated (${generatedItemCount} item(s), ${Math.round(Number(payload.currency?.gpEquivalent ?? 0))} gp equivalent).`
   );
+}
+
+async function applyLootPreviewQualityAction(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can tune loot builder output.");
+    return false;
+  }
+  const action = String(element?.dataset?.qualityAction ?? "reroll")
+    .trim()
+    .toLowerCase();
+  const currentDraft = readLootPreviewDraftFromUi(element) ?? getLootPreviewDraft();
+  const nextDraft = (() => {
+    const draft = { ...currentDraft };
+    if (action === "tighten-budget") {
+      draft.valueStrictness = Math.min(300, Math.max(175, Math.floor(Number(draft.valueStrictness ?? 100) + 50)));
+      draft.tableScalar = Math.max(50, Math.min(175, Math.floor(Number(draft.tableScalar ?? 100) - 10)));
+      return normalizeLootPreviewDraft(draft);
+    }
+    if (action === "practical") {
+      draft.profile = "standard";
+      draft.distributionMix = Math.max(65, Math.floor(Number(draft.distributionMix ?? 50) || 50));
+      draft.valueStrictness = Math.max(140, Math.floor(Number(draft.valueStrictness ?? 100) || 100));
+      draft.tableScalar = Math.max(50, Math.min(130, Math.floor(Number(draft.tableScalar ?? 100) || 100)));
+      return normalizeLootPreviewDraft(draft);
+    }
+    if (action === "magical") {
+      draft.profile = "well";
+      draft.distributionMix = Math.max(75, Math.floor(Number(draft.distributionMix ?? 50) || 50));
+      draft.tableScalar = Math.min(300, Math.max(125, Math.floor(Number(draft.tableScalar ?? 100) + 35)));
+      draft.valueBudgetScalar = Math.min(300, Math.max(100, Math.floor(Number(draft.valueBudgetScalar ?? 100) + 25)));
+      return normalizeLootPreviewDraft(draft);
+    }
+    return normalizeLootPreviewDraft(draft);
+  })();
+  setLootPreviewDraft(nextDraft);
+  const payload = await generateLootPreviewPayload(nextDraft);
+  setLootPreviewResult(payload);
+  const label =
+    action === "tighten-budget"
+      ? "tightened to budget"
+      : action === "practical"
+        ? "more practical"
+        : action === "magical"
+          ? "more magical"
+          : "rerolled";
+  await recordOperationsEvent({
+    category: "loot",
+    title: "Loot Preview Tuned",
+    summary: `Loot preview ${label}.`,
+    details: `Items: ${Array.isArray(payload?.items) ? payload.items.length : 0} | Value: ${Math.round(Number(payload?.stats?.finalCombinedValueGp ?? payload?.currency?.gpEquivalent ?? 0) || 0)} gp`
+  });
+  ui.notifications?.info(`Loot preview ${label}.`);
+  return true;
 }
 
 function clearLootPreviewResult() {
@@ -44737,6 +45554,639 @@ function getWeatherPresetByKey(weatherState, sceneSnapshot, key) {
   return options.find((entry) => entry.key === selectedKey) ?? options[0] ?? null;
 }
 
+function buildCalendarWeatherContext(weatherState = null) {
+  const timestamp = getCurrentWorldTimestamp();
+  const api = getSimpleCalendarApi();
+  const dayKey = getCalendarDayKeyBridge(timestamp, { gameRef: game, globalRef: globalThis });
+  const dateLabel = formatCalendarDateTimeLabelBridge(timestamp, { gameRef: game, globalRef: globalThis });
+  const secondsPerDay = getCalendarSecondsPerDayBridge({ gameRef: game, globalRef: globalThis });
+  const calendar = resolveGmScreenCalendarContext({
+    api,
+    timestamp,
+    secondsPerDay,
+    dateLabel,
+    dayKey
+  });
+  const configuredClimate = normalizeGmScreenWeatherClimate(weatherState?.calendarClimate ?? "Temperate");
+  const terrainCounts = normalizeGmScreenWeatherTerrainCounts(weatherState?.calendarTerrainCounts);
+  const terrainRows = getGmScreenWeatherTerrainRows(terrainCounts);
+  const activeTerrainRows = terrainRows.filter((row) => row.active);
+  const terrainImagePath = String(weatherState?.calendarTerrainImagePath ?? "").trim();
+  const terrainImportedAt = Number(weatherState?.calendarTerrainImportedAt ?? 0) || 0;
+  const terrainJournalEntryId = String(weatherState?.calendarTerrainJournalEntryId ?? "").trim();
+  const terrainImageAnalysis = normalizeGmScreenWeatherTerrainImageAnalysis(weatherState?.calendarTerrainImageAnalysis);
+  const terrainAnalysisMode = String(weatherState?.calendarTerrainImageAnalysis?.mode ?? "").trim();
+  const climateAutoApply = weatherState?.calendarClimateAutoApply === true;
+  const climateRecommendation = recommendGmScreenWeatherClimateForTerrain(terrainCounts);
+  const climate = climateAutoApply && activeTerrainRows.length > 0 ? climateRecommendation.climate : configuredClimate;
+  return {
+    ...calendar,
+    climate,
+    configuredClimate,
+    climateOptions: getGmScreenWeatherClimateOptions(configuredClimate),
+    climateAutoApply,
+    climateModeLabel: climateAutoApply ? "Terrain Auto" : "Manual",
+    climateRecommendation,
+    recommendedClimate: climateRecommendation.climate,
+    recommendedClimateConfidence: climateRecommendation.confidenceLabel,
+    recommendedClimateReason: climateRecommendation.reason,
+    canApplyRecommendedClimate: activeTerrainRows.length > 0 && configuredClimate !== climateRecommendation.climate,
+    terrainCounts,
+    terrainRows,
+    terrainSummary: activeTerrainRows.length
+      ? activeTerrainRows.map((row) => `${row.label} ${row.value}`).join(", ")
+      : "No regional terrain profile.",
+    hasTerrainProfile: activeTerrainRows.length > 0,
+    terrainImagePath,
+    hasTerrainImagePath: terrainImagePath.length > 0,
+    terrainImportedAt,
+    terrainImportedSummary: String(weatherState?.calendarTerrainImportedSummary ?? "").trim(),
+    terrainJournalEntryId,
+    hasTerrainJournalEntry: terrainJournalEntryId.length > 0,
+    terrainImageAnalysis,
+    terrainAnalysisRows: terrainImageAnalysis.terrainRows.filter((row) => row.active),
+    terrainAnalysisSummary: terrainImageAnalysis.summary,
+    terrainAnalysisMode,
+    terrainAnalysisModeLabel:
+      terrainAnalysisMode === "imported" ? "Imported" : terrainAnalysisMode === "preview" ? "Preview" : "",
+    hasTerrainImageAnalysis: terrainImageAnalysis.hasAnalysis,
+    simpleCalendarActive: isSimpleCalendarActive(),
+    autoApply: weatherState?.calendarAutoApply === true,
+    lastDayKey: String(weatherState?.calendarLastDayKey ?? "").trim(),
+    lastRolledAt: Number(weatherState?.calendarLastRolledAt ?? 0) || 0
+  };
+}
+
+function buildCalendarWeatherPreset(weatherState = null) {
+  const calendar = buildCalendarWeatherContext(weatherState);
+  const seed = `${calendar.dayKey}|${calendar.dayNumber}|${calendar.hourOfDay}|${calendar.climate}|${calendar.season}`;
+  const record = buildGmScreenWeatherRecord({
+    climate: calendar.climate,
+    season: calendar.season,
+    dayNumber: calendar.dayNumber,
+    hourOfDay: calendar.hourOfDay,
+    terrainCounts: calendar.terrainCounts,
+    activeTerrains: getActiveGmScreenWeatherTerrains(calendar.terrainCounts),
+    seed
+  });
+  const preset = buildGmScreenWeatherPreset(record, {
+    dayKey: calendar.dayKey,
+    dateLabel: calendar.dateLabel
+  });
+  return { calendar, preset, record };
+}
+
+function buildCalendarWeatherSnapshot(weatherState = null) {
+  const generated = buildCalendarWeatherPreset(weatherState);
+  return {
+    ...generated,
+    snapshot: buildGmScreenWeatherSnapshot(generated.preset, {
+      id: foundry.utils.randomID(),
+      loggedAt: Date.now(),
+      loggedBy: String(game.user?.name ?? "GM"),
+      calendarDayKey: generated.calendar.dayKey,
+      calendarDateLabel: generated.calendar.dateLabel
+    })
+  };
+}
+
+async function createWeatherCalendarNote(snapshot = {}, timestamp = getCurrentWorldTimestamp()) {
+  const api = getSimpleCalendarMutationApi();
+  if (!isSimpleCalendarActive() || !api) return { created: false, reason: "simple-calendar-unavailable" };
+  try {
+    const label = String(snapshot.calendarDateLabel ?? "").trim() || formatRecoveryDueLabel(timestamp);
+    const detailLines = buildGmScreenWeatherSnapshotDetailLines(snapshot);
+    const detailContent =
+      detailLines.length > 0
+        ? `<ul>${detailLines.map((line) => `<li>${poEscapeHtml(line)}</li>`).join("")}</ul>`
+        : `<p><strong>Details:</strong> ${poEscapeHtml(String(snapshot.note ?? ""))}</p>`;
+    const content = [
+      `<p><strong>Weather:</strong> ${poEscapeHtml(String(snapshot.label ?? "Calendar Weather"))}</p>`,
+      `<p><strong>Date:</strong> ${poEscapeHtml(label)}</p>`,
+      detailContent
+    ].join("");
+    const created = await createSimpleCalendarEntry(api, {
+      title: `Weather: ${String(snapshot.label ?? "Calendar Weather")}`,
+      content,
+      timestamp,
+      endTimestamp: Number(timestamp) + 60,
+      allDay: true,
+      playerVisible: true,
+      visibleToPlayers: true
+    });
+    return {
+      created: Boolean(created?.success),
+      id: String(created?.id ?? "").trim()
+    };
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to create weather calendar note`, error);
+    return { created: false, reason: "calendar-note-failed" };
+  }
+}
+
+async function createWeatherOperationsJournalEntry(snapshot = {}, options = {}) {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const label = String(snapshot.label ?? "Calendar Weather").trim() || "Calendar Weather";
+  const sourceLabel = String(options?.sourceLabel ?? "").trim() || "Weather Log";
+  const dateLabel =
+    String(snapshot.calendarDateLabel ?? "").trim() ||
+    (Number(snapshot.loggedAt ?? 0) > 0 ? new Date(Number(snapshot.loggedAt)).toLocaleString() : "");
+  const detailLines = buildGmScreenWeatherSnapshotDetailLines(snapshot);
+  const detailContent =
+    detailLines.length > 0
+      ? `<ul>${detailLines.map((line) => `<li>${poEscapeHtml(line)}</li>`).join("")}</ul>`
+      : `<p>${poEscapeHtml(String(snapshot.note ?? "No weather details provided."))}</p>`;
+  const summaryParts = [
+    sourceLabel,
+    dateLabel,
+    `visibility ${formatSignedModifier(Number(snapshot.visibilityModifier ?? 0)) || "0"}`,
+    `darkness ${Number(snapshot.darkness ?? 0).toFixed(2)}`
+  ].filter((part) => String(part ?? "").trim());
+
+  return recordOperationsEvent({
+    category: "environment",
+    title: `Weather - ${label}`,
+    summary: summaryParts.join(" | "),
+    body: [
+      `<p><strong>Source:</strong> ${poEscapeHtml(sourceLabel)}</p>`,
+      `<p><strong>Weather:</strong> ${poEscapeHtml(label)}</p>`,
+      dateLabel ? `<p><strong>Date:</strong> ${poEscapeHtml(dateLabel)}</p>` : "",
+      `<p><strong>Logged by:</strong> ${poEscapeHtml(String(snapshot.loggedBy ?? "GM"))}</p>`,
+      `<p><strong>Visibility Modifier:</strong> ${poEscapeHtml(formatSignedModifier(Number(snapshot.visibilityModifier ?? 0)) || "0")}</p>`,
+      `<p><strong>Effect:</strong> ${poEscapeHtml(getWeatherEffectSummary(snapshot.visibilityModifier))}</p>`,
+      `<p><strong>Darkness:</strong> ${Number(snapshot.darkness ?? 0).toFixed(2)}</p>`,
+      detailContent,
+      String(snapshot.note ?? "").trim()
+        ? `<p><strong>Note:</strong> ${poEscapeHtml(String(snapshot.note ?? ""))}</p>`
+        : ""
+    ].join("")
+  });
+}
+
+async function persistCalendarWeatherRollMetadata(snapshotId, metadata = {}) {
+  const id = String(snapshotId ?? "").trim();
+  if (!id) return;
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.calendarLastDayKey = String(metadata.dayKey ?? weather.calendarLastDayKey ?? "").trim();
+    weather.calendarLastRolledAt = Number.isFinite(Number(metadata.rolledAt)) ? Number(metadata.rolledAt) : Date.now();
+    const calendarEntryId = String(metadata.calendarEntryId ?? "").trim();
+    if (!calendarEntryId) return;
+    if (weather.current && String(weather.current.id ?? "") === id) weather.current.calendarEntryId = calendarEntryId;
+    for (const log of weather.logs) {
+      if (String(log?.id ?? "") === id) log.calendarEntryId = calendarEntryId;
+    }
+    const environment = ensureEnvironmentState(ledger);
+    for (const log of environment.logs) {
+      if (String(log?.id ?? "") === id && String(log?.logType ?? "") === "weather") {
+        log.calendarEntryId = calendarEntryId;
+      }
+    }
+  });
+}
+
+async function persistWeatherJournalEntryId(snapshotId, journalEntryId) {
+  const id = String(snapshotId ?? "").trim();
+  const archiveId = String(journalEntryId ?? "").trim();
+  if (!id || !archiveId) return;
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    if (weather.current && String(weather.current.id ?? "") === id) weather.current.journalEntryId = archiveId;
+    for (const log of weather.logs) {
+      if (String(log?.id ?? "") === id) log.journalEntryId = archiveId;
+    }
+    const environment = ensureEnvironmentState(ledger);
+    for (const log of environment.logs) {
+      if (String(log?.id ?? "") === id && String(log?.logType ?? "") === "weather") {
+        log.journalEntryId = archiveId;
+      }
+    }
+  });
+}
+
+async function persistCalendarTerrainJournalEntryId(journalEntryId) {
+  const archiveId = String(journalEntryId ?? "").trim();
+  if (!archiveId) return;
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.calendarTerrainJournalEntryId = archiveId;
+    if (weather.calendarTerrainImageAnalysis && typeof weather.calendarTerrainImageAnalysis === "object") {
+      weather.calendarTerrainImageAnalysis.journalEntryId = archiveId;
+    }
+  });
+}
+
+function normalizeCalendarTerrainImagePath(value = "") {
+  return String(value ?? "").trim();
+}
+
+function getCalendarTerrainImagePath() {
+  const ledger = getOperationsLedger();
+  const weather = ensureWeatherState(ledger);
+  return normalizeCalendarTerrainImagePath(weather.calendarTerrainImagePath);
+}
+
+async function setCalendarTerrainImagePath(imagePath = "") {
+  const normalizedPath = normalizeCalendarTerrainImagePath(imagePath);
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const previousPath = normalizeCalendarTerrainImagePath(weather.calendarTerrainImagePath);
+    weather.calendarTerrainImagePath = normalizedPath;
+    if (previousPath !== normalizedPath) {
+      weather.calendarTerrainImageAnalysis = null;
+      weather.calendarTerrainImportedAt = 0;
+      weather.calendarTerrainImportedSummary = "";
+      weather.calendarTerrainJournalEntryId = "";
+    }
+  });
+  return normalizedPath;
+}
+
+function resolveCalendarTerrainImageSrc(imagePath = "") {
+  const normalizedPath = normalizeCalendarTerrainImagePath(imagePath).replace(/\\/g, "/");
+  if (!normalizedPath) return "";
+  return normalizedPath;
+}
+
+function loadCalendarTerrainImageElement(imagePath = "") {
+  const src = resolveCalendarTerrainImageSrc(imagePath);
+  if (!src) return Promise.reject(new Error("Choose a PNG map before importing terrain."));
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    let settled = false;
+    const finish = (result, error = null) => {
+      if (settled) return;
+      settled = true;
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(result);
+    };
+    image.addEventListener(
+      "load",
+      () => {
+        finish(image);
+      },
+      { once: true }
+    );
+    image.addEventListener(
+      "error",
+      () => {
+        finish(null, new Error(`Unable to load terrain image "${src}".`));
+      },
+      { once: true }
+    );
+    if (/^https?:\/\//i.test(src)) image.crossOrigin = "anonymous";
+    image.src = src;
+  });
+}
+
+async function readCalendarTerrainImageData(imagePath = "", { maxDimension = 128 } = {}) {
+  const image = await loadCalendarTerrainImageElement(imagePath);
+  const naturalWidth = Math.max(1, Math.floor(Number(image.naturalWidth || image.width) || 1));
+  const naturalHeight = Math.max(1, Math.floor(Number(image.naturalHeight || image.height) || 1));
+  const maxSize = Math.max(16, Math.min(512, Math.floor(Number(maxDimension) || 128)));
+  const scale = Math.min(1, maxSize / Math.max(naturalWidth, naturalHeight));
+  const width = Math.max(1, Math.round(naturalWidth * scale));
+  const height = Math.max(1, Math.round(naturalHeight * scale));
+  const canvasElement = document.createElement("canvas");
+  canvasElement.width = width;
+  canvasElement.height = height;
+  const context = canvasElement.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Unable to read map image pixels in this browser.");
+  context.drawImage(image, 0, 0, width, height);
+  return context.getImageData(0, 0, width, height);
+}
+
+function buildCalendarTerrainImageAnalysisForLedger(analysis = {}, { imagePath = "", mode = "preview" } = {}) {
+  const normalized = normalizeGmScreenWeatherTerrainImageAnalysis(analysis);
+  return {
+    sourcePath: normalizeCalendarTerrainImagePath(imagePath),
+    mode: String(mode ?? "preview").trim() || "preview",
+    analyzedAt: Date.now(),
+    width: normalized.width,
+    height: normalized.height,
+    sampledPixels: normalized.sampledPixels,
+    ignoredPixels: normalized.ignoredPixels,
+    coastPixels: normalized.coastPixels,
+    pixelCounts: normalized.pixelCounts,
+    terrainCounts: normalized.terrainCounts,
+    terrainSummary: normalized.terrainSummary,
+    summary: normalized.summary,
+    recognizedPercent: normalized.recognizedPercent,
+    ignoredPercent: normalized.ignoredPercent,
+    confidenceLabel: normalized.confidenceLabel
+  };
+}
+
+async function analyzeCalendarTerrainImagePath(imagePath = "", mode = "preview") {
+  const imageData = await readCalendarTerrainImageData(imagePath);
+  const analysis = analyzeGmScreenWeatherTerrainImageData(imageData);
+  if (Number(analysis.sampledPixels ?? 0) <= 0) {
+    throw new Error("No recognizable terrain colors were found in that map image.");
+  }
+  return buildCalendarTerrainImageAnalysisForLedger(analysis, { imagePath, mode });
+}
+
+async function createCalendarTerrainImportJournalEntry(analysis = {}, { imagePath = "", climate = "" } = {}) {
+  const normalized = normalizeGmScreenWeatherTerrainImageAnalysis(analysis);
+  if (!normalized.hasAnalysis) return null;
+  const terrainRows = normalized.terrainRows.filter((row) => row.active);
+  const recommendation = recommendGmScreenWeatherClimateForTerrain(normalized.terrainCounts);
+  const appliedClimate = normalizeGmScreenWeatherClimate(climate || recommendation.climate);
+  const sourcePath = normalizeCalendarTerrainImagePath(imagePath || analysis?.sourcePath);
+  const terrainItems = terrainRows
+    .map(
+      (row) =>
+        `<li>${poEscapeHtml(row.label)}: weight ${Number(row.value ?? 0)}, ${Number(row.pixelCount ?? 0)} px (${poEscapeHtml(row.percentLabel)})</li>`
+    )
+    .join("");
+  const redactedTerrainItems = terrainRows
+    .map((row) => `<li>${poEscapeHtml(row.label)}: weight ${Number(row.value ?? 0)}</li>`)
+    .join("");
+  return recordOperationsEvent({
+    category: "environment",
+    sensitivity: "gm",
+    title: `Terrain Import - ${appliedClimate}`,
+    summary: `PNG import | ${normalized.terrainSummary} | climate ${appliedClimate}`,
+    redactedSummary: `Terrain profile imported for calendar weather: ${normalized.terrainSummary}.`,
+    body: [
+      `<p><strong>Source PNG:</strong> ${poEscapeHtml(sourcePath || "Unknown")}</p>`,
+      `<p><strong>Terrain Summary:</strong> ${poEscapeHtml(normalized.terrainSummary)}</p>`,
+      `<p><strong>Applied Climate:</strong> ${poEscapeHtml(appliedClimate)}</p>`,
+      `<p><strong>Suggested Climate:</strong> ${poEscapeHtml(recommendation.climate)} (${poEscapeHtml(recommendation.confidenceLabel)}) - ${poEscapeHtml(recommendation.reason)}</p>`,
+      `<p><strong>Sample:</strong> ${Number(normalized.width)}x${Number(normalized.height)}; ${Number(normalized.sampledPixels)} recognized pixels; ${poEscapeHtml(normalized.ignoredPercentLabel)} ignored.</p>`,
+      `<p><strong>Coast Detection:</strong> ${Number(normalized.coastPixels)} coast pixels inferred.</p>`,
+      terrainItems ? `<ul>${terrainItems}</ul>` : ""
+    ].join(""),
+    redactedBody: [
+      `<p><strong>Terrain Summary:</strong> ${poEscapeHtml(normalized.terrainSummary)}</p>`,
+      `<p><strong>Applied Climate:</strong> ${poEscapeHtml(appliedClimate)}</p>`,
+      `<p><strong>Suggested Climate:</strong> ${poEscapeHtml(recommendation.climate)} (${poEscapeHtml(recommendation.confidenceLabel)})</p>`,
+      redactedTerrainItems ? `<ul>${redactedTerrainItems}</ul>` : ""
+    ].join("")
+  });
+}
+
+async function gmCalendarWeatherSetClimate(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return;
+  }
+  const climate = normalizeGmScreenWeatherClimate(element?.value ?? "Temperate");
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.calendarClimate = climate;
+    weather.calendarClimateAutoApply = false;
+  });
+}
+
+async function gmCalendarWeatherToggleAutoClimate(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return;
+  }
+  const enabled = Boolean(element?.checked);
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.calendarClimateAutoApply = enabled;
+    if (enabled) {
+      const terrainCounts = normalizeGmScreenWeatherTerrainCounts(weather.calendarTerrainCounts);
+      if (getActiveGmScreenWeatherTerrains(terrainCounts).length > 0) {
+        weather.calendarClimate = recommendGmScreenWeatherClimateForTerrain(terrainCounts).climate;
+      }
+    }
+  });
+  ui.notifications?.info(`Terrain climate automation ${enabled ? "enabled" : "disabled"}.`);
+}
+
+async function gmCalendarWeatherApplySuggestedClimate() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return false;
+  }
+  let appliedClimate = "";
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const terrainCounts = normalizeGmScreenWeatherTerrainCounts(weather.calendarTerrainCounts);
+    if (getActiveGmScreenWeatherTerrains(terrainCounts).length <= 0) return;
+    const recommendation = recommendGmScreenWeatherClimateForTerrain(terrainCounts);
+    appliedClimate = recommendation.climate;
+    weather.calendarClimate = recommendation.climate;
+    weather.calendarClimateAutoApply = false;
+  });
+  if (appliedClimate) {
+    ui.notifications?.info(`Calendar climate set to ${appliedClimate}.`);
+    return true;
+  }
+  ui.notifications?.warn("Add or import a terrain profile before applying a suggested climate.");
+  return false;
+}
+
+async function gmCalendarWeatherSetTerrain(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return;
+  }
+  const terrainKey = String(element?.dataset?.terrainKey ?? "").trim();
+  if (!terrainKey) return;
+  const value = Math.max(0, Math.min(20, Math.floor(Number(element?.value ?? 0) || 0)));
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const terrainCounts = normalizeGmScreenWeatherTerrainCounts(weather.calendarTerrainCounts);
+    if (!Object.prototype.hasOwnProperty.call(terrainCounts, terrainKey)) return;
+    terrainCounts[terrainKey] = value;
+    weather.calendarTerrainCounts = terrainCounts;
+    if (weather.calendarClimateAutoApply === true && getActiveGmScreenWeatherTerrains(terrainCounts).length > 0) {
+      weather.calendarClimate = recommendGmScreenWeatherClimateForTerrain(terrainCounts).climate;
+    }
+  });
+}
+
+async function gmCalendarWeatherClearTerrain() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.calendarTerrainCounts = normalizeGmScreenWeatherTerrainCounts({});
+    weather.calendarClimateAutoApply = false;
+    weather.calendarTerrainImageAnalysis = null;
+    weather.calendarTerrainImportedAt = 0;
+    weather.calendarTerrainImportedSummary = "";
+    weather.calendarTerrainJournalEntryId = "";
+  });
+}
+
+async function gmCalendarWeatherSetTerrainImage(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return;
+  }
+  await setCalendarTerrainImagePath(element?.value ?? "");
+}
+
+async function gmCalendarWeatherBrowseTerrainImage() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can browse terrain images.");
+    return false;
+  }
+  if (typeof FilePicker === "undefined") {
+    ui.notifications?.warn("Foundry FilePicker is not available in this session.");
+    return false;
+  }
+  const currentPath = getCalendarTerrainImagePath();
+  return new Promise((resolve) => {
+    const picker = new FilePicker({
+      type: "image",
+      current: currentPath,
+      callback: (selectedPath) => {
+        void setCalendarTerrainImagePath(selectedPath).then(() => resolve(true));
+      }
+    });
+    picker.render(true);
+  });
+}
+
+async function gmCalendarWeatherPreviewTerrainImage() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can preview terrain images.");
+    return false;
+  }
+  const imagePath = getCalendarTerrainImagePath();
+  if (!imagePath) {
+    ui.notifications?.warn("Choose a PNG map before previewing terrain.");
+    return false;
+  }
+  try {
+    const analysis = await analyzeCalendarTerrainImagePath(imagePath, "preview");
+    await updateOperationsLedger((ledger) => {
+      const weather = ensureWeatherState(ledger);
+      weather.calendarTerrainImagePath = imagePath;
+      weather.calendarTerrainImageAnalysis = analysis;
+      weather.calendarTerrainImportedAt = 0;
+      weather.calendarTerrainImportedSummary = "";
+      weather.calendarTerrainJournalEntryId = "";
+    });
+    ui.notifications?.info(`Previewed terrain profile: ${analysis.terrainSummary}.`);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error ?? "Unknown terrain preview error");
+    console.warn(`${MODULE_ID}: failed to preview terrain profile from image`, error);
+    ui.notifications?.warn(message);
+    return false;
+  }
+}
+
+async function gmCalendarWeatherImportTerrainImage() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can import terrain images.");
+    return false;
+  }
+  const imagePath = getCalendarTerrainImagePath();
+  if (!imagePath) {
+    ui.notifications?.warn("Choose a PNG map before importing terrain.");
+    return false;
+  }
+  try {
+    const analysis = await analyzeCalendarTerrainImagePath(imagePath, "imported");
+    let appliedClimate = "";
+    await updateOperationsLedger((ledger) => {
+      const weather = ensureWeatherState(ledger);
+      weather.calendarTerrainImagePath = imagePath;
+      weather.calendarTerrainCounts = normalizeGmScreenWeatherTerrainCounts(analysis.terrainCounts);
+      weather.calendarTerrainImageAnalysis = analysis;
+      weather.calendarTerrainImportedAt = analysis.analyzedAt;
+      weather.calendarTerrainImportedSummary = analysis.summary;
+      if (weather.calendarClimateAutoApply === true) {
+        weather.calendarClimate = recommendGmScreenWeatherClimateForTerrain(analysis.terrainCounts).climate;
+      }
+      appliedClimate = normalizeGmScreenWeatherClimate(weather.calendarClimate);
+      weather.calendarTerrainJournalEntryId = "";
+    });
+    const journalEntry = await createCalendarTerrainImportJournalEntry(analysis, {
+      imagePath,
+      climate: appliedClimate
+    });
+    const journalEntryId = String(journalEntry?.id ?? "").trim();
+    if (journalEntryId) await persistCalendarTerrainJournalEntryId(journalEntryId);
+    ui.notifications?.info(`Imported terrain profile: ${analysis.terrainSummary}.`);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error ?? "Unknown terrain import error");
+    console.warn(`${MODULE_ID}: failed to import terrain profile from image`, error);
+    ui.notifications?.warn(message);
+    return false;
+  }
+}
+
+async function gmCalendarWeatherToggleAuto(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return;
+  }
+  const enabled = Boolean(element?.checked);
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.calendarAutoApply = enabled;
+  });
+  ui.notifications?.info(`Calendar weather auto-roll ${enabled ? "enabled" : "disabled"}.`);
+}
+
+async function gmCalendarWeatherRoll() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can roll calendar weather.");
+    return;
+  }
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const { calendar, preset, snapshot } = buildCalendarWeatherSnapshot(weatherState);
+  await commitWeatherSnapshot(snapshot, { preset, sourceLabel: "Calendar Weather Roll" });
+  const calendarNote = await createWeatherCalendarNote(snapshot, getCurrentWorldTimestamp());
+  await persistCalendarWeatherRollMetadata(snapshot.id, {
+    dayKey: calendar.dayKey,
+    rolledAt: snapshot.loggedAt,
+    calendarEntryId: calendarNote.id
+  });
+  setGmQuickWeatherDraft(
+    buildWeatherDraftFromPreset(preset, resolveCurrentSceneWeatherSnapshot(), {
+      selectedKey: String(preset.key ?? ""),
+      darkness: Number(preset.darkness ?? 0),
+      visibilityModifier: Number(preset.visibilityModifier ?? 0),
+      note: String(snapshot.note ?? ""),
+      presetName: String(preset.label ?? "")
+    })
+  );
+}
+
+let calendarWeatherTickInFlight = false;
+
+async function handleAutomaticCalendarWeatherTick() {
+  if (!game.user?.isGM || calendarWeatherTickInFlight) return null;
+  calendarWeatherTickInFlight = true;
+  try {
+    const ledger = getOperationsLedger();
+    const weatherState = ensureWeatherState(ledger);
+    if (weatherState.calendarAutoApply !== true) return null;
+
+    const { calendar, preset, snapshot } = buildCalendarWeatherSnapshot(weatherState);
+    if (!calendar.dayKey || calendar.dayKey === weatherState.calendarLastDayKey) return null;
+
+    await commitWeatherSnapshot(snapshot, { preset, silent: true, sourceLabel: "Automatic Calendar Weather" });
+    const calendarNote = await createWeatherCalendarNote(snapshot, getCurrentWorldTimestamp());
+    await persistCalendarWeatherRollMetadata(snapshot.id, {
+      dayKey: calendar.dayKey,
+      rolledAt: snapshot.loggedAt,
+      calendarEntryId: calendarNote.id
+    });
+    return snapshot;
+  } finally {
+    calendarWeatherTickInFlight = false;
+  }
+}
+
 async function gmQuickLogCurrentWeather() {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can log weather.");
@@ -44876,7 +46326,8 @@ async function commitWeatherSnapshot(snapshot, options = {}) {
       visibilityModifier: snapshot.visibilityModifier,
       note: snapshot.note,
       createdAt: snapshot.loggedAt,
-      createdBy: snapshot.loggedBy
+      createdBy: snapshot.loggedBy,
+      journalEntryId: String(snapshot.journalEntryId ?? "").trim()
     });
     if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
   });
@@ -44891,16 +46342,35 @@ async function commitWeatherSnapshot(snapshot, options = {}) {
     ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
   }
   if (!suppressChat) {
+    const detailLines = buildGmScreenWeatherSnapshotDetailLines(snapshot);
+    const detailContent =
+      detailLines.length > 0 ? `<ul>${detailLines.map((line) => `<li>${poEscapeHtml(line)}</li>`).join("")}</ul>` : "";
+    const content = [
+      `<p><strong>Weather Logged:</strong> ${poEscapeHtml(snapshot.label)}</p>`,
+      `<p><strong>Visibility Modifier:</strong> ${signedModifier}</p>`,
+      `<p><strong>Effect:</strong> ${poEscapeHtml(getWeatherEffectSummary(snapshot.visibilityModifier))}</p>`,
+      `<p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`,
+      detailContent
+    ].join("");
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-      content: `<p><strong>Weather Logged:</strong> ${poEscapeHtml(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${poEscapeHtml(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
+      content
     });
+  }
+  let journalEntryId = "";
+  if (options?.suppressJournal !== true) {
+    const journalEntry = await createWeatherOperationsJournalEntry(snapshot, {
+      sourceLabel: String(options?.sourceLabel ?? "").trim() || "Weather Log"
+    });
+    journalEntryId = String(journalEntry?.id ?? "").trim();
+    if (journalEntryId) await persistWeatherJournalEntryId(snapshot.id, journalEntryId);
   }
   return {
     logged: true,
     label: String(snapshot.label ?? "Weather"),
     visibilityModifier: Number(snapshot.visibilityModifier ?? 0),
-    darkness: Number(snapshot.darkness ?? 0)
+    darkness: Number(snapshot.darkness ?? 0),
+    journalEntryId
   };
 }
 
@@ -44950,7 +46420,7 @@ async function gmQuickSubmitWeather(element) {
     loggedBy: String(game.user?.name ?? "GM")
   };
 
-  await commitWeatherSnapshot(snapshot, { preset: selectedPreset });
+  await commitWeatherSnapshot(snapshot, { preset: selectedPreset, sourceLabel: "Manual Weather Log" });
 
   setGmQuickWeatherDraft({
     selectedKey,
@@ -47418,6 +48888,35 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
   return true;
 }
 
+async function recordMarchRequestEvent(request = {}) {
+  const op = String(request?.op ?? "").trim();
+  if (!op || op === "setLight" || op === "setLightRange" || op === "setNote") return null;
+  const actor = request?.actorId ? game.actors?.get?.(String(request.actorId)) : null;
+  const targetActor = request?.targetActorId ? game.actors?.get?.(String(request.targetActorId)) : null;
+  const actorName = String(actor?.name ?? request?.actorId ?? "Actor").trim() || "Actor";
+  const targetName = String(targetActor?.name ?? request?.targetActorId ?? "").trim();
+  const rankLabel =
+    MARCH_BOARD_RANKS.find((rank) => rank.id === String(request?.rankId ?? "").trim())?.shortLabel ??
+    String(request?.rankId ?? "").trim();
+  const summary =
+    op === "swapActors"
+      ? `Swapped ${actorName}${targetName ? ` with ${targetName}` : ""}.`
+      : op === "joinRank"
+        ? `Placed ${actorName}${rankLabel ? ` in ${rankLabel}` : ""}.`
+        : op === "leaveRank"
+          ? `Removed ${actorName} from marching order.`
+          : op === "replaceState"
+            ? "Marching order was replaced."
+            : `Marching order action: ${op}.`;
+  return recordOperationsEvent({
+    category: "march",
+    title: "Marching Order Updated",
+    summary,
+    details: `Action: ${op}`,
+    actorIds: [request?.actorId, request?.targetActorId].map((entry) => String(entry ?? "").trim()).filter(Boolean)
+  });
+}
+
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (!game.user?.isGM) {
     if (isMarchingOrderPlayerLocked(game.user)) {
@@ -47452,7 +48951,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
 
     if (mutatorOrRequest && typeof mutatorOrRequest === "object") {
       const requestedOp = String(mutatorOrRequest.op ?? "").trim();
-      if (["joinRank", "leaveRank", "setLight", "setLightRange"].includes(requestedOp)) {
+      if (["joinRank", "leaveRank", "setLight", "setLightRange", "swapActors"].includes(requestedOp)) {
         const actorId = String(mutatorOrRequest.actorId ?? "").trim();
         const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
         if (!actor) {
@@ -47462,6 +48961,18 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
         if (!canAccessAllPlayerOps(game.user) && !canUserOperatePartyActor(actor, game.user)) {
           ui.notifications?.warn("You don't have permission to update this actor in marching order.");
           return false;
+        }
+        if (requestedOp === "swapActors") {
+          const targetActorId = String(mutatorOrRequest.targetActorId ?? "").trim();
+          const targetActor = targetActorId ? (game.actors?.get?.(targetActorId) ?? null) : null;
+          if (!targetActor) {
+            ui.notifications?.warn("Target actor not found for marching order swap.");
+            return false;
+          }
+          if (!canAccessAllPlayerOps(game.user) && !canUserOperatePartyActor(targetActor, game.user)) {
+            ui.notifications?.warn("You don't have permission to swap with that actor.");
+            return false;
+          }
         }
       }
     }
@@ -47510,7 +49021,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (typeof mutatorOrRequest === "function") {
     mutatorOrRequest(state);
   } else {
-    await applyMarchRequest(mutatorOrRequest, game.user.id, {
+    const result = await applyMarchRequest(mutatorOrRequest, game.user.id, {
       getMarchingOrderState,
       game,
       resolveRequester,
@@ -47527,7 +49038,8 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       emitSocketRefresh,
       logUiDebug
     });
-    return true;
+    if (result?.ok) await recordMarchRequestEvent(mutatorOrRequest);
+    return Boolean(result?.ok);
   }
   stampUpdate(state);
   const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
@@ -47925,12 +49437,21 @@ function bindActorSearchDialog(dialog, actors) {
       const type = String(actor?.type ?? "").toLowerCase();
       return !search || name.includes(search) || type.includes(search);
     });
-    actorSelect.innerHTML =
-      matchingActors.length > 0
-        ? matchingActors
-            .map((actor) => `<option value="${poEscapeHtml(actor.id)}">${poEscapeHtml(actor.name)}</option>`)
-            .join("")
-        : `<option value="">No matching actors</option>`;
+    clearElementChildren(actorSelect);
+    const documentRef = actorSelect.ownerDocument ?? document;
+    if (matchingActors.length > 0) {
+      for (const actor of matchingActors) {
+        const option = documentRef.createElement("option");
+        option.value = String(actor?.id ?? "");
+        option.textContent = String(actor?.name ?? "");
+        actorSelect.appendChild(option);
+      }
+    } else {
+      const option = documentRef.createElement("option");
+      option.value = "";
+      option.textContent = "No matching actors";
+      actorSelect.appendChild(option);
+    }
     if (matchingActors.some((actor) => String(actor.id ?? "").trim() === previousValue)) {
       actorSelect.value = previousValue;
     }
@@ -48473,6 +49994,65 @@ async function copyRestWatchText(asMarkdown) {
   }
 }
 
+function buildRestWatchOutcomeSummaryHtml(state = getRestWatchState()) {
+  const slots = buildWatchSlotsView(state, canAccessAllPlayerOps(), state?.visibility ?? "names-passives");
+  const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+  const assignedEntries = slots.reduce((sum, slot) => sum + (slot.entries?.length ?? 0), 0);
+  const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+  const rows = slots
+    .map((slot, index) => {
+      const label = poEscapeHtml(String(slot?.label ?? getRestWatchSlotLabel(slot?.id, index)));
+      const timeRange = poEscapeHtml(String(slot?.timeRange ?? "-"));
+      const entries = Array.isArray(slot?.entries) ? slot.entries : [];
+      const actors =
+        entries
+          .map((entry) => {
+            const actor = game.actors?.get?.(entry?.actorId);
+            return String(entry?.actorName ?? actor?.name ?? "").trim();
+          })
+          .filter(Boolean)
+          .join(", ") || "Empty";
+      const campfire = slot?.campfireActive ? "Campfire lit" : "Campfire out";
+      const darkvision =
+        Number(slot?.slotNoDarkvision ?? 0) > 0 ? ` | ${slot.slotNoDarkvision} without darkvision` : "";
+      return `<li><strong>${label}</strong> (${timeRange}): ${poEscapeHtml(actors)} - ${poEscapeHtml(campfire)}${poEscapeHtml(darkvision)}</li>`;
+    })
+    .join("");
+  const lockLabel = state?.locked ? "Locked by GM" : "Open";
+  return `
+    <div class="po-chat-card po-chat-card-rest-summary">
+      <p><strong>Rest Watch Summary</strong></p>
+      <p><strong>Coverage:</strong> ${occupiedSlots}/${slots.length} slot(s), ${assignedEntries} assigned entr${assignedEntries === 1 ? "y" : "ies"}.</p>
+      <p><strong>Low Darkvision:</strong> ${lowDarkvisionSlots} slot(s). <strong>Status:</strong> ${poEscapeHtml(lockLabel)}.</p>
+      <ul>${rows}</ul>
+    </div>
+  `;
+}
+
+async function postRestWatchSummaryToChat() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can post the rest watch summary.");
+    return false;
+  }
+  const state = getRestWatchState();
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: buildRestWatchOutcomeSummaryHtml(state)
+  });
+  const slots = buildWatchSlotsView(state, true, state?.visibility ?? "names-passives");
+  const assignedEntries = slots.reduce((sum, slot) => sum + (slot.entries?.length ?? 0), 0);
+  await recordOperationsEvent({
+    category: "rest",
+    title: "Rest Watch Summary",
+    summary: `${assignedEntries} assignment${assignedEntries === 1 ? "" : "s"} across ${slots.length} watch slot${slots.length === 1 ? "" : "s"}.`,
+    details: slots
+      .map((slot, index) => `${slot?.label ?? getRestWatchSlotLabel(slot?.id, index)}: ${slot?.entries?.length ?? 0}`)
+      .join(" | ")
+  });
+  ui.notifications?.info("Rest watch summary posted.");
+  return true;
+}
+
 async function clearRestWatchAll() {
   const state = getRestWatchState();
   if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
@@ -48992,7 +50572,10 @@ async function assignActorToRank(element) {
   const hasRequestedCellIndex = Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0;
 
   const actors = game.actors.contents.filter((actor) => isEligiblePartyCharacterActor(actor));
-  const options = actors.map((actor) => `<option value="${actor.id}">${actor.name}</option>`);
+  const options = actors.map(
+    (actor) =>
+      `<option value="${poEscapeHtml(String(actor.id ?? ""))}">${poEscapeHtml(String(actor.name ?? ""))}</option>`
+  );
   const content = `<div class="form-group"><label>Actor</label><select name="actorId">${options.join("")}</select></div>`;
   const dialog = new Dialog({
     title: `Assign Actor - ${rankId}`,
@@ -50019,6 +51602,79 @@ function buildLightToggles(state, ranks, isGM) {
     .filter(Boolean);
 }
 
+const MARCH_SPACING_PRESETS = Object.freeze([
+  { id: "compact-column", label: "Column", summary: "Tight center line." },
+  { id: "balanced-wedge", label: "Wedge", summary: "Leaders forward, supports staggered." },
+  { id: "wide-line", label: "Wide", summary: "Spread across the lane." }
+]);
+
+function buildMarchSpacingPresetContext() {
+  return MARCH_SPACING_PRESETS.map((preset) => ({
+    ...preset,
+    title: preset.summary
+  }));
+}
+
+function encodeMarchSpacingCell(row, column, size = 12) {
+  return 1000 + Math.max(0, Math.floor(row)) * size + Math.max(0, Math.floor(column));
+}
+
+function applyMarchSpacingPresetToState(state, presetIdInput) {
+  const presetId = String(presetIdInput ?? "")
+    .trim()
+    .toLowerCase();
+  const rankIds = getMarchBoardRankIds();
+  const size = 12;
+  const center = Math.floor(size / 2);
+  state.rankPlacements = buildDefaultMarchRankPlacements();
+  rankIds.forEach((rankId, rankIndex) => {
+    const actorIds = Array.isArray(state?.ranks?.[rankId]) ? state.ranks[rankId] : [];
+    if (!state.rankPlacements[rankId]) state.rankPlacements[rankId] = {};
+    const baseRow = Math.max(0, Math.min(size - 1, Math.round(((rankIndex + 0.5) / rankIds.length) * (size - 1))));
+    actorIds.forEach((actorId, actorIndex) => {
+      const middleOffset = actorIndex - (actorIds.length - 1) / 2;
+      let row = baseRow;
+      let column = center + Math.round(middleOffset);
+      if (presetId === "compact-column") {
+        column = center + (actorIndex % 2 === 0 ? 0 : 1);
+      } else if (presetId === "balanced-wedge") {
+        const rankOffset = Math.max(-2, Math.min(2, rankIndex - 2));
+        row = Math.max(0, Math.min(size - 1, baseRow + Math.abs(Math.round(middleOffset))));
+        column = center + Math.round(middleOffset * 2) + rankOffset;
+      } else if (presetId === "wide-line") {
+        column = center + Math.round(middleOffset * 3);
+      }
+      state.rankPlacements[rankId][actorId] = encodeMarchSpacingCell(
+        Math.max(0, Math.min(size - 1, row)),
+        Math.max(0, Math.min(size - 1, column)),
+        size
+      );
+    });
+  });
+}
+
+async function applyMarchSpacingPresetFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can apply spacing presets.");
+    return false;
+  }
+  const presetId = String(element?.dataset?.spacingPreset ?? "").trim();
+  const preset = MARCH_SPACING_PRESETS.find((entry) => entry.id === presetId);
+  if (!preset) return false;
+  const saved = await updateMarchingOrderState((draft) => {
+    applyMarchSpacingPresetToState(draft, presetId);
+  });
+  if (!saved) return false;
+  await recordOperationsEvent({
+    category: "march",
+    title: "March Spacing Preset",
+    summary: `Applied ${preset.label} spacing to the marching order.`,
+    details: preset.summary
+  });
+  ui.notifications?.info(`Applied ${preset.label} spacing.`);
+  return true;
+}
+
 function buildMarchSpacingGridContext(state, formationBoard) {
   const size = 12;
   const encodedCellOffset = 1000;
@@ -50081,7 +51737,7 @@ function buildMarchSpacingGridContext(state, formationBoard) {
     actors.push({
       actorId,
       name: actor.name,
-      img: actorView.img,
+      img: getActorTokenImage(actor),
       initial:
         String(actor.name ?? "?")
           .trim()
@@ -50090,10 +51746,12 @@ function buildMarchSpacingGridContext(state, formationBoard) {
       row,
       column,
       offsetLabel,
+      positionLabel: `Row ${row + 1}, Column ${column + 1}`,
       passivePerception: actorView.passivePerception,
       hasLight,
       lightBright: lightRange.bright,
       lightDim: lightRange.dim,
+      lightLabel: hasLight ? `Torch ${lightRange.bright}/${lightRange.dim} ft` : "Torch off",
       lightTooltip: hasLight ? `Torch active: Bright ${lightRange.bright} ft, Dim ${lightRange.dim} ft.` : "Torch off.",
       statLabel: statParts.join(" | "),
       title: `${actor.name}${statParts.length ? ` - ${statParts.join(", ")}` : ""}${hasLight ? ` - Torch ${lightRange.bright}/${lightRange.dim} ft` : ""} - ${offsetLabel}`
@@ -50159,6 +51817,17 @@ function buildMarchSpacingGridContext(state, formationBoard) {
     if (!actorsByCell.has(key)) actorsByCell.set(key, []);
     actorsByCell.get(key).push(actor);
   }
+  const orderedActors = [...actors]
+    .sort(
+      (a, b) =>
+        Number(a.row ?? 0) - Number(b.row ?? 0) ||
+        Number(a.column ?? 0) - Number(b.column ?? 0) ||
+        String(a.name ?? "").localeCompare(String(b.name ?? ""))
+    )
+    .map((actor, index) => ({
+      ...actor,
+      orderLabel: String(index + 1).padStart(2, "0")
+    }));
   const resolveSpacingCellTarget = (rowIndex, columnIndex) => {
     const boardRowIndex = Math.max(
       0,
@@ -50190,6 +51859,7 @@ function buildMarchSpacingGridContext(state, formationBoard) {
   return {
     rows,
     actors,
+    orderedActors,
     assignedActorCount: actors.length,
     passivePerceptionLow: getLowestNumericValue(actors.map((actor) => actor?.passivePerception)),
     passivePerceptionHigh: getHighestNumericValue(actors.map((actor) => actor?.passivePerception)),
@@ -51398,6 +53068,7 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   notifyDailyInjuryReminders,
   handleAutomaticOperationalUpkeepTick,
   handleAutomaticMerchantAutoRefreshTick,
+  handleAutomaticCalendarWeatherTick,
   handleAutomaticUpkeepChatAction,
   schedulePendingSopNoteSync,
   applyAutoInventoryToUnlinkedToken,
@@ -51524,6 +53195,7 @@ export function onPartyOperationsReady() {
       console.warn(`${MODULE_ID}: merchant actor ownership sync error`, error);
     }
   });
+  if (game.user?.isGM) void purgeLegacyManagedEffects();
 }
 
 const {
@@ -51772,8 +53444,3 @@ export function emitSocketRefresh(options = {}) {
 function emitOpenRestPlayers() {
   emitModuleSocket({ type: "players:openRest" }, { channel: SOCKET_CHANNEL });
 }
-
-Hooks.once("ready", () => {
-  if (!game.user?.isGM) return;
-  void purgeLegacyManagedEffects();
-});

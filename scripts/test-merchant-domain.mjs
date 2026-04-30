@@ -4,8 +4,10 @@ import {
   computeMerchantBarterAdjustment,
   computeMerchantEffectiveBuyMultiplier,
   computeMerchantEffectiveSellMultiplier,
+  configureMerchantRuntimeDependencies,
   getMerchantArchetypeOptions,
   getMerchantRarityPriceMultiplier,
+  handleAutomaticMerchantAutoRefreshTick,
   MERCHANT_DEFAULTS,
   buildMerchantDefinitionPatchFromEditorForm,
   buildStarterMerchantPatch,
@@ -334,6 +336,56 @@ assert.equal(
   "Expected common mundane ammo rolls to create 20-unit stacks."
 );
 
+const budgetedSelectionRejectsOvercapFirstRoll = selectMerchantStockRows(
+  [
+    {
+      key: "Item.weapon.legendary-trident",
+      name: "Legendary Trident",
+      gpValue: 10000,
+      rarityBucket: "legendary",
+      merchantArchetypeScore: 10,
+      data: { name: "Legendary Trident", type: "weapon" },
+      keywords: ["weapon", "trident"]
+    },
+    {
+      key: "Item.consumable.sea-elixir",
+      name: "Sea Elixir",
+      gpValue: 150,
+      rarityBucket: "uncommon",
+      merchantArchetypeScore: 1,
+      data: { name: "Sea Elixir", type: "consumable" },
+      keywords: ["consumable", "elixir"]
+    }
+  ],
+  {
+    archetype: "general-goods",
+    stock: {
+      maxItems: 1,
+      targetValueGp: 450,
+      valueStrictness: 180,
+      duplicateChance: 0,
+      maxStackSize: 20,
+      rarityWeights: {
+        common: 1,
+        uncommon: 1,
+        rare: 1,
+        "very-rare": 1,
+        legendary: 1
+      }
+    }
+  },
+  {
+    randomFn: () => 0.1,
+    shuffleRows: (rows) => rows
+  }
+);
+assert.equal(budgetedSelectionRejectsOvercapFirstRoll.length, 1);
+assert.equal(
+  budgetedSelectionRejectsOvercapFirstRoll[0]?.sourceKey ?? budgetedSelectionRejectsOvercapFirstRoll[0]?.key,
+  "Item.consumable.sea-elixir",
+  "Expected merchant budget selection to skip a 10000 gp first roll when a 450 gp target has affordable candidates."
+);
+
 const uncommonAmmoSelection = selectMerchantStockRows(
   [ammoWeightCandidates[1]],
   {
@@ -493,5 +545,19 @@ assert.equal(
   presetModeIgnoresManualCuratedSelection[0]?.sourceKey ?? presetModeIgnoresManualCuratedSelection[0]?.key,
   "Item.armor.chain-shirt"
 );
+
+configureMerchantRuntimeDependencies({
+  canAccessGmPage: () => false,
+  isPrimaryActiveGmClient: () => {
+    throw new Error("primary GM check should not run when access is denied");
+  }
+});
+assert.equal(await handleAutomaticMerchantAutoRefreshTick(), null);
+
+configureMerchantRuntimeDependencies({
+  canAccessGmPage: () => true,
+  isPrimaryActiveGmClient: () => false
+});
+assert.equal(await handleAutomaticMerchantAutoRefreshTick(), null);
 
 process.stdout.write("merchant domain validation passed\n");

@@ -57,34 +57,51 @@
     {{#each overview.cards}}
     <article class="po-overview-card {{toneClass}}">
       <span>{{label}}</span>
-      {{#if isMiniBoard}}
-      <div class="po-overview-mini-board" aria-label="Lane spread preview">
-        {{#each miniRows}}
-        <div class="po-overview-mini-row">
-          <span>{{label}}</span>
-          <div class="po-overview-mini-cells">
-            {{#each cells}}
-            <i class="{{#if filled}}is-filled{{/if}}" aria-hidden="true"></i>
-            {{/each}}
-          </div>
-          <strong>{{count}}</strong>
-        </div>
-        {{/each}}
-      </div>
-      {{else}}
       <strong>{{value}}</strong>
       <div class="po-overview-card-detail">{{detail}}</div>
-      {{/if}}
     </article>
     {{/each}}
   </section>
 
   <section class="po-content">
+    <section class="po-gm-section po-march-spacing-details-panel" aria-label="Player details by grid order">
+      <header class="po-march-spacing-details-head">
+        <div>
+          <div class="po-section-title">Player Details</div>
+          <div class="po-op-summary">Current grid order</div>
+        </div>
+        <span class="po-pill">{{spacingGrid.assignedActorCount}}</span>
+      </header>
+      {{#if spacingGrid.hasActors}}
+      <div class="po-march-spacing-details-list">
+        {{#each spacingGrid.orderedActors}}
+        <article class="po-march-spacing-detail-row" data-actor-id="{{actorId}}">
+          <span class="po-march-spacing-detail-order">{{orderLabel}}</span>
+          <img class="po-portrait" src="{{img}}" alt="{{name}}" />
+          <div class="po-march-spacing-detail-main">
+            <div class="po-march-spacing-detail-name">{{name}}</div>
+            <div class="po-march-spacing-detail-meta">
+              <span>{{positionLabel}}</span>
+              <span>{{offsetLabel}}</span>
+            </div>
+            <div class="po-march-spacing-detail-meta">
+              {{#if statLabel}}<span>{{statLabel}}</span>{{/if}}
+              <span>{{lightLabel}}</span>
+            </div>
+          </div>
+        </article>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="po-op-summary">No players are placed on the spacing grid.</div>
+      {{/if}}
+    </section>
     <section id="po-march-spacing-grid" class="po-gm-section po-march-spacing-panel">
       <header class="po-march-spacing-head">
         <div>
           <div class="po-section-title">Spacing Grid</div>
           <div class="po-op-summary">{{spacingGrid.sourceLabel}} · 60 ft by 60 ft · each square is 5 ft</div>
+          <div class="po-op-summary">Click an actor, then click a square to place. Shift-click another actor to swap.</div>
         </div>
         <div class="po-march-spacing-summary" aria-label="Party marching summary">
           <span class="po-pill">Roster {{formationBoard.restWatchRosterCount}}</span>
@@ -95,6 +112,13 @@
           <span class="po-pill">Lights {{overview.lightSources}}</span>
         </div>
       </header>
+      {{#if spacingPresets}}
+      <div class="po-op-action-row po-march-spacing-presets" aria-label="Spacing presets">
+        {{#each spacingPresets}}
+        <button type="button" class="po-btn po-btn-sm" data-action="apply-spacing-preset" data-spacing-preset="{{id}}" title="{{title}}">{{label}}</button>
+        {{/each}}
+      </div>
+      {{/if}}
       <div class="po-march-spacing-grid" role="grid" aria-label="Party spacing grid">
         {{#each spacingGrid.rows}}
         <div class="po-march-spacing-row" role="row">

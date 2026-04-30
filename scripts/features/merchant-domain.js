@@ -1,3 +1,13 @@
+import {
+  getCalendarDayKey,
+  getCurrentWorldTimestamp as getCurrentWorldTimestampBridge,
+  getElapsedCalendarDays as getElapsedCalendarDaysBridge
+} from "../core/calendar-bridge.js";
+import { MODULE_ID } from "../core/constants.js";
+import { escapeHtml } from "../core/html-utils.js";
+import { SETTINGS } from "../core/settings-keys.js";
+import { REFRESH_SCOPE_KEYS } from "../core/window-config.js";
+
 export const MERCHANT_SOURCE_TYPES = Object.freeze({
   COMPENDIUM_PACK: "compendium-pack"
 });
@@ -392,6 +402,14 @@ const MERCHANT_MAX_RARITY_WEIGHT = 100;
 const MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS = 365;
 const MERCHANT_MAX_GENERATED_ITEM_COUNT = 250;
 const MERCHANT_RARITY_BUCKETS = Object.freeze(["common", "uncommon", "rare", "very-rare", "legendary"]);
+const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
+  str: "Strength",
+  dex: "Dexterity",
+  con: "Constitution",
+  int: "Intelligence",
+  wis: "Wisdom",
+  cha: "Charisma"
+});
 const MERCHANT_ESTIMATED_GP_BY_RARITY = Object.freeze({
   common: 5,
   uncommon: 75,
@@ -406,6 +424,303 @@ const MERCHANT_DEFAULT_RARITY_WEIGHTS = Object.freeze({
   "very-rare": 5,
   legendary: 1
 });
+const merchantBarterResolutionByKey = new Map();
+let merchantAutoRefreshTickInFlight = false;
+
+const merchantRuntimeDependencies = {
+  canAccessGmPage: () => Boolean(globalThis.game?.user?.isGM),
+  isPrimaryActiveGmClient: () => Boolean(globalThis.game?.user?.isGM),
+  getOperationsLedger: () => ({ merchants: { definitions: [], stockStateById: {} } }),
+  updateOperationsLedger: async () => false,
+  getMerchantSourceDocuments: async () => [],
+  refreshOpenApps: () => {},
+  emitSocketRefresh: () => {},
+  requestMonksActorCheck: async () => null,
+  setModuleSettingWithLocalRefreshSuppressed: async (settingKey, value) => {
+    if (typeof globalThis.game?.settings?.set !== "function") return false;
+    await globalThis.game.settings.set(MODULE_ID, settingKey, value);
+    return true;
+  }
+};
+
+export function configureMerchantRuntimeDependencies(dependencies = {}) {
+  if (!dependencies || typeof dependencies !== "object") return;
+  for (const [key, value] of Object.entries(dependencies)) {
+    if (typeof value === "function") merchantRuntimeDependencies[key] = value;
+  }
+}
+
+function getMerchantRuntimeDependency(name, fallback = null) {
+  const dependency = merchantRuntimeDependencies[name];
+  return typeof dependency === "function" ? dependency : fallback;
+}
+
+function canAccessGmPage(...args) {
+  return Boolean(getMerchantRuntimeDependency("canAccessGmPage", () => false)(...args));
+}
+
+function isPrimaryActiveGmClient(...args) {
+  return Boolean(getMerchantRuntimeDependency("isPrimaryActiveGmClient", () => false)(...args));
+}
+
+function getOperationsLedger(...args) {
+  return getMerchantRuntimeDependency("getOperationsLedger", () => ({
+    merchants: { definitions: [], stockStateById: {} }
+  }))(...args);
+}
+
+function getCurrentWorldTimestamp() {
+  return getCurrentWorldTimestampBridge({ gameRef: globalThis.game });
+}
+
+function getGatherDayKey(timestamp = getCurrentWorldTimestamp()) {
+  return getCalendarDayKey(timestamp, { gameRef: globalThis.game, globalRef: globalThis });
+}
+
+function ensureMerchantsState(ledger = {}) {
+  if (!ledger.merchants || typeof ledger.merchants !== "object") ledger.merchants = {};
+  const merchants = ledger.merchants;
+  if (!Array.isArray(merchants.definitions)) merchants.definitions = [];
+  if (!merchants.stockStateById || typeof merchants.stockStateById !== "object") merchants.stockStateById = {};
+  return merchants;
+}
+
+function normalizeMerchantStockStateEntry(entry = {}, actorId = "") {
+  const source = entry && typeof entry === "object" ? entry : {};
+  return {
+    lastRefreshedAt: Math.max(0, Number(source.lastRefreshedAt ?? 0) || 0),
+    lastRefreshedBy: String(source.lastRefreshedBy ?? "").trim(),
+    actorId: String(source.actorId ?? actorId ?? "").trim(),
+    lastRefreshedWorldTs: Math.max(0, Number(source.lastRefreshedWorldTs ?? 0) || 0),
+    lastRefreshedDayKey: String(source.lastRefreshedDayKey ?? "").trim()
+  };
+}
+
+function getMerchants(ledger = getOperationsLedger()) {
+  return ensureMerchantsState(ledger).definitions;
+}
+
+function getMerchantById(merchantIdInput, ledger = getOperationsLedger()) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  return getMerchants(ledger).find((entry) => String(entry?.id ?? "").trim() === merchantId) ?? null;
+}
+
+async function updateOperationsLedger(...args) {
+  return getMerchantRuntimeDependency("updateOperationsLedger", async () => false)(...args);
+}
+
+async function getMerchantSourceDocuments(...args) {
+  return getMerchantRuntimeDependency("getMerchantSourceDocuments", async () => [])(...args);
+}
+
+function buildMerchantCandidateRows(documents = [], merchant = {}, options = {}) {
+  return buildMerchantStockCandidateRows(documents, merchant, options);
+}
+
+function getMerchantItemData(itemLike) {
+  if (!itemLike) return {};
+  if (typeof itemLike.toObject === "function") return itemLike.toObject();
+  return itemLike?.data && typeof itemLike.data === "object" ? itemLike.data : itemLike;
+}
+
+function getLootItemGpValueFromData(data = {}, { raw = false } = {}) {
+  const toNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  };
+  const priceNode = data?.system?.price ?? data?.price;
+  let baseGp;
+  if (priceNode && typeof priceNode === "object") {
+    const amount = toNumber(priceNode.value ?? priceNode.amount ?? 0);
+    const denomination = String(priceNode.denomination ?? priceNode.currency ?? "gp")
+      .trim()
+      .toLowerCase();
+    const denominationMultiplier = { pp: 10, gp: 1, ep: 0.5, sp: 0.1, cp: 0.01 };
+    baseGp = amount * Number(denominationMultiplier[denomination] ?? 1);
+  } else {
+    baseGp = toNumber(priceNode);
+  }
+  return raw ? baseGp : Math.max(0, baseGp);
+}
+
+function getLootRarityFromData(data = {}) {
+  const candidates = [
+    data?.rarity,
+    data?.system?.rarity,
+    data?.system?.details?.rarity,
+    data?.system?.traits?.rarity,
+    data?.system?.properties?.rarity
+  ];
+  for (const candidate of candidates) {
+    const value =
+      candidate && typeof candidate === "object" ? (candidate.value ?? candidate.label ?? candidate.name) : candidate;
+    const normalized = normalizeMerchantRarity(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+function getItemUsesAvailableValue(itemLike) {
+  const directValue = Number(itemLike?.system?.uses?.value);
+  if (Number.isFinite(directValue)) return Math.max(0, Math.floor(directValue));
+  const max = Number(itemLike?.system?.uses?.max);
+  const spent = Number(itemLike?.system?.uses?.spent);
+  if (!Number.isFinite(max) || !Number.isFinite(spent)) return null;
+  return Math.max(0, Math.floor(Math.max(0, max) - Math.max(0, spent)));
+}
+
+function getItemUsesSpentForAvailable(itemLike, available = 0) {
+  const max = Number(itemLike?.system?.uses?.max);
+  if (!Number.isFinite(max)) return null;
+  const normalizedMax = Math.max(0, Math.floor(max));
+  const normalizedAvailable = Math.max(0, Math.floor(Number(available) || 0));
+  return Math.max(0, Math.min(normalizedMax, normalizedMax - normalizedAvailable));
+}
+
+function setItemUsesAvailableOnData(itemData = {}, available = 0) {
+  const data = itemData && typeof itemData === "object" ? itemData : {};
+  if (!data.system || typeof data.system !== "object") data.system = {};
+  if (!data.system.uses || typeof data.system.uses !== "object") data.system.uses = {};
+  const spent = getItemUsesSpentForAvailable(data, available);
+  if (spent !== null) {
+    data.system.uses.spent = spent;
+    if (Object.prototype.hasOwnProperty.call(data.system.uses, "value")) delete data.system.uses.value;
+    return data;
+  }
+  data.system.uses.value = Math.max(0, Math.floor(Number(available) || 0));
+  return data;
+}
+
+function getMerchantItemDataQuantity(itemData = {}) {
+  const quantity = Number(itemData?.system?.quantity);
+  if (Number.isFinite(quantity)) return Math.max(0, Math.floor(quantity));
+  const quantityValue = Number(itemData?.system?.quantity?.value);
+  if (Number.isFinite(quantityValue)) return Math.max(0, Math.floor(quantityValue));
+  const uses = getItemUsesAvailableValue(itemData);
+  if (Number.isFinite(uses)) return uses;
+  return 1;
+}
+
+function setMerchantItemDataQuantity(itemData = {}, quantity = 1) {
+  const data = itemData && typeof itemData === "object" ? itemData : {};
+  const next = Math.max(0, Math.floor(Number(quantity ?? 0) || 0));
+  if (!data.system || typeof data.system !== "object") data.system = {};
+  if (data.system.quantity !== undefined && data.system.quantity !== null) {
+    if (typeof data.system.quantity === "object") data.system.quantity.value = next;
+    else data.system.quantity = next;
+    return data;
+  }
+  if (data.system.uses && typeof data.system.uses === "object") return setItemUsesAvailableOnData(data, next);
+  data.system.quantity = next;
+  return data;
+}
+
+function getMerchantSpellLevelFromData(itemData = {}) {
+  const direct = Number(itemData?.system?.level);
+  if (Number.isFinite(direct)) return Math.max(0, Math.floor(direct));
+  const legacy = Number(itemData?.level);
+  if (Number.isFinite(legacy)) return Math.max(0, Math.floor(legacy));
+  return 0;
+}
+
+function getMerchantSpellScrollName(sourceName = "", level = 0) {
+  const baseName = String(sourceName ?? "").trim() || "Spell";
+  if (/^spell\s*scroll/i.test(baseName)) return baseName;
+  const normalizedLevel = Math.max(0, Math.floor(Number(level) || 0));
+  const levelLabel = normalizedLevel <= 0 ? "Cantrip" : `Level ${normalizedLevel}`;
+  return `Spell Scroll (${levelLabel}) - ${baseName}`;
+}
+
+function coerceMerchantCandidateDataToStockItemData(itemData = {}) {
+  const data = globalThis.foundry?.utils?.deepClone?.(itemData ?? {}) ?? structuredClone(itemData ?? {});
+  if (
+    String(data?.type ?? "")
+      .trim()
+      .toLowerCase() !== "spell"
+  ) {
+    return data;
+  }
+  const quantity = Math.max(1, Math.floor(Number(getMerchantItemDataQuantity(data) || 1)));
+  const level = getMerchantSpellLevelFromData(data);
+  const sourceName = String(data?.name ?? "Spell").trim() || "Spell";
+  const existingSystem = data.system && typeof data.system === "object" ? data.system : {};
+  data.type = "consumable";
+  data.name = getMerchantSpellScrollName(sourceName, level);
+  data.system = {
+    ...existingSystem,
+    type: {
+      ...(existingSystem.type && typeof existingSystem.type === "object" ? existingSystem.type : {}),
+      value: "scroll"
+    },
+    uses: {
+      ...(existingSystem.uses && typeof existingSystem.uses === "object" ? existingSystem.uses : {}),
+      max: "1",
+      spent: Math.max(0, Math.floor(Number(existingSystem.uses?.spent ?? 0) || 0)),
+      recovery: Array.isArray(existingSystem.uses?.recovery) ? existingSystem.uses.recovery : [],
+      autoDestroy: existingSystem.uses?.autoDestroy !== false
+    }
+  };
+  setMerchantItemDataQuantity(data, quantity);
+  if (!data.flags || typeof data.flags !== "object") data.flags = {};
+  if (!data.flags[MODULE_ID] || typeof data.flags[MODULE_ID] !== "object") data.flags[MODULE_ID] = {};
+  data.flags[MODULE_ID].merchantSourceSpell = { name: sourceName, level };
+  return data;
+}
+
+function getItemTrackedQuantity(itemLike) {
+  return getMerchantItemDataQuantity(getMerchantItemData(itemLike));
+}
+
+async function setItemTrackedQuantity(itemLike, quantity = 1) {
+  const next = Math.max(0, Math.floor(Number(quantity ?? 0) || 0));
+  if (typeof itemLike?.update === "function") {
+    await itemLike.update({ "system.quantity": next });
+    return itemLike;
+  }
+  setMerchantItemDataQuantity(itemLike, next);
+  return itemLike;
+}
+
+function normalizeMerchantSettlementSelection(value) {
+  const settlement = String(value ?? "")
+    .trim()
+    .slice(0, 120);
+  if (!settlement) return "";
+  return settlement.toLowerCase() === "global" ? "" : settlement;
+}
+
+function normalizeMerchantBarterAbility(value, fallback = MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha") {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, normalized)) return normalized;
+  const fallbackKey = String(fallback ?? "cha")
+    .trim()
+    .toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, fallbackKey)) return fallbackKey;
+  return "cha";
+}
+
+async function requestMonksActorCheck(...args) {
+  return getMerchantRuntimeDependency("requestMonksActorCheck", async () => null)(...args);
+}
+
+async function setModuleSettingWithLocalRefreshSuppressed(...args) {
+  return getMerchantRuntimeDependency("setModuleSettingWithLocalRefreshSuppressed", async () => false)(...args);
+}
+
+function refreshOpenApps(...args) {
+  return getMerchantRuntimeDependency("refreshOpenApps", () => {})(...args);
+}
+
+function emitSocketRefresh(...args) {
+  return getMerchantRuntimeDependency("emitSocketRefresh", () => {})(...args);
+}
+
+function poEscapeHtml(value) {
+  return escapeHtml(value);
+}
 
 export const MERCHANT_EDITOR_RACE_OPTIONS = Object.freeze([
   "Aarakocra",
@@ -2227,12 +2542,25 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     return Number.isFinite(estimated) ? Math.max(0.01, estimated) : 0.01;
   };
 
+  const getRollQuantity = (candidate) => {
+    const cachedRollQuantity = Number(candidate?.merchantRollQuantity);
+    if (Number.isFinite(cachedRollQuantity) && cachedRollQuantity > 0) return cachedRollQuantity;
+    if (isCommonMundaneAmmoCandidate(candidate, getRarityBucket)) return mundaneAmmoRollQuantity;
+    return 1;
+  };
+
+  const hasCandidateWithinBudget = () =>
+    !budgetEnabled ||
+    shuffled.some(
+      (entry) => getCandidateBudgetValue(entry) * Math.max(1, Number(getRollQuantity(entry)) || 1) <= budgetHardCap
+    );
+
   const canAffordCandidate = (candidate, quantity = 1, bypassBudget = false) => {
     if (!budgetEnabled || bypassBudget) return true;
     const qty = Math.max(1, Number(quantity) || 1);
     const candidateValue = getCandidateBudgetValue(candidate) * qty;
     if (candidateValue <= 0) return true;
-    if (selected.length <= 0) return true;
+    if (selected.length <= 0) return !hasCandidateWithinBudget() || candidateValue <= budgetHardCap;
     if (runningValue >= budgetHardCap) return false;
     const projectedValue = runningValue + candidateValue;
     return projectedValue <= budgetHardCap;
@@ -2324,13 +2652,6 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     const ammoBoost = isCommonMundaneAmmoCandidate(candidate, getRarityBucket) ? mundaneAmmoWeightBoost : 1;
     const archetypeBoost = Math.max(0.01, Number(candidate?.merchantArchetypeScore ?? 1) || 1);
     return getRarityWeight(candidate) * getBudgetWeight(candidate) * curatedBoost * ammoBoost * archetypeBoost;
-  };
-
-  const getRollQuantity = (candidate) => {
-    const cachedRollQuantity = Number(candidate?.merchantRollQuantity);
-    if (Number.isFinite(cachedRollQuantity) && cachedRollQuantity > 0) return cachedRollQuantity;
-    if (isCommonMundaneAmmoCandidate(candidate, getRarityBucket)) return mundaneAmmoRollQuantity;
-    return 1;
   };
 
   for (const candidate of shuffled) {
@@ -2872,7 +3193,7 @@ async function syncMerchantActorOwnership(actor) {
   return actor;
 }
 
-async function syncAllMerchantActorOwnerships() {
+async function _syncAllMerchantActorOwnerships() {
   if (!game.user?.isGM) return;
   const merchants = ensureMerchantsState(getOperationsLedger());
   const actorIds = new Set(
@@ -2883,7 +3204,6 @@ async function syncAllMerchantActorOwnerships() {
   for (const actorId of actorIds) {
     const actor = game.actors.get(actorId);
     if (!actor) continue;
-    // eslint-disable-next-line no-await-in-loop
     await syncMerchantActorOwnership(actor);
   }
 }
@@ -3063,7 +3383,7 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
   };
 }
 
-async function refreshAllMerchantStocks(options = {}) {
+async function _refreshAllMerchantStocks(options = {}) {
   if (!canAccessGmPage()) return { ok: false, refreshed: 0, failed: 0, results: [] };
   const merchants = getMerchants();
   const results = [];
@@ -3250,7 +3570,7 @@ async function transferItemBetweenActors(sourceActor, targetActor, sourceItem, q
   return true;
 }
 
-async function rollbackMerchantTradeTransfers(transfers = []) {
+async function _rollbackMerchantTradeTransfers(transfers = []) {
   const entries = Array.isArray(transfers) ? [...transfers].reverse() : [];
   const failures = [];
   for (const entry of entries) {
@@ -3268,7 +3588,6 @@ async function rollbackMerchantTradeTransfers(transfers = []) {
       continue;
     }
     // Reverse previously completed item moves if the trade fails after transfer.
-    // eslint-disable-next-line no-await-in-loop
     const ok = await transferItemBetweenActors(targetActor, sourceActor, rollbackSource, qty);
     if (!ok) {
       failures.push({
@@ -3292,14 +3611,14 @@ function getMerchantBarterResolutionKey({ userId, actorId, merchantId, settlemen
   return `${normalizedUserId}:${normalizedActorId}:${normalizedMerchantId}:${normalizedSettlement}`;
 }
 
-function getMerchantBarterResolutionEntryByKey(keyInput = "") {
+function _getMerchantBarterResolutionEntryByKey(keyInput = "") {
   const key = String(keyInput ?? "").trim();
   if (!key) return null;
   const entry = merchantBarterResolutionByKey.get(key);
   return entry && typeof entry === "object" ? foundry.utils.deepClone(entry) : null;
 }
 
-function setMerchantBarterResolutionEntry(entry = {}) {
+function _setMerchantBarterResolutionEntry(entry = {}) {
   const key = getMerchantBarterResolutionKey(entry);
   if (!key) return "";
   const stored = {
@@ -3328,7 +3647,7 @@ function setMerchantBarterResolutionEntry(entry = {}) {
   return key;
 }
 
-function clearMerchantBarterResolutionEntryByKey(keyInput = "") {
+function _clearMerchantBarterResolutionEntryByKey(keyInput = "") {
   const key = String(keyInput ?? "").trim();
   if (!key) return;
   merchantBarterResolutionByKey.delete(key);
@@ -3372,7 +3691,7 @@ function getMerchantBarterPricingModifiers(pricing = {}) {
   };
 }
 
-function getMerchantBarterConfigSummaryText(pricing = {}) {
+function _getMerchantBarterConfigSummaryText(pricing = {}) {
   const modifiers = getMerchantBarterPricingModifiers(pricing);
   const successSummary = getMerchantBarterOutcomeEffectSummary(
     modifiers.successBuyModifier,
@@ -3395,7 +3714,7 @@ function getMerchantBarterUiSummaryText(barter = {}, options = {}) {
   )}`;
 }
 
-function getMerchantTradeDialogRoot(htmlOrRoot) {
+function _getMerchantTradeDialogRoot(htmlOrRoot) {
   if (!htmlOrRoot) return null;
   if (htmlOrRoot instanceof HTMLElement && htmlOrRoot.classList?.contains("po-merchant-trade-dialog"))
     return htmlOrRoot;
@@ -3406,7 +3725,7 @@ function getMerchantTradeDialogRoot(htmlOrRoot) {
   return null;
 }
 
-function readMerchantTradeMetaFromDialogRoot(root) {
+function _readMerchantTradeMetaFromDialogRoot(root) {
   if (!(root instanceof HTMLElement)) return null;
   const merchantId = String(root.dataset?.merchantId ?? "").trim();
   const actorId = String(root.dataset?.actorId ?? "").trim();
@@ -3415,7 +3734,7 @@ function readMerchantTradeMetaFromDialogRoot(root) {
   return { merchantId, actorId, settlement };
 }
 
-function setMerchantTradeDialogBarterStatus(root, options = {}) {
+function _setMerchantTradeDialogBarterStatus(root, options = {}) {
   if (!(root instanceof HTMLElement)) return;
   const statusNode = root.querySelector("[data-merchant-barter-status]");
   if (!statusNode) return;
@@ -3434,7 +3753,7 @@ function setMerchantTradeDialogBarterStatus(root, options = {}) {
   statusNode.textContent = summary || "No barter adjustment applied.";
 }
 
-async function postMerchantTradeToChat(outcome = {}) {
+async function _postMerchantTradeToChat(outcome = {}) {
   const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
   const merchantName = String(outcome?.merchantName ?? "Merchant").trim() || "Merchant";
   const buyRows = Array.isArray(outcome?.buyLines) ? outcome.buyLines : [];
@@ -3512,7 +3831,7 @@ export function computeMerchantBarterAdjustment(checkTotalInput, dcInput, pricin
   };
 }
 
-async function rollMerchantBarterCheck(actor, merchant = {}, options = {}) {
+async function _rollMerchantBarterCheck(actor, merchant = {}, options = {}) {
   const pricing = merchant?.pricing ?? {};
   const enabled = pricing?.barterEnabled !== false;
   if (!enabled || !actor) return { enabled, applied: false };
@@ -3570,7 +3889,7 @@ async function rollMerchantBarterCheck(actor, merchant = {}, options = {}) {
   };
 }
 
-function normalizeMerchantTradeBarterResolution(barterInput, merchant = {}) {
+function _normalizeMerchantTradeBarterResolution(barterInput, merchant = {}) {
   const pricing = merchant?.pricing ?? {};
   const enabled = pricing?.barterEnabled !== false;
   if (!enabled) return { enabled: false, applied: false };

@@ -3,7 +3,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { CURATED_ITEM_UPDATES_BY_ID, CURATED_ITEM_UPDATES_BY_IDENTIFIER, NEW_TREASURE } from "./data/loot-curation-data.mjs";
+import {
+  CURATED_ITEM_UPDATES_BY_ID,
+  CURATED_ITEM_UPDATES_BY_IDENTIFIER,
+  NEW_TREASURE
+} from "./data/loot-curation-data.mjs";
 
 const MODULE_ID = "party-operations";
 const DEFAULT_MANIFEST = path.resolve(process.cwd(), "packs", "party-operations-loot-manifest.db");
@@ -58,11 +62,16 @@ const TREASURE_SPEC_BY_IDENTIFIER = new Map(NEW_TREASURE.map((spec) => [normaliz
  * Keyed by normalised identifier → { value, denomination }.
  */
 const PRICING_CORRECTIONS = Object.freeze({
-  "black-opal":                { value: 1000, denomination: "gp" },
-  "potion-of-greater-healing": { value: 100,  denomination: "gp" },
+  "berryl-gemstone": { value: 250, denomination: "gp" },
+  "black-opal": { value: 1000, denomination: "gp" },
+  breastplate: { value: 400, denomination: "gp" },
+  "potion-of-greater-healing": { value: 100, denomination: "gp" },
   "potion-of-supreme-healing": { value: 5000, denomination: "gp" },
-  "decanter-of-endless-water": { value: 500,  denomination: "gp" },
-  "necklace-of-fireballs":     { value: 1600, denomination: "gp" },
+  "half-plate-armor": { value: 750, denomination: "gp" },
+  "decanter-of-endless-water": { value: 500, denomination: "gp" },
+  "necklace-of-fireballs": { value: 1600, denomination: "gp" },
+  "plate-armor": { value: 1500, denomination: "gp" },
+  spyglass: { value: 1000, denomination: "gp" }
 });
 
 /**
@@ -70,8 +79,8 @@ const PRICING_CORRECTIONS = Object.freeze({
  * Keyed by normalised identifier → corrected rarity string.
  */
 const RARITY_CORRECTIONS = Object.freeze({
-  "wand-of-the-war-mage-3":  "very-rare",
-  "mirror-of-life-trapping": "very-rare",
+  "wand-of-the-war-mage-3": "very-rare",
+  "mirror-of-life-trapping": "very-rare"
 });
 
 /**
@@ -79,8 +88,8 @@ const RARITY_CORRECTIONS = Object.freeze({
  * Keyed by normalised identifier → corrected lootType string.
  */
 const LOOT_TYPE_CORRECTIONS = Object.freeze({
-  "deck-of-illusions":   "loot.consumable",
-  "deck-of-many-things": "loot.consumable",
+  "deck-of-illusions": "loot.consumable",
+  "deck-of-many-things": "loot.consumable"
 });
 
 /**
@@ -89,11 +98,11 @@ const LOOT_TYPE_CORRECTIONS = Object.freeze({
  * breaking the loot weight / merchant budget economy.
  */
 const RARITY_PRICE_CEILING = Object.freeze({
-  common:      200,
-  uncommon:    2000,
-  rare:        20000,
+  common: 200,
+  uncommon: 2000,
+  rare: 20000,
   "very-rare": 100000,
-  legendary:   500000,
+  legendary: 500000
 });
 
 /**
@@ -103,9 +112,9 @@ const RARITY_PRICE_CEILING = Object.freeze({
  * naturally lower prices.
  */
 const RARITY_PRICE_FLOOR = Object.freeze({
-  rare:        750,
+  rare: 750,
   "very-rare": 5000,
-  legendary:   25000,
+  legendary: 25000
 });
 const PERMANENT_ITEM_TYPES = new Set(["weapon", "equipment", "tool", "container"]);
 
@@ -134,11 +143,13 @@ function toNumber(value) {
 
 function round(value, digits = 2) {
   const factor = 10 ** Math.max(0, digits);
-  return Math.round((toNumber(value) * factor)) / factor;
+  return Math.round(toNumber(value) * factor) / factor;
 }
 
 function normalizeLookupKey(value = "") {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeTextArtifacts(value = "") {
@@ -207,7 +218,11 @@ function buildUnidentifiedDescription(summary = "", hint = "") {
 }
 
 function normalizeRarity(value = "") {
-  const key = String(value ?? "").trim().toLowerCase().replace(/\s+/g, "").replace(/_/g, "-");
+  const key = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/_/g, "-");
   if (key === "veryrare") return "very-rare";
   if (["very-rare", "legendary", "rare", "uncommon", "common"].includes(key)) return key;
   if (["artifact", "artefact"].includes(key)) return "legendary";
@@ -215,10 +230,19 @@ function normalizeRarity(value = "") {
 }
 
 function getRarity(item = {}, po = {}) {
-  const values = [po.rarityNormalized, item.rarity, item?.system?.rarity, item?.system?.details?.rarity, item?.system?.traits?.rarity];
+  const values = [
+    po.rarityNormalized,
+    item.rarity,
+    item?.system?.rarity,
+    item?.system?.details?.rarity,
+    item?.system?.traits?.rarity
+  ];
   for (const value of values) {
     if (value === null || value === undefined) continue;
-    const rarity = typeof value === "object" ? normalizeRarity(value.value ?? value.label ?? value.name ?? "") : normalizeRarity(value);
+    const rarity =
+      typeof value === "object"
+        ? normalizeRarity(value.value ?? value.label ?? value.name ?? "")
+        : normalizeRarity(value);
     if (rarity) return rarity;
   }
   return "";
@@ -232,7 +256,12 @@ function getTier(rarity = "") {
 }
 
 function getArtTreasureTier(gp = 0, variableKind = "") {
-  if (String(variableKind ?? "").trim().toLowerCase() !== "art") return "";
+  if (
+    String(variableKind ?? "")
+      .trim()
+      .toLowerCase() !== "art"
+  )
+    return "";
   const value = round(Math.max(0, toNumber(gp)), 2);
   if (value >= 10000) return "tier.t4";
   if (value >= 3000) return "tier.t3";
@@ -254,32 +283,62 @@ function getGpValue(item = {}) {
   const map = { pp: 10, gp: 1, ep: 0.5, sp: 0.1, cp: 0.01 };
   if (price && typeof price === "object") {
     const amount = Math.max(0, toNumber(price.value ?? price.amount ?? 0));
-    const denomination = String(price.denomination ?? price.currency ?? "gp").trim().toLowerCase() || "gp";
+    const denomination =
+      String(price.denomination ?? price.currency ?? "gp")
+        .trim()
+        .toLowerCase() || "gp";
     return round(amount * (map[denomination] ?? 1), 2);
   }
   return round(Math.max(0, toNumber(price ?? 0)), 2);
 }
 
 function getDenomination(item = {}) {
-  const denomination = String(item?.system?.price?.denomination ?? item?.system?.price?.currency ?? "gp").trim().toLowerCase();
+  const denomination = String(item?.system?.price?.denomination ?? item?.system?.price?.currency ?? "gp")
+    .trim()
+    .toLowerCase();
   return denomination || "gp";
 }
 
 function isMagic(item = {}, rarity = "") {
   if (rarity && rarity !== "common") return true;
-  if (String(item?.system?.attunement ?? "").trim().toLowerCase() === "required") return true;
+  if (
+    String(item?.system?.attunement ?? "")
+      .trim()
+      .toLowerCase() === "required"
+  )
+    return true;
   const properties = Array.isArray(item?.system?.properties) ? item.system.properties : [];
-  if (properties.some((entry) => String(entry ?? "").trim().toLowerCase() === "mgc")) return true;
+  if (
+    properties.some(
+      (entry) =>
+        String(entry ?? "")
+          .trim()
+          .toLowerCase() === "mgc"
+    )
+  )
+    return true;
   return /\+\s*[1-9]\d*/.test(String(item?.name ?? ""));
 }
 
 function classifyLootType(item = {}, rarity = "") {
-  const type = String(item?.type ?? "").trim().toLowerCase();
-  const subtype = String(item?.system?.type?.value ?? "").trim().toLowerCase();
+  const type = String(item?.type ?? "")
+    .trim()
+    .toLowerCase();
+  const subtype = String(item?.system?.type?.value ?? "")
+    .trim()
+    .toLowerCase();
   const magic = isMagic(item, rarity);
   if (type === "weapon") return magic ? "loot.weapon.magic" : "loot.weapon";
-  if (type === "equipment") return magic ? (["light", "medium", "heavy", "shield"].includes(subtype) ? "loot.armor.magic" : "loot.equipment.magic") : (["light", "medium", "heavy", "shield"].includes(subtype) ? "loot.armor" : "loot.equipment");
-  if (type === "consumable") return subtype === "potion" ? "loot.potion" : (subtype === "poison" ? "loot.poison" : "loot.consumable");
+  if (type === "equipment")
+    return magic
+      ? ["light", "medium", "heavy", "shield"].includes(subtype)
+        ? "loot.armor.magic"
+        : "loot.equipment.magic"
+      : ["light", "medium", "heavy", "shield"].includes(subtype)
+        ? "loot.armor"
+        : "loot.equipment";
+  if (type === "consumable")
+    return subtype === "potion" ? "loot.potion" : subtype === "poison" ? "loot.poison" : "loot.consumable";
   if (type === "tool") return "loot.tool";
   if (type === "container" || type === "backpack") return "loot.container";
   if (type === "spell") return "loot.spell";
@@ -288,7 +347,9 @@ function classifyLootType(item = {}, rarity = "") {
 }
 
 function normalizeVariableKind(value = "") {
-  const key = String(value ?? "").trim().toLowerCase();
+  const key = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (["gem", "gems", "gemstone", "gemstones"].includes(key)) return "gem";
   if (["art", "art-item", "art-items", "art-object", "art-objects"].includes(key)) return "art";
   return "";
@@ -299,14 +360,31 @@ function detectVariableKind(item = {}, po = {}, tags = new Set()) {
   if (explicit) return explicit;
   if (tags.has("merchant.gem") || tags.has("folder.leaf.gemstones")) return "gem";
   if (tags.has("merchant.art") || tags.has("folder.section.art-objects")) return "art";
-  const name = String(item?.name ?? "").trim().toLowerCase();
-  if (/\b(agate|alexandrite|amber|amethyst|aquamarine|azurite|bloodstone|citrine|diamond|emerald|garnet|gem|jade|jasper|moonstone|onyx|opal|pearl|quartz|ruby|sapphire|spinel|sunstone|topaz|tourmaline|turquoise)\b/.test(name)) return "gem";
-  if (/\b(art|banner|carving|chalice|coffer|diptych|effigy|icon|idol|lantern|mask|orrery|painting|panel|plaque|portrait|reliquary|screen|sculpture|standard|statue|tapestry|vase)\b/.test(name)) return "art";
+  const name = String(item?.name ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    /\b(agate|alexandrite|amber|amethyst|aquamarine|azurite|bloodstone|citrine|diamond|emerald|garnet|gem|jade|jasper|moonstone|onyx|opal|pearl|quartz|ruby|sapphire|spinel|sunstone|topaz|tourmaline|turquoise)\b/.test(
+      name
+    )
+  )
+    return "gem";
+  if (
+    /\b(art|banner|carving|chalice|coffer|diptych|effigy|icon|idol|lantern|mask|orrery|painting|panel|plaque|portrait|reliquary|screen|sculpture|standard|statue|tapestry|vase)\b/.test(
+      name
+    )
+  )
+    return "art";
   return "";
 }
 
 function makeId(seed = "") {
-  return crypto.createHash("sha256").update(String(seed)).digest("base64url").replace(/[^A-Za-z0-9]/g, "").slice(0, 16);
+  return crypto
+    .createHash("sha256")
+    .update(String(seed))
+    .digest("base64url")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 16);
 }
 
 function readManifest(filePath) {
@@ -365,23 +443,24 @@ function buildTreasureDescription(spec = {}) {
 }
 
 function buildTreasureChatDescription(spec = {}) {
-  const summary = String(spec.chatSummary ?? "").trim()
-    || buildSummaryText(Array.isArray(spec.descriptionParagraphs) ? spec.descriptionParagraphs[0] : spec.description);
+  const summary =
+    String(spec.chatSummary ?? "").trim() ||
+    buildSummaryText(Array.isArray(spec.descriptionParagraphs) ? spec.descriptionParagraphs[0] : spec.description);
   return buildNarrativeChat(spec.name, summary);
 }
 
 function buildTreasureUnidentifiedDescription(spec = {}) {
-  const summary = String(spec.unidentifiedSummary ?? "").trim()
-    || String(spec.chatSummary ?? "").trim()
-    || buildSummaryText(Array.isArray(spec.descriptionParagraphs) ? spec.descriptionParagraphs[0] : spec.description);
-  const hint = String(spec.unidentifiedHint ?? "").trim() || "Its provenance and market value require closer inspection.";
+  const summary =
+    String(spec.unidentifiedSummary ?? "").trim() ||
+    String(spec.chatSummary ?? "").trim() ||
+    buildSummaryText(Array.isArray(spec.descriptionParagraphs) ? spec.descriptionParagraphs[0] : spec.description);
+  const hint =
+    String(spec.unidentifiedHint ?? "").trim() || "Its provenance and market value require closer inspection.";
   return buildUnidentifiedDescription(summary, hint);
 }
 
 function buildTreasureMerchantCategories(spec = {}) {
-  return spec.kind === "gem"
-    ? ["gem", "loot", "luxury", "treasure"]
-    : ["art", "loot", "luxury", "treasure"];
+  return spec.kind === "gem" ? ["gem", "loot", "luxury", "treasure"] : ["art", "loot", "luxury", "treasure"];
 }
 
 function ensureUtilityActivity(item = {}, name = "") {
@@ -425,7 +504,13 @@ function applyNarrativeUpdate(item = {}, update = {}) {
     );
   }
   if (Array.isArray(update.merchantCategories) && update.merchantCategories.length > 0) {
-    item.flags[MODULE_ID].merchantCategories = update.merchantCategories.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean);
+    item.flags[MODULE_ID].merchantCategories = update.merchantCategories
+      .map((entry) =>
+        String(entry ?? "")
+          .trim()
+          .toLowerCase()
+      )
+      .filter(Boolean);
   }
   if (update.lootType) item.flags[MODULE_ID].lootType = String(update.lootType).trim().toLowerCase();
   if (Object.prototype.hasOwnProperty.call(update, "variableTreasureKind")) {
@@ -518,12 +603,14 @@ function applyEconomyCorrections(item = {}) {
   if (!priceFix && !ZERO_PRICE_OVERRIDES[String(item._id ?? "").trim()]) {
     const rarity = normalizeRarity(item.system.rarity ?? "");
     const currentGp = getGpValue(item);
-    const ceiling = RARITY_PRICE_CEILING[rarity];
+    const ceiling = isMagic(item, rarity) ? RARITY_PRICE_CEILING[rarity] : 0;
     if (ceiling && currentGp > ceiling) {
       item.system.price.value = ceiling;
       item.system.price.denomination = "gp";
     }
-    const itemType = String(item.type ?? "").trim().toLowerCase();
+    const itemType = String(item.type ?? "")
+      .trim()
+      .toLowerCase();
     if (PERMANENT_ITEM_TYPES.has(itemType)) {
       const floor = RARITY_PRICE_FLOOR[rarity];
       if (floor && getGpValue(item) < floor) {
@@ -579,10 +666,13 @@ function enrichItem(item = {}, nowIso = "") {
   if (!item.system.price || typeof item.system.price !== "object") item.system.price = { value: 0, denomination: "gp" };
   if (!item.system.weight || typeof item.system.weight !== "object") item.system.weight = { value: 0, units: "lb" };
   if (!item.flags.core) item.flags.core = {};
-  if (!item.flags.core.sourceId && item._id) item.flags.core.sourceId = `Compendium.party-operations.party-operations-loot-manifest.Item.${item._id}`;
-  if (!item.flags["midi-qol"] || typeof item.flags["midi-qol"] !== "object") item.flags["midi-qol"] = { ...DEFAULT_MIDI_QOL };
+  if (!item.flags.core.sourceId && item._id)
+    item.flags.core.sourceId = `Compendium.party-operations.party-operations-loot-manifest.Item.${item._id}`;
+  if (!item.flags["midi-qol"] || typeof item.flags["midi-qol"] !== "object")
+    item.flags["midi-qol"] = { ...DEFAULT_MIDI_QOL };
   if (!item.flags.dae || typeof item.flags.dae !== "object") item.flags.dae = { ...DEFAULT_DAE };
-  if (!item.flags.midiProperties || typeof item.flags.midiProperties !== "object") item.flags.midiProperties = { ...DEFAULT_MIDI_PROPERTIES };
+  if (!item.flags.midiProperties || typeof item.flags.midiProperties !== "object")
+    item.flags.midiProperties = { ...DEFAULT_MIDI_PROPERTIES };
   if (!item._stats || typeof item._stats !== "object") {
     item._stats = {
       compendiumSource: item.flags.core.sourceId,
@@ -598,10 +688,16 @@ function enrichItem(item = {}, nowIso = "") {
   if (!item.ownership || typeof item.ownership !== "object") item.ownership = { default: 0, [OWNER_ID]: 3 };
   if (item.sort === undefined || item.sort === null) item.sort = 0;
   if (item.system?.description && typeof item.system.description === "object") {
-    if (item.system.description.value !== undefined) item.system.description.value = sanitizeHtmlSnippet(item.system.description.value);
-    if (item.system.description.chat !== undefined) item.system.description.chat = sanitizeHtmlSnippet(item.system.description.chat);
+    if (item.system.description.value !== undefined)
+      item.system.description.value = sanitizeHtmlSnippet(item.system.description.value);
+    if (item.system.description.chat !== undefined)
+      item.system.description.chat = sanitizeHtmlSnippet(item.system.description.chat);
   }
-  if (item.system?.unidentified && typeof item.system.unidentified === "object" && item.system.unidentified.description !== undefined) {
+  if (
+    item.system?.unidentified &&
+    typeof item.system.unidentified === "object" &&
+    item.system.unidentified.description !== undefined
+  ) {
     item.system.unidentified.description = sanitizeHtmlSnippet(item.system.unidentified.description);
   }
 
@@ -615,13 +711,17 @@ function enrichItem(item = {}, nowIso = "") {
   applyEconomyCorrections(item);
 
   const rarity = getRarity(item, po);
-  const lootType = String(po.lootType ?? "").trim().toLowerCase() || classifyLootType(item, rarity);
+  const lootType =
+    String(po.lootType ?? "")
+      .trim()
+      .toLowerCase() || classifyLootType(item, rarity);
   const gp = getGpValue(item);
   const denomination = getDenomination(item);
   let tier = getTier(rarity);
   const valueBand = getValueBand(gp);
   const weight = Math.max(0, toNumber(item?.system?.weight?.value ?? 0));
-  const weightBand = weight <= 0 ? "none" : (weight <= 1 ? "light" : (weight <= 10 ? "medium" : (weight <= 40 ? "heavy" : "bulk")));
+  const weightBand =
+    weight <= 0 ? "none" : weight <= 1 ? "light" : weight <= 10 ? "medium" : weight <= 40 ? "heavy" : "bulk";
 
   const keywordMap = new Map();
   for (const value of Array.isArray(po.keywords) ? po.keywords : []) {
@@ -629,7 +729,28 @@ function enrichItem(item = {}, nowIso = "") {
     if (text) keywordMap.set(text.toLowerCase(), text);
   }
   for (const key of Array.from(keywordMap.keys())) {
-    if (key.startsWith("tier.") || key.startsWith("value.v") || key.startsWith("price.") || key.startsWith("rarity.") || key.startsWith("weight.") || key.startsWith("source.class.") || key.startsWith("source.policy.") || key.startsWith("curation.") || key.startsWith("economy.") || key.startsWith("loot.variable") || key === "source.curated" || key === "treasure.gem" || key === "treasure.art" || key === "merchant.art" || key === "merchant.gem" || key === "merchant.luxury" || key === "merchant.treasure" || key === "value.high" || key === "loot.excluded") keywordMap.delete(key);
+    if (
+      key.startsWith("tier.") ||
+      key.startsWith("value.v") ||
+      key.startsWith("price.") ||
+      key.startsWith("rarity.") ||
+      key.startsWith("weight.") ||
+      key.startsWith("source.class.") ||
+      key.startsWith("source.policy.") ||
+      key.startsWith("curation.") ||
+      key.startsWith("economy.") ||
+      key.startsWith("loot.variable") ||
+      key === "source.curated" ||
+      key === "treasure.gem" ||
+      key === "treasure.art" ||
+      key === "merchant.art" ||
+      key === "merchant.gem" ||
+      key === "merchant.luxury" ||
+      key === "merchant.treasure" ||
+      key === "value.high" ||
+      key === "loot.excluded"
+    )
+      keywordMap.delete(key);
   }
 
   const addTag = (value) => {
@@ -639,7 +760,11 @@ function enrichItem(item = {}, nowIso = "") {
   };
 
   addTag("loot");
-  addTag(`foundryType.${String(item.type ?? "item").trim().toLowerCase()}`);
+  addTag(
+    `foundryType.${String(item.type ?? "item")
+      .trim()
+      .toLowerCase()}`
+  );
   addTag(lootType);
   addTag(valueBand);
   addTag(`price.${denomination}`);
@@ -647,17 +772,29 @@ function enrichItem(item = {}, nowIso = "") {
   addTag(`weight.${weightBand}`);
   if (gp >= 5000) addTag("value.high");
   if (isMagic(item, rarity)) addTag("magic.bonus");
-  if (String(item?.system?.attunement ?? "").trim().toLowerCase() === "required") addTag("attunement.required");
-  const sourceTag = String(item?.flags?.core?.sourceId ?? "").includes("Compendium.dnd5e.items.") ? "source.dnd5e.items" : SOURCE_CURATED;
+  if (
+    String(item?.system?.attunement ?? "")
+      .trim()
+      .toLowerCase() === "required"
+  )
+    addTag("attunement.required");
+  const sourceTag = String(item?.flags?.core?.sourceId ?? "").includes("Compendium.dnd5e.items.")
+    ? "source.dnd5e.items"
+    : SOURCE_CURATED;
   addTag(sourceTag);
 
-  const activities = item?.system?.activities && typeof item.system.activities === "object" ? Object.values(item.system.activities) : [];
+  const activities =
+    item?.system?.activities && typeof item.system.activities === "object" ? Object.values(item.system.activities) : [];
   if (activities.length > 0) {
     addTag("automation.activity");
     addTag("automation.mode.usable");
     for (const entry of activities) {
-      const activityType = String(entry?.type ?? "").trim().toLowerCase();
-      const activationType = String(entry?.activation?.type ?? "").trim().toLowerCase();
+      const activityType = String(entry?.type ?? "")
+        .trim()
+        .toLowerCase();
+      const activationType = String(entry?.activation?.type ?? "")
+        .trim()
+        .toLowerCase();
       if (activityType) addTag(`automation.activity.${activityType}`);
       if (activationType) addTag(`activation.${activationType}`);
     }
@@ -679,7 +816,15 @@ function enrichItem(item = {}, nowIso = "") {
     delete item.variableTreasureKind;
   }
 
-  const categories = new Set((Array.isArray(po.merchantCategories) ? po.merchantCategories : []).map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean));
+  const categories = new Set(
+    (Array.isArray(po.merchantCategories) ? po.merchantCategories : [])
+      .map((entry) =>
+        String(entry ?? "")
+          .trim()
+          .toLowerCase()
+      )
+      .filter(Boolean)
+  );
   for (const key of keywordMap.keys()) {
     if (!key.startsWith("merchant.")) continue;
     const category = key.slice("merchant.".length).trim().toLowerCase();
@@ -690,27 +835,66 @@ function enrichItem(item = {}, nowIso = "") {
     categories.delete("gem");
     categories.delete("treasure");
   }
-  const itemType = String(item.type ?? "").trim().toLowerCase();
-  if (lootType.includes("weapon")) { categories.add("arms"); categories.add("weapon"); }
-  if (lootType.includes("armor")) { categories.add("armor"); categories.add("equipment"); categories.add("outfitting"); }
-  if (lootType.includes("equipment")) { categories.add("equipment"); categories.add("outfitting"); }
-  if (lootType.includes("container")) { categories.add("container"); categories.add("storage"); }
-  if (lootType.includes("tool")) { categories.add("tool"); categories.add("tools"); }
+  const itemType = String(item.type ?? "")
+    .trim()
+    .toLowerCase();
+  if (lootType.includes("weapon")) {
+    categories.add("arms");
+    categories.add("weapon");
+  }
+  if (lootType.includes("armor")) {
+    categories.add("armor");
+    categories.add("equipment");
+    categories.add("outfitting");
+  }
+  if (lootType.includes("equipment")) {
+    categories.add("equipment");
+    categories.add("outfitting");
+  }
+  if (lootType.includes("container")) {
+    categories.add("container");
+    categories.add("storage");
+  }
+  if (lootType.includes("tool")) {
+    categories.add("tool");
+    categories.add("tools");
+  }
   if (lootType.includes("consumable")) categories.add("consumable");
-  if (itemType === "spell") { categories.add("arcana"); categories.add("spell"); categories.add("magic"); }
+  if (itemType === "spell") {
+    categories.add("arcana");
+    categories.add("spell");
+    categories.add("magic");
+  }
   if (isMagic(item, rarity)) categories.add("magic");
-  if (variableKind) { categories.add("treasure"); categories.add("luxury"); categories.add("loot"); }
+  if (variableKind) {
+    categories.add("treasure");
+    categories.add("luxury");
+    categories.add("loot");
+  }
   if (categories.size <= 0) categories.add(itemType || "loot");
   for (const category of categories) addTag(`merchant.${category}`);
 
-  const sale = categories.has("salvage") ? "sale.salvage" : ((categories.has("luxury") || categories.has("treasure") || categories.has("gem") || categories.has("art")) ? "sale.luxury" : ((rarity === "legendary" || rarity === "very-rare" || gp >= 10000) ? "sale.specialty" : "sale.standard"));
+  const sale = categories.has("salvage")
+    ? "sale.salvage"
+    : categories.has("luxury") || categories.has("treasure") || categories.has("gem") || categories.has("art")
+      ? "sale.luxury"
+      : rarity === "legendary" || rarity === "very-rare" || gp >= 10000
+        ? "sale.specialty"
+        : "sale.standard";
   addTag(sale);
 
   const sourceClass = sourceTag === SOURCE_CURATED ? "curated" : "generated";
   addTag(`source.class.${sourceClass}`);
   addTag("source.policy.normal");
   if (sourceClass === "curated") addTag("source.curated");
-  const curationScore = round(5 + (activities.length > 0 ? 1 : 0) + (String(item?.system?.description?.value ?? "").trim() ? 1 : 0) + (variableKind ? 1 : 0) + (sourceClass === "curated" ? 1 : 0), 2);
+  const curationScore = round(
+    5 +
+      (activities.length > 0 ? 1 : 0) +
+      (String(item?.system?.description?.value ?? "").trim() ? 1 : 0) +
+      (variableKind ? 1 : 0) +
+      (sourceClass === "curated" ? 1 : 0),
+    2
+  );
   addTag(`curation.${curationScore >= 8 ? "high" : "medium"}`);
 
   const lootEligible = po.lootEligible !== false;
@@ -727,8 +911,44 @@ function enrichItem(item = {}, nowIso = "") {
   po.lootEligible = lootEligible;
   po.merchantCategories = Array.from(categories).sort((left, right) => left.localeCompare(right));
   po.saleLiquidity = sale;
-  po.lootWeight = round(Math.max(0.05, Math.min(2.5, (rarity === "legendary" ? 0.16 : rarity === "very-rare" ? 0.28 : rarity === "rare" ? 0.48 : rarity === "uncommon" ? 0.9 : 1.2) * (gp <= 10 ? 1.1 : gp <= 250 ? 1 : gp <= 1000 ? 0.85 : gp <= 5000 ? 0.7 : 0.5) * (variableKind ? 1.2 : 1))), 3);
-  po.maxRecommendedQty = rarity === "legendary" || rarity === "very-rare" || rarity === "rare" ? 1 : (variableKind ? (gp <= 10 ? 12 : gp <= 50 ? 8 : gp <= 250 ? 4 : 2) : (gp <= 1 ? 8 : gp <= 10 ? 6 : gp <= 50 ? 4 : 2));
+  po.lootWeight = round(
+    Math.max(
+      0.05,
+      Math.min(
+        2.5,
+        (rarity === "legendary"
+          ? 0.16
+          : rarity === "very-rare"
+            ? 0.28
+            : rarity === "rare"
+              ? 0.48
+              : rarity === "uncommon"
+                ? 0.9
+                : 1.2) *
+          (gp <= 10 ? 1.1 : gp <= 250 ? 1 : gp <= 1000 ? 0.85 : gp <= 5000 ? 0.7 : 0.5) *
+          (variableKind ? 1.2 : 1)
+      )
+    ),
+    3
+  );
+  po.maxRecommendedQty =
+    rarity === "legendary" || rarity === "very-rare" || rarity === "rare"
+      ? 1
+      : variableKind
+        ? gp <= 10
+          ? 12
+          : gp <= 50
+            ? 8
+            : gp <= 250
+              ? 4
+              : 2
+        : gp <= 1
+          ? 8
+          : gp <= 10
+            ? 6
+            : gp <= 50
+              ? 4
+              : 2;
   po.sellValueGp = round(gp * 0.5, 2);
   po.tagSchema = TAG_SCHEMA;
   po.taggedAt = nowIso;
@@ -744,13 +964,23 @@ function main() {
   const nowIso = new Date().toISOString();
   const items = readManifest(args.manifest);
   const existingIds = new Set(items.map((item) => String(item?._id ?? "").trim()).filter(Boolean));
-  const existingIdentifiers = new Set(items.map((item) => String(item?.system?.identifier ?? "").trim().toLowerCase()).filter(Boolean));
+  const existingIdentifiers = new Set(
+    items
+      .map((item) =>
+        String(item?.system?.identifier ?? "")
+          .trim()
+          .toLowerCase()
+      )
+      .filter(Boolean)
+  );
   const seeded = [];
 
   for (const spec of NEW_TREASURE) {
     const candidate = createTreasureItem(spec);
     const id = String(candidate?._id ?? "").trim();
-    const identifier = String(candidate?.system?.identifier ?? "").trim().toLowerCase();
+    const identifier = String(candidate?.system?.identifier ?? "")
+      .trim()
+      .toLowerCase();
     if (existingIds.has(id) || existingIdentifiers.has(identifier)) continue;
     items.push(candidate);
     existingIds.add(id);

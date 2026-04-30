@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 
 const runtimeSource = readFileSync("scripts/party-operations.js", "utf8");
 const gmLootTemplate = readFileSync("templates/gm-loot.hbs", "utf8");
+const lootManifestRows = readFileSync("packs/party-operations-loot-manifest.db", "utf8")
+  .trim()
+  .split(/\r?\n/)
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
 
 assert.match(
   runtimeSource,
@@ -75,5 +80,30 @@ assert.match(
   /data-action="set-loot-world-rarity-weight"/,
   "GM Loot should expose world rarity sliders for compendium outcomes"
 );
+
+const armorValueExpectations = new Map([
+  ["Berryl Gemstone", 250],
+  ["Breastplate", 400],
+  ["Half Plate Armor", 750],
+  ["Plate Armor", 1500],
+  ["Spyglass", 1000]
+]);
+
+for (const [name, expectedValueGp] of armorValueExpectations) {
+  const row = lootManifestRows.find((entry) => entry?.name === name);
+  assert.ok(row, `${name} should exist in the loot manifest`);
+  assert.equal(row?.system?.price?.value, expectedValueGp, `${name} should keep its mundane source price`);
+  assert.equal(row?.system?.price?.denomination, "gp", `${name} should be priced in gp`);
+  assert.equal(
+    row?.flags?.["party-operations"]?.gpValue,
+    expectedValueGp,
+    `${name} party-operations gpValue should match its system price`
+  );
+  assert.equal(
+    row?.flags?.["party-operations"]?.sellValueGp,
+    expectedValueGp / 2,
+    `${name} sell value should stay derived from its corrected gp value`
+  );
+}
 
 process.stdout.write("loot compendium manifest source validation passed\n");

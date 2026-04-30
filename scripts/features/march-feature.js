@@ -135,7 +135,7 @@ export function buildMarchFormationSummaryContext({
     const bonus = Math.floor(consecutiveSuccessCount / 3);
     return `${consecutiveSuccessCount} successes (+${bonus} momentum bonus)`;
   })();
-  const healthTrendIndicator = Boolean(tracker?.lastCheckWasSuccess ?? false) ? "Improving" : "Declining";
+  const healthTrendIndicator = (tracker?.lastCheckWasSuccess ?? false) ? "Improving" : "Declining";
   const formationHealthPercent = Math.max(0, 100 - failureStreakCount * 15);
   const statusToneClass =
     leadershipCheckDue || doctrineStateCode === brokenState
@@ -233,38 +233,23 @@ export function buildMarchFormationSummaryContext({
 export function buildMarchOverviewContext({
   totalAssigned = 0,
   allActorCount = 0,
-  laneCounts = {},
+  laneCounts: _laneCounts = {},
   formationLabel = "March Board",
   formationStateLabel = "Active",
   lightSources = 0,
   lockState = "Open",
   unassignedCount = 0,
-  warningCount = 0,
-  leadershipCheckDue = false
+  warningCount: _warningCount = 0,
+  leadershipCheckDue: _leadershipCheckDue = false
 } = {}) {
-  const hasAlert = leadershipCheckDue || warningCount > 0 || unassignedCount > 0;
-  const miniRows = MARCH_BOARD_RANKS.map((rank) => {
-    const count = Math.max(0, Number(laneCounts?.[rank.id] ?? 0) || 0);
-    const cells = Array.from({ length: Math.max(3, count) }, (_, index) => ({
-      filled: index < count
-    }));
-    return {
-      id: rank.id,
-      label: rank.shortLabel,
-      count,
-      cells
-    };
-  });
   const safeAllActorCount = Math.max(Number(allActorCount) || 0, totalAssigned + unassignedCount);
   return {
     totalAssigned,
     allActorCount: safeAllActorCount,
-    laneCounts,
     formationLabel,
     formationStateLabel,
     lightSources,
     lockState,
-    miniRows,
     cards: [
       {
         label: "All Actors",
@@ -277,14 +262,6 @@ export function buildMarchOverviewContext({
         value: String(totalAssigned),
         detail: `${totalAssigned} on march board`,
         toneClass: totalAssigned > 0 ? "" : "is-muted"
-      },
-      {
-        label: "Lane Spread",
-        value: "",
-        detail: "",
-        toneClass: "",
-        isMiniBoard: true,
-        miniRows
       },
       {
         label: "Light Sources",
@@ -320,6 +297,42 @@ function setActorPlacement(state, rankId, actorId, cellIndex) {
   state.rankPlacements[rankId][actorId] = cellIndex;
 }
 
+function getActorMarchRankId(state, actorId) {
+  const targetActorId = String(actorId ?? "").trim();
+  if (!targetActorId) return "";
+  for (const [rankId, actorIds] of Object.entries(state?.ranks ?? {})) {
+    if (Array.isArray(actorIds) && actorIds.includes(targetActorId)) return rankId;
+  }
+  return "";
+}
+
+function getActorPlacement(state, rankId, actorId) {
+  const value = state?.rankPlacements?.[rankId]?.[actorId];
+  const numeric = Number.parseInt(String(value ?? ""), 10);
+  return Number.isInteger(numeric) && numeric >= 0 ? numeric : null;
+}
+
+function swapActorsInRanks(state, actorId, targetActorId) {
+  const sourceRankId = getActorMarchRankId(state, actorId);
+  const targetRankId = getActorMarchRankId(state, targetActorId);
+  if (!sourceRankId || !targetRankId) return false;
+  const sourceRank = state.ranks?.[sourceRankId];
+  const targetRank = state.ranks?.[targetRankId];
+  if (!Array.isArray(sourceRank) || !Array.isArray(targetRank)) return false;
+  const sourceIndex = sourceRank.indexOf(actorId);
+  const targetIndex = targetRank.indexOf(targetActorId);
+  if (sourceIndex < 0 || targetIndex < 0) return false;
+  const sourcePlacement = getActorPlacement(state, sourceRankId, actorId);
+  const targetPlacement = getActorPlacement(state, targetRankId, targetActorId);
+  sourceRank[sourceIndex] = targetActorId;
+  targetRank[targetIndex] = actorId;
+  clearActorPlacement(state, actorId);
+  clearActorPlacement(state, targetActorId);
+  if (targetPlacement !== null) setActorPlacement(state, targetRankId, actorId, targetPlacement);
+  if (sourcePlacement !== null) setActorPlacement(state, sourceRankId, targetActorId, sourcePlacement);
+  return true;
+}
+
 export function normalizeSocketMarchRequest(request, deps = {}) {
   const { marchOps, marchRanks, sanitizeSocketIdentifier, clampSocketText, noteMaxLength } = deps;
 
@@ -349,6 +362,12 @@ export function normalizeSocketMarchRequest(request, deps = {}) {
 
   if (op === "leaveRank") {
     return { op, actorId };
+  }
+
+  if (op === "swapActors") {
+    const targetActorId = sanitizeSocketIdentifier(request.targetActorId, { maxLength: 64 });
+    if (!targetActorId || targetActorId === actorId) return null;
+    return { op, actorId, targetActorId };
   }
 
   if (op === "setLight") {
@@ -460,6 +479,33 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
       request.actorId,
       Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0 ? requestedCellIndex : null
     );
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return marchRequestSuccess(marchScope);
+  }
+
+  if (request.op === "swapActors") {
+    const targetActor = game?.actors?.get?.(request.targetActorId) ?? null;
+    const requesterCanControlTarget = Boolean(
+      targetActor &&
+      (requester?.isGM || requesterHasSharedPageAccess || canUserOperatePartyActor?.(targetActor, requester))
+    );
+    if (!requesterCanControlActor || !requesterCanControlTarget) {
+      logUiDebug?.("marching-order", "socket reject swapActors (permission denied)", {
+        actorId: request.actorId,
+        targetActorId: request.targetActorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return marchRequestFailure("You do not have permission to swap those actors in marching order.", marchScope);
+    }
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester))
+      return marchRequestFailure("Marching order is locked by the GM.", marchScope);
+    const swapped = swapActorsInRanks(state, request.actorId, request.targetActorId);
+    if (!swapped) return marchRequestFailure("Both actors must already be in the marching order.", marchScope);
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");
@@ -628,6 +674,10 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
       event?.preventDefault?.();
       event?.stopPropagation?.();
       if (selectedClickActorId && selectedClickActorId !== actorId) {
+        if (event?.shiftKey) {
+          await swapSelectedActorWithTarget(actorId);
+          return;
+        }
         const targetCell =
           entry.closest?.(".po-march-board-cell[data-rank-id]") ??
           entry.closest?.(".po-march-spacing-cell[data-rank-id]") ??
@@ -686,6 +736,28 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
       entry.setAttribute("aria-pressed", selected ? "true" : "false");
     });
     dropTargets.forEach((target) => target.classList.toggle("is-click-target", Boolean(actorId)));
+  };
+
+  const swapSelectedActorWithTarget = async (targetActorId) => {
+    const liveState = getMarchingOrderState();
+    if (isLockedForUser(liveState, isActualGM)) {
+      notifyUiWarnThrottled("Marching order is locked by the GM.", {
+        key: "marching-order-locked",
+        ttlMs: 1500
+      });
+      clearClickSelection();
+      return;
+    }
+    const actorId = selectedClickActorId;
+    if (!actorId || !targetActorId || actorId === targetActorId) return;
+    const saved = await updateMarchingOrderState(
+      { op: "swapActors", actorId, targetActorId },
+      { skipLocalRefresh: true }
+    );
+    if (saved !== false) {
+      clearClickSelection();
+      refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
+    }
   };
 
   const moveSelectedActorToTarget = async (column, event) => {

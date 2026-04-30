@@ -151,13 +151,16 @@ class FakeElement {
     leadershipCheckDue: false
   });
 
-  assert.equal(overview.cards.length, 4);
+  assert.equal(overview.cards.length, 3);
   assert.equal(overview.cards[0].label, "All Actors");
   assert.equal(overview.cards[0].value, "6");
   assert.equal(overview.cards[0].detail, "1 not deployed");
-  assert.equal(overview.cards[2].isMiniBoard, true);
-  assert.equal(overview.cards[2].miniRows.find((row) => row.id === "front").count, 2);
-  assert.equal(overview.cards[3].toneClass, "is-muted");
+  assert.equal(
+    overview.cards.some((card) => card.label === "Lane Spread"),
+    false
+  );
+  assert.equal(overview.cards[2].label, "Light Sources");
+  assert.equal(overview.cards[2].toneClass, "is-muted");
 }
 
 {
@@ -168,7 +171,7 @@ class FakeElement {
 }
 
 {
-  const ops = new Set(["joinRank", "leaveRank", "setNote", "setLight", "setLightRange", "replaceState"]);
+  const ops = new Set(["joinRank", "leaveRank", "setNote", "setLight", "setLightRange", "swapActors", "replaceState"]);
   const ranks = new Set(["front"]);
   const normalize = (request) =>
     normalizeSocketMarchRequest(request, {
@@ -188,6 +191,11 @@ class FakeElement {
     actorId: "actor-a",
     range: "bright",
     value: 25
+  });
+  assert.deepEqual(normalize({ op: "swapActors", actorId: "actor-a", targetActorId: "actor-b" }), {
+    op: "swapActors",
+    actorId: "actor-a",
+    targetActorId: "actor-b"
   });
   assert.deepEqual(normalize({ op: "replaceState", state: { ranks: {} } }), {
     op: "replaceState",
@@ -239,6 +247,45 @@ class FakeElement {
   assert.deepEqual(state.lightRanges["actor-a"], { bright: 35, dim: 40 });
   assert.equal(saves.length, 2);
   assert.deepEqual(refreshes, [{ scope: "march" }, { scope: "march" }]);
+}
+
+{
+  const state = {
+    ranks: { front: ["actor-a"], middle: ["actor-b"], rear: [] },
+    rankPlacements: { front: { "actor-a": 1001 }, middle: { "actor-b": 1014 }, rear: {} }
+  };
+  const requester = { id: "gm", isGM: true, name: "GM" };
+  const saves = [];
+  const result = await applyMarchRequest(
+    { op: "swapActors", actorId: "actor-a", targetActorId: "actor-b" },
+    requester,
+    {
+      getMarchingOrderState: () => state,
+      game: { actors: { get: (id) => ({ id, type: "character" }) } },
+      resolveRequester: () => requester,
+      canAccessAllPlayerOps: () => true,
+      canUserControlActor: () => true,
+      canUserOperatePartyActor: () => true,
+      isMarchingOrderPlayerLocked: () => false,
+      stampUpdate: () => {},
+      setModuleSettingWithLocalRefreshSuppressed: async (_key, value) => {
+        saves.push(value);
+        return true;
+      },
+      settings: { MARCH_STATE: "marchState" },
+      scheduleIntegrationSync: () => {},
+      refreshOpenApps: () => {},
+      refreshScopeKeys: { MARCH: "march" },
+      emitSocketRefresh: () => {},
+      logUiDebug: () => {}
+    }
+  );
+  assert.deepEqual(result, { ok: true, summary: "", scope: "march" });
+  assert.deepEqual(state.ranks.front, ["actor-b"]);
+  assert.deepEqual(state.ranks.middle, ["actor-a"]);
+  assert.deepEqual(state.rankPlacements.front, { "actor-b": 1001 });
+  assert.deepEqual(state.rankPlacements.middle, { "actor-a": 1014 });
+  assert.equal(saves.length, 1);
 }
 
 {
@@ -747,6 +794,20 @@ class FakeElement {
       isLockedForUser: () => false,
       notifyUiWarnThrottled: () => {},
       updateMarchingOrderState: async (request) => {
+        if (request?.op === "swapActors") {
+          let actorRank = "";
+          let targetRank = "";
+          for (const [rankId, actorIds] of Object.entries(state.ranks)) {
+            if (actorIds.includes(request.actorId)) actorRank = rankId;
+            if (actorIds.includes(request.targetActorId)) targetRank = rankId;
+          }
+          if (!actorRank || !targetRank) return;
+          const actorIndex = state.ranks[actorRank].indexOf(request.actorId);
+          const targetIndex = state.ranks[targetRank].indexOf(request.targetActorId);
+          state.ranks[actorRank][actorIndex] = request.targetActorId;
+          state.ranks[targetRank][targetIndex] = request.actorId;
+          return;
+        }
         if (request?.op !== "joinRank") return;
         const { actorId, rankId, insertIndex: rawInsert, cellIndex: rawCell } = request;
         for (const key of Object.keys(state.ranks)) {
@@ -817,7 +878,22 @@ class FakeElement {
   });
   assert.deepEqual(state.ranks.rear, ["actor-a", "actor-b"]);
   assert.deepEqual(state.rankPlacements.rear, { "actor-a": 0, "actor-b": 0 });
-  assert.deepEqual(refreshes, ["march-app", "march-app", "march-app"]);
+
+  await spacingTokenA.dispatch("click", {
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    target: { closest: () => null }
+  });
+  await spacingTokenB.dispatch("click", {
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    shiftKey: true,
+    target: {
+      closest: (selector) => (selector === ".po-march-spacing-token" ? spacingTokenB : null)
+    }
+  });
+  assert.deepEqual(state.ranks.rear, ["actor-b", "actor-a"]);
+  assert.deepEqual(refreshes, ["march-app", "march-app", "march-app", "march-app"]);
 }
 
 {
