@@ -118,7 +118,7 @@
   "author": "",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=20.9.0 <21"
+    "node": ">=24.0.0 <25"
   },
   "type": "module",
   "bugs": {
