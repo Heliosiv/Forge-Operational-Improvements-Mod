@@ -41,12 +41,10 @@ function normalizeLegacyTextToHtml(value) {
     .map((chunk) => chunk.trim())
     .filter(Boolean);
   if (paragraphs.length === 0) return "";
-  return paragraphs
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
-    .join("");
+  return paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`).join("");
 }
 
-function sanitizeRichTextHtml(value) {
+export function sanitizeRichTextHtml(value) {
   const rawHtml = normalizeLegacyTextToHtml(value);
   if (!rawHtml) return "";
   const scratch = document.createElement("div");
@@ -66,19 +64,35 @@ function sanitizeRichTextHtml(value) {
     if (tag === "a") {
       const href = String(node.getAttribute("href") ?? "").trim();
       const safeHref = /^(https?:|mailto:|#|\/)/i.test(href);
+      const attrs = Array.from(node.attributes ?? []);
+      for (const attr of attrs) {
+        if (String(attr?.name ?? "").toLowerCase() !== "href") node.removeAttribute(attr.name);
+      }
       if (!safeHref) node.removeAttribute("href");
+      else node.setAttribute("href", href);
       node.setAttribute("target", "_blank");
       node.setAttribute("rel", "noopener noreferrer");
       continue;
     }
     const attrs = Array.from(node.attributes ?? []);
-    for (const attr of attrs) {
-      if (String(attr?.name ?? "").toLowerCase() === "class") continue;
-      node.removeAttribute(attr.name);
-    }
+    for (const attr of attrs) node.removeAttribute(attr.name);
   }
 
   return scratch.innerHTML.trim();
+}
+
+export function buildSharedNoteLinkPromptContent({ defaultUrl = "https://", selectedText = "" } = {}) {
+  return `
+        <div class="form-group">
+          <label>URL</label>
+          <input type="url" name="linkUrl" value="${escapeHtml(defaultUrl)}" placeholder="https://example.com" style="width: 100%; padding: 8px;" />
+        </div>
+        ${
+          selectedText
+            ? `<div class="form-group"><label>Text</label><input type="text" name="linkText" value="${escapeHtml(selectedText)}" disabled style="width: 100%; padding: 8px;" /></div>`
+            : ""
+        }
+      `;
 }
 
 function getRichTextContentLength(value) {
@@ -142,7 +156,10 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
   #setSaveStatus(message = "", tone = "info") {
     this.#saveStatus = {
       message: String(message ?? "").trim(),
-      tone: String(tone ?? "info").trim().toLowerCase() || "info"
+      tone:
+        String(tone ?? "info")
+          .trim()
+          .toLowerCase() || "info"
     };
 
     const root = this.element instanceof HTMLElement ? this.element : (this.element?.[0] ?? null);
@@ -193,13 +210,7 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
 
     const result = await Dialog.prompt({
       title: "Insert Link",
-      content: `
-        <div class="form-group">
-          <label>URL</label>
-          <input type="url" name="linkUrl" value="${defaultUrl}" placeholder="https://example.com" style="width: 100%; padding: 8px;" />
-        </div>
-        ${selectedText ? `<div class="form-group"><label>Text</label><input type="text" name="linkText" value="${selectedText}" disabled style="width: 100%; padding: 8px;" /></div>` : ""}
-      `,
+      content: buildSharedNoteLinkPromptContent({ defaultUrl, selectedText }),
       rejectClose: false
     });
 
@@ -348,7 +359,11 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
       });
     }
 
-    if (this.#focusInputOnRender && editor instanceof HTMLElement && editor.getAttribute("contenteditable") === "true") {
+    if (
+      this.#focusInputOnRender &&
+      editor instanceof HTMLElement &&
+      editor.getAttribute("contenteditable") === "true"
+    ) {
       this.#focusInputOnRender = false;
       editor.focus?.({ preventScroll: true });
     }

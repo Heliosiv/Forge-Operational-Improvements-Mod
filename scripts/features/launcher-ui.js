@@ -144,8 +144,8 @@ export function createLauncherUiController(options = {}) {
 
   function applyFloatingLauncherLockUi(launcher, locked) {
     if (!launcher) return;
-    launcher.classList?.toggle?.("is-locked", Boolean(locked));
-    launcher.classList?.toggle?.("is-unlocked", !Boolean(locked));
+    launcher.classList?.toggle?.("is-locked", locked);
+    launcher.classList?.toggle?.("is-unlocked", !locked);
     const lockBtn = launcher.querySelector?.(".po-floating-lock");
     const unlockBtn = launcher.querySelector?.(".po-floating-unlock");
     const handle = launcher.querySelector?.(".po-floating-handle");
@@ -840,11 +840,15 @@ export function createLauncherUiController(options = {}) {
 
     try {
       await setLauncherPlacement(launcherPlacements?.BOTH);
-    } catch {}
+    } catch {
+      // Placement recovery is best-effort; reset below still runs.
+    }
 
     try {
       await resetFloatingLauncherPosition();
-    } catch {}
+    } catch {
+      // Position recovery is best-effort; launcher recreation below still runs.
+    }
 
     removeClickOpener();
     removeFloatingLauncher();

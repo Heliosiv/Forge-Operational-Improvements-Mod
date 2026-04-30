@@ -3,7 +3,7 @@ function escapeHtmlFallback(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -26,7 +26,11 @@ export function buildUuidJournalLink(uuid, label, { escape = escapeHtml } = {}) 
 
 export function installFoundryEscapeHtmlShim(foundryRef = globalThis.foundry) {
   try {
-    if (typeof foundryRef?.utils?.escapeHTML !== "function" && foundryRef?.utils && typeof foundryRef.utils === "object") {
+    if (
+      typeof foundryRef?.utils?.escapeHTML !== "function" &&
+      foundryRef?.utils &&
+      typeof foundryRef.utils === "object"
+    ) {
       foundryRef.utils.escapeHTML = escapeHtmlFallback;
     }
   } catch {

@@ -57,6 +57,9 @@
       <button type="button" class="po-btn po-btn-sm po-rest-campfire-all {{#if campfireOverview.allLit}}is-active{{/if}}" data-action="toggle-campfire-all">
         <i class="fa-solid fa-fire"></i> {{campfireOverview.toggleAllLabel}}
       </button>
+      <button type="button" class="po-btn po-btn-sm" data-action="post-rest-watch-summary">
+        <i class="fa-solid fa-message"></i> Post Summary
+      </button>
       <details class="po-rest-settings-menu">
         <summary class="po-rest-settings-summary" aria-label="Watch settings" title="Watch settings">
           <i class="fa-solid fa-gear"></i>
@@ -963,9 +966,42 @@
                     <span class="po-gather-launch-btn-sub">Check</span>
                   </span>
                 </button>
+                <button type="button" class="po-btn po-btn-sm" data-action="call-gather-requests" {{#unless operations.resources.gatherDelivery.activePlayerCount}}disabled{{/unless}}>
+                  <i class="fa-solid fa-bullhorn" aria-hidden="true"></i>
+                  Call Players
+                </button>
                 {{/if}}
               </div>
               <div class="po-op-summary">Use Monk's TokenBar for the player-facing roll. Party Operations records the result and adds gathered food or water after the roll resolves.</div>
+              {{#if operations.resources.gatherDelivery.hasRows}}
+              <div class="po-op-divider"></div>
+              <div class="po-gather-history-panel po-gather-delivery-panel">
+                <div class="po-section-head-row po-gather-history-head">
+                  <div>
+                    <div class="po-section-title">Gather Delivery</div>
+                    <div class="po-hint">{{operations.resources.gatherDelivery.activePlayerLabel}}. Resend only targets active players who have not responded.</div>
+                  </div>
+                </div>
+                <div class="po-gather-request-list">
+                  {{#each operations.resources.gatherDelivery.rows}}
+                  <article class="po-gather-request-card">
+                    <div class="po-gather-request-head">
+                      <div class="po-gather-request-title-wrap">
+                        <div class="po-op-role-name">Call from {{promptedBy}}</div>
+                        <div class="po-op-summary">{{sentAtLabel}} | {{summaryLabel}}</div>
+                      </div>
+                      <button type="button" class="po-btn po-btn-sm" data-action="resend-gather-call" data-call-id="{{id}}" {{#unless hasAwaitingRecipients}}disabled{{/unless}}>Resend Missed</button>
+                    </div>
+                    <div class="po-gather-chip-row">
+                      {{#each recipients}}
+                      <span class="po-gather-chip {{statusClass}}">{{userName}}: {{statusLabel}}</span>
+                      {{/each}}
+                    </div>
+                  </article>
+                  {{/each}}
+                </div>
+              </div>
+              {{/if}}
               {{#if operations.resources.gatherRequests.hasRows}}
               <div class="po-op-divider"></div>
               <div class="po-gather-history-panel po-gather-queue-panel">

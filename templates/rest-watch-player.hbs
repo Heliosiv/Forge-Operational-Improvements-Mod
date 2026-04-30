@@ -36,6 +36,18 @@
       </div>
       {{/if}}
 
+      {{#if playerHubFlow.hasCards}}
+      <section class="po-overview po-player-hub-flow" aria-label="Player workflow">
+        {{#each playerHubFlow.cards}}
+        <button type="button" class="po-overview-card {{toneClass}} {{#if selected}}is-active{{/if}}" data-action="player-hub-tab" data-tab="{{tab}}" aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+          <span>{{label}}</span>
+          <strong>{{value}}</strong>
+          <div class="po-overview-card-detail">{{detail}}</div>
+        </button>
+        {{/each}}
+      </section>
+      {{/if}}
+
       {{#if playerHubWatch}}
       {{> "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs"}}
       {{/if}}

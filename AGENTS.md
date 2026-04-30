@@ -11,6 +11,7 @@ Run these tools automatically when they apply:
 - After any JavaScript change, run `npm run lint` and the closest focused `npm run check:*` script for the touched feature.
 - After touching `module.json`, templates, styles, pack paths, or release metadata, run `npm run check:baseline`.
 - Before release/package work, run `npm run check` and then `npm run prepare:release`.
+- For every commit intended to be deployed, released, or pushed as a new installable build, bump `module.json` to a new version before committing so Foundry and Forge can recognize the manifest as newer than the installed copy.
 - For every deployment/release, update `README.md` so `Current Build` matches `module.json` and the install/update path stays pointed at the GitHub release manifest for `Forge-Operational-Improvements-Mod`, not a manually shared local zip.
 - For every tagged GitHub release, publish the same version to the official Foundry package listing with `npm run publish:foundry` so Forge can detect the update. Do not treat GitHub release assets alone as deployed for Forge; if `FOUNDRY_PACKAGE_RELEASE_TOKEN` is missing locally or as a GitHub repository secret, stop and report that Forge cannot recognize the release until the token is added.
 - For formatting-supported files you touched (`.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.css`), run `npm run format:check -- <touched-files>`. Use `npm run format -- <touched-files>` to format only those explicit files.

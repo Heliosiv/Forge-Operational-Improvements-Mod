@@ -168,6 +168,106 @@
           </div>
         </div>
 
+        <div class="po-op-divider"></div>
+        <div class="po-env-field-grid is-compact">
+          <label class="po-resource-row">
+            <span>Calendar Climate</span>
+            <select name="calendarWeatherClimate" class="po-select" data-action="gm-calendar-weather-set-climate">
+              {{#each gmQuickTools.weatherCalendar.climateOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+
+          <label class="po-resource-row">
+            <span>Auto-Roll Daily</span>
+            <input type="checkbox" data-action="gm-calendar-weather-toggle-auto" {{#if gmQuickTools.weatherCalendar.autoApply}}checked{{/if}} />
+          </label>
+
+          <label class="po-resource-row">
+            <span>Auto Climate</span>
+            <input type="checkbox" data-action="gm-calendar-weather-toggle-auto-climate" {{#if gmQuickTools.weatherCalendar.climateAutoApply}}checked{{/if}} />
+          </label>
+
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">Calendar Weather</span>
+            <span class="po-env-summary-copy">{{gmQuickTools.weatherCalendar.dateLabel}} - {{gmQuickTools.weatherCalendar.climate}} {{gmQuickTools.weatherCalendar.season}} - {{gmQuickTools.weatherCalendar.climateModeLabel}} - last {{gmQuickTools.weatherCalendar.lastRolledAtLabel}}</span>
+          </div>
+
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">Suggested Climate</span>
+            <span class="po-env-summary-copy">{{gmQuickTools.weatherCalendar.recommendedClimate}} - {{gmQuickTools.weatherCalendar.recommendedClimateConfidence}} - {{gmQuickTools.weatherCalendar.recommendedClimateReason}}</span>
+          </div>
+        </div>
+
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-action="gm-calendar-weather-apply-suggested-climate" {{#unless gmQuickTools.weatherCalendar.canApplyRecommendedClimate}}disabled{{/unless}}>Apply Suggested Climate</button>
+        </div>
+
+        <div class="po-env-field-grid is-compact">
+          <label class="po-resource-row">
+            <span>Terrain PNG</span>
+            <input type="text" class="po-input" data-action="gm-calendar-weather-set-terrain-image" value="{{gmQuickTools.weatherCalendar.terrainImagePath}}" placeholder="worlds/your-world/maps/county.png" />
+          </label>
+
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">PNG Import</span>
+            <span class="po-env-summary-copy">
+              {{#if gmQuickTools.weatherCalendar.terrainImportedSummary}}
+              {{gmQuickTools.weatherCalendar.terrainImportedSummary}} - {{gmQuickTools.weatherCalendar.terrainImportedAtLabel}}
+              {{else}}
+              {{#if gmQuickTools.weatherCalendar.hasTerrainImagePath}}
+              {{gmQuickTools.weatherCalendar.terrainImagePath}} - not imported
+              {{else}}
+              Choose a county/map PNG, then import terrain.
+              {{/if}}
+              {{/if}}
+            </span>
+          </div>
+        </div>
+
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-action="gm-calendar-weather-browse-terrain-image">Browse PNG</button>
+          <button type="button" class="po-btn po-btn-sm" data-action="gm-calendar-weather-preview-terrain-image" {{#unless gmQuickTools.weatherCalendar.hasTerrainImagePath}}disabled{{/unless}}>Preview PNG Terrain</button>
+          <button type="button" class="po-btn po-btn-sm" data-action="gm-calendar-weather-import-terrain-image" {{#unless gmQuickTools.weatherCalendar.hasTerrainImagePath}}disabled{{/unless}}>Import PNG Terrain</button>
+          {{#if gmQuickTools.weatherCalendar.hasTerrainJournalEntry}}
+          <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{gmQuickTools.weatherCalendar.terrainJournalEntryId}}">Open Terrain Archive</button>
+          {{/if}}
+        </div>
+
+        {{#if gmQuickTools.weatherCalendar.hasTerrainImageAnalysis}}
+        <div class="po-env-summary-list">
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">PNG Analysis</span>
+            <span class="po-env-summary-copy">{{gmQuickTools.weatherCalendar.terrainAnalysisModeLabel}} - {{gmQuickTools.weatherCalendar.terrainAnalysisSummary}} - confidence {{gmQuickTools.weatherCalendar.terrainImageAnalysis.confidenceLabel}} - ignored {{gmQuickTools.weatherCalendar.terrainImageAnalysis.ignoredPercentLabel}}</span>
+          </div>
+          {{#each gmQuickTools.weatherCalendar.terrainAnalysisRows}}
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">{{label}}</span>
+            <span class="po-env-summary-copy">Weight {{value}} - {{pixelCount}} px - {{percentLabel}}</span>
+          </div>
+          {{/each}}
+        </div>
+        {{/if}}
+
+        <div class="po-env-field-grid is-compact">
+          {{#each gmQuickTools.weatherCalendar.terrainRows}}
+          <label class="po-resource-row" title="{{hint}}">
+            <span>{{label}}</span>
+            <input type="number" min="0" max="20" step="1" class="po-input" data-action="gm-calendar-weather-set-terrain" data-terrain-key="{{key}}" value="{{value}}" />
+          </label>
+          {{/each}}
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">Terrain Profile</span>
+            <span class="po-env-summary-copy">{{gmQuickTools.weatherCalendar.terrainSummary}}</span>
+          </div>
+        </div>
+
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-action="gm-calendar-weather-clear-terrain">Clear Terrain</button>
+          <button type="button" class="po-btn po-btn-sm" data-action="gm-calendar-weather-roll">Roll Calendar Weather</button>
+        </div>
+
         <label class="po-resource-row">
           <span>Log Note</span>
           <textarea name="quickWeatherNote" rows="3" class="po-input" data-action="gm-quick-weather-set" data-field="note" placeholder="Optional global weather note">{{gmQuickTools.weatherDraft.note}}</textarea>
@@ -525,10 +625,16 @@
                 </div>
                 <div class="po-op-action-row">
                   <button type="button" class="po-btn po-btn-sm" data-action="load-weather-log" data-log-id="{{id}}">Load</button>
+                  {{#if hasJournalEntry}}
+                  <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{journalEntryId}}">Open Archive</button>
+                  {{/if}}
                   <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-weather-log" data-log-id="{{id}}">Remove</button>
                 </div>
               </div>
               <div class="po-op-summary">{{loggedAtLabel}} by {{loggedBy}}</div>
+              {{#if hasDetailsText}}
+              <div class="po-op-summary">{{detailsText}}</div>
+              {{/if}}
               {{#if note}}
               <div class="po-op-summary">Note: {{note}}</div>
               {{/if}}

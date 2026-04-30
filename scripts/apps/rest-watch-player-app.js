@@ -67,16 +67,58 @@ export function createRestWatchPlayerAppClass(deps = {}) {
     getLootClaimRunIdFromElement,
     openLootItemFromElement,
     queueCanvasViewRestore,
-    isRestWatchLockedForUser,
-    canAccessAllPlayerOps,
-    notifyUiWarnThrottled,
-    getActiveActorForUser,
     buildPlayerActorSelectorContext,
     switchActiveCharacter,
-    saveRestWatchEntryNoteByContext,
     isModuleDebugEnabled,
     game
   } = deps;
+
+  function buildPlayerHubFlowContext({
+    overview = {},
+    playerMarch = {},
+    lootClaims = {},
+    downtime = {},
+    playerHubTab = "watch"
+  } = {}) {
+    const cards = [
+      {
+        tab: "watch",
+        label: "Watch",
+        value: `${Math.max(0, Number(overview.occupiedSlots ?? 0) || 0)}/${Math.max(0, Number(overview.totalSlots ?? 0) || 0)}`,
+        detail: `${Math.max(0, Number(overview.assignedEntries ?? 0) || 0)} assigned`,
+        selected: playerHubTab === "watch",
+        toneClass: overview.hasLowDarkvisionCoverage ? "is-alert" : ""
+      },
+      {
+        tab: "march",
+        label: "March",
+        value: String(playerMarch.currentRankLabel ?? "Unassigned"),
+        detail: playerMarch.hasActor ? String(playerMarch.actorName ?? "") : "No active character",
+        selected: playerHubTab === "march",
+        toneClass: playerMarch.canSetRank ? "" : "is-muted"
+      },
+      {
+        tab: "loot",
+        label: "Loot",
+        value: `${Math.max(0, Number(lootClaims.openRunCount ?? 0) || 0)} open`,
+        detail: `${Math.max(0, Number(lootClaims.itemCount ?? 0) || 0)} item(s) visible`,
+        selected: playerHubTab === "loot",
+        toneClass: lootClaims.hasOpenRuns ? "" : "is-muted"
+      },
+      {
+        tab: "downtime",
+        label: "Downtime",
+        value: `${Math.max(0, Number(downtime.pendingCount ?? 0) || 0)} pending`,
+        detail: downtime?.publication?.statusLabel ?? "Not published",
+        selected: playerHubTab === "downtime",
+        toneClass: downtime?.submit?.canSubmit ? "" : "is-muted"
+      }
+    ];
+    return {
+      cards,
+      hasCards: cards.length > 0
+    };
+  }
 
   return class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
@@ -113,6 +155,20 @@ export function createRestWatchPlayerAppClass(deps = {}) {
         const downtime = buildDowntimeContext(ensureDowntimeState(ledger), { user: game.user });
         const playerMarch = buildPlayerMarchQuickContext();
         const playerActorSelector = buildPlayerActorSelectorContext?.() ?? { hasChoices: false, options: [] };
+        const playerHubFlow = buildPlayerHubFlowContext({
+          overview: {
+            totalSlots,
+            occupiedSlots,
+            assignedEntries,
+            lowDarkvisionSlots,
+            hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
+            lockState: state.locked ? "Locked by GM" : "Open"
+          },
+          playerMarch,
+          lootClaims,
+          downtime,
+          playerHubTab
+        });
         const context = {
           isGM: false,
           locked: state.locked,
@@ -133,6 +189,7 @@ export function createRestWatchPlayerAppClass(deps = {}) {
           playerHubDowntime: playerHubTab === "downtime",
           slots,
           miniViz,
+          playerHubFlow,
           playerActorSelector,
           playerMarch,
           downtime,
@@ -227,6 +284,7 @@ export function createRestWatchPlayerAppClass(deps = {}) {
           },
           lootClaims: {},
           operationsJournal: {},
+          playerHubFlow: { cards: [], hasCards: false },
           ...buildMiniVizUiContext(),
           overview: {
             totalSlots: 0,
@@ -297,11 +355,11 @@ export function createRestWatchPlayerAppClass(deps = {}) {
             queueDropTarget.classList.remove("is-drop-target");
             const payloadRaw = event.dataTransfer?.getData("application/x-party-ops-downtime-queue") ?? "";
             if (!payloadRaw) return;
-            let payload = null;
+            let payload;
             try {
               payload = JSON.parse(payloadRaw);
             } catch {
-              payload = null;
+              return;
             }
             const sourceActorId = String(payload?.actorId ?? "").trim();
             const sourceQueueIndex = Number(payload?.queueIndex ?? -1);
@@ -524,30 +582,6 @@ export function createRestWatchPlayerAppClass(deps = {}) {
           });
         }
       }
-    }
-
-    async #onNotesChange(event) {
-      if (event?.type === "input") return;
-      const state = getRestWatchState();
-      if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
-        notifyUiWarnThrottled("Rest watch is locked by the GM.", {
-          key: "rest-watch-locked",
-          ttlMs: 1500
-        });
-        return;
-      }
-      const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
-      if (!slotId) return;
-      const text = event.target.value ?? "";
-      const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
-      if (!actorId) return;
-      await saveRestWatchEntryNoteByContext(
-        { slotId, actorId, text },
-        {
-          notify: false,
-          source: "manual"
-        }
-      );
     }
 
     async close(options = {}) {

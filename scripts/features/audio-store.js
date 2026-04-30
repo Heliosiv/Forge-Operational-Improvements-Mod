@@ -130,9 +130,7 @@ export function createAudioStore({
     const usageFocus = isCustom
       ? normalizeAudioLibraryUsage(input.usageFocus ?? preferredUsage[0] ?? "general")
       : normalizeAudioLibraryUsage(preferredUsage[0] ?? "all");
-    const playbackMode = normalizeAudioMixPlaybackMode(
-      input.playbackMode ?? (Boolean(input.repeat) ? "repeat" : "single")
-    );
+    const playbackMode = normalizeAudioMixPlaybackMode(input.playbackMode ?? (input.repeat ? "repeat" : "single"));
     const channel = normalizeAudioMixChannel(input.channel ?? inferAudioMixChannelForKind(kindFocus));
     const volumeRaw = Number(input.volume ?? 0.5);
     const fadeRaw = Number(input.fade ?? 1200);

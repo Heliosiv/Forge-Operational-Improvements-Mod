@@ -1,8 +1,8 @@
 export function createIntegrationAccess({
-  moduleId = "party-operations",
-  settings = {},
+  moduleId: _moduleId = "party-operations",
+  settings: _settings = {},
   integrationModes = {},
-  gameRef = globalThis.game ?? {}
+  gameRef: _gameRef = globalThis.game ?? {}
 } = {}) {
   function getIntegrationModeSetting() {
     return integrationModes.OFF;

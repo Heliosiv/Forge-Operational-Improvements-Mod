@@ -26,7 +26,7 @@ export function isWritableModuleSettingKey(settingKeyInput) {
  */
 export function canAccessAllPlayerOps(user = globalThis.game?.user) {
   if (!user) return false;
-  if (Boolean(user?.isGM)) return true;
+  if (user?.isGM) return true;
   try {
     return Boolean(globalThis.game?.settings?.get?.(MODULE_ID, SETTINGS.SHARED_GM_PERMISSIONS));
   } catch {

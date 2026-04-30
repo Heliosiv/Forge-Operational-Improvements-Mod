@@ -206,6 +206,13 @@
               </select>
             </label>
             <div class="po-op-summary">{{audio.mix.selectedPreset.description}}</div>
+            <div class="po-audio-chip-list po-audio-scene-presets" aria-label="Scene presets">
+              {{#each audio.mix.scenePresets}}
+              <button type="button" class="po-btn po-btn-sm {{#if selected}}is-primary{{/if}}" data-action="play-audio-scene-preset" data-preset-id="{{id}}" {{#unless candidateCount}}disabled{{/unless}}>
+                {{label}} <span class="po-pill">{{candidateCount}}</span>
+              </button>
+              {{/each}}
+            </div>
             <div class="po-audio-chip-list">
               {{#if audio.mix.selectedPreset.isCustom}}<span class="po-pill">Custom</span>{{else}}<span class="po-pill">Built-in</span>{{/if}}
               {{#if audio.mix.selectedPreset.hasSavedTrackList}}

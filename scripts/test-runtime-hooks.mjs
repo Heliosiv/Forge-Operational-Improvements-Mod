@@ -33,9 +33,17 @@ import {
   const seen = [];
   const registerFeatures = createFeatureRegistrar({
     features: [
-      { register() { seen.push("rest"); } },
+      {
+        register() {
+          seen.push("rest");
+        }
+      },
       {},
-      { register() { seen.push("march"); } }
+      {
+        register() {
+          seen.push("march");
+        }
+      }
     ]
   });
 
@@ -52,17 +60,17 @@ import {
       }
     },
     getHookModules() {
-      return [
-        { registrations: [["ready", () => {}]] },
-        { registrations: [["init", () => {}]] }
-      ];
+      return [{ registrations: [["ready", () => {}]] }, { registrations: [["init", () => {}]] }];
     }
   });
 
   registerHooks();
   registerHooks();
 
-  assert.deepEqual(registrations.map((entry) => entry.eventName), ["ready", "init"]);
+  assert.deepEqual(
+    registrations.map((entry) => entry.eventName),
+    ["ready", "init"]
+  );
 }
 
 {
@@ -71,6 +79,7 @@ import {
   const audioResyncs = [];
   const pendingSyncReasons = [];
   const upkeepActions = [];
+  const timeActions = [];
   const perfEvents = [];
   const environmentMoves = new Map();
 
@@ -92,8 +101,15 @@ import {
       PENDING: "pending"
     },
     notifyDailyInjuryReminders() {},
-    handleAutomaticOperationalUpkeepTick() {},
-    handleAutomaticMerchantAutoRefreshTick() {},
+    handleAutomaticOperationalUpkeepTick() {
+      timeActions.push("upkeep");
+    },
+    handleAutomaticMerchantAutoRefreshTick() {
+      timeActions.push("merchants");
+    },
+    handleAutomaticCalendarWeatherTick() {
+      timeActions.push("weather");
+    },
     handleAutomaticUpkeepChatAction(action, message) {
       upkeepActions.push({ action, message });
     },
@@ -154,16 +170,18 @@ import {
     }
   });
 
-  assert.equal(modules.length, 9);
+  assert.equal(modules.length, 10);
+
+  const timeHandler = modules.find((module) => module.id === "time").registrations[0][1];
+  await timeHandler();
+  assert.deepEqual(timeActions, [], "Non-GM clients should not run automatic GM time ticks");
 
   const settingsHandler = modules.find((module) => module.id === "settings").registrations[0][1];
   settingsHandler({ key: "party-operations.restWatchState" });
   settingsHandler({ key: "party-operations.integrationMode" });
   settingsHandler({ key: "party-operations.ignored" });
 
-  assert.deepEqual(refreshes, [
-    { scopes: ["scope:party-operations.restWatchState"] }
-  ]);
+  assert.deepEqual(refreshes, [{ scopes: ["scope:party-operations.restWatchState"] }]);
   assert.deepEqual(integrationReasons, []);
 
   const audioHandler = modules.find((module) => module.id === "audio-playback").registrations[0][1];
@@ -177,7 +195,11 @@ import {
       }
     }
   ]);
-  assert.ok(perfEvents.some((entry) => entry.metricName === "setting.updated" && entry.meta?.settingKey === "party-operations.restWatchState"));
+  assert.ok(
+    perfEvents.some(
+      (entry) => entry.metricName === "setting.updated" && entry.meta?.settingKey === "party-operations.restWatchState"
+    )
+  );
   assert.ok(perfEvents.some((entry) => entry.metricName === "refresh-open-apps"));
   assert.ok(perfEvents.some((entry) => entry.metricName === "audio-playback-resync"));
 
@@ -199,12 +221,14 @@ import {
     },
     {
       querySelectorAll() {
-        return [{
-          dataset: { poChatAction: "approve" },
-          addEventListener(eventName, handler) {
-            clickListeners.push({ eventName, handler });
+        return [
+          {
+            dataset: { poChatAction: "approve" },
+            addEventListener(eventName, handler) {
+              clickListeners.push({ eventName, handler });
+            }
           }
-        }];
+        ];
       }
     }
   );
@@ -228,6 +252,9 @@ import {
   const tokenPreUpdateHandler = modules.find((module) => module.id === "tokens").registrations[1][1];
   tokenPreUpdateHandler({ id: "token-1", x: 3, y: 9 }, { x: 5 }, {});
   assert.deepEqual(environmentMoves.get("token-1"), { x: 3, y: 9 });
+
+  const lootRecentRollsModule = modules.find((module) => module.id === "loot-recent-rolls-cache");
+  assert.equal(lootRecentRollsModule.registrations[0][0], "canvasReady");
 }
 
 await (async () => {
@@ -276,8 +303,37 @@ await (async () => {
   await integrationHandler();
 
   assert.deepEqual(integrationReasons, ["update-setting", "canvas-ready"]);
-  assert.ok(perfEvents.some((entry) => entry.metricName === "integration-sync" && entry.meta?.reason === "canvas-ready"));
+  assert.ok(
+    perfEvents.some((entry) => entry.metricName === "integration-sync" && entry.meta?.reason === "canvas-ready")
+  );
 })();
+
+{
+  const timeActions = [];
+  const modules = buildPartyOpsRuntimeHookModules({
+    notifyDailyInjuryReminders() {
+      timeActions.push("injury");
+    },
+    handleAutomaticOperationalUpkeepTick() {
+      timeActions.push("upkeep");
+    },
+    handleAutomaticMerchantAutoRefreshTick() {
+      timeActions.push("merchants");
+    },
+    handleAutomaticCalendarWeatherTick() {
+      timeActions.push("weather");
+    },
+    gameRef: {
+      user: {
+        isGM: true
+      }
+    }
+  });
+
+  const timeHandler = modules.find((module) => module.id === "time").registrations[0][1];
+  await timeHandler();
+  assert.deepEqual(timeActions, ["injury", "upkeep", "merchants", "weather"]);
+}
 
 {
   const audioResyncs = [];

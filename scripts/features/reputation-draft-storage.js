@@ -12,7 +12,7 @@ export function createReputationDraftStorage({
   gameRef,
   storage,
   randomIdFn = () => Math.random().toString(36).slice(2),
-  deepCloneFn = (v) => JSON.parse(JSON.stringify(v)),
+  deepCloneFn = (v) => JSON.parse(JSON.stringify(v))
 } = {}) {
   // ── Storage key helpers ──────────────────────────────────────────────────
 
@@ -84,7 +84,9 @@ export function createReputationDraftStorage({
   });
 
   function normalizeReputationViewScope(value) {
-    return String(value ?? "").trim().toLowerCase() === REPUTATION_VIEW_SCOPES.GM
+    return String(value ?? "")
+      .trim()
+      .toLowerCase() === REPUTATION_VIEW_SCOPES.GM
       ? REPUTATION_VIEW_SCOPES.GM
       : REPUTATION_VIEW_SCOPES.OPERATIONS;
   }
@@ -127,9 +129,15 @@ export function createReputationDraftStorage({
       ? entry.playerImpacts.map((row) => normalizeReputationPlayerImpact(row)).slice(0, 12)
       : [];
     return {
-      label: String(entry?.label ?? "").trim().slice(0, 120),
-      category: String(entry?.category ?? "").trim().slice(0, 120),
-      represents: String(entry?.represents ?? "").trim().slice(0, 180),
+      label: String(entry?.label ?? "")
+        .trim()
+        .slice(0, 120),
+      category: String(entry?.category ?? "")
+        .trim()
+        .slice(0, 120),
+      represents: String(entry?.represents ?? "")
+        .trim()
+        .slice(0, 180),
       linkedActorId: String(entry?.linkedActorId ?? "").trim(),
       score: clampReputationStandingValue(entry?.score ?? 0),
       summary: String(entry?.summary ?? ""),
@@ -145,7 +153,7 @@ export function createReputationDraftStorage({
     if (!raw) return getDefaultReputationBuilderDraft();
     try {
       return normalizeReputationBuilderDraft(JSON.parse(raw));
-    } catch (_error) {
+    } catch {
       return getDefaultReputationBuilderDraft();
     }
   }
@@ -179,7 +187,7 @@ export function createReputationDraftStorage({
         keyword: String(parsed?.keyword ?? ""),
         standing: String(parsed?.standing ?? "all")
       };
-    } catch (_error) {
+    } catch {
       return defaults;
     }
   }
@@ -212,6 +220,6 @@ export function createReputationDraftStorage({
     saveReputationBuilderState,
     setReputationFilterState,
     setReputationNoteLogSelection,
-    updateReputationBuilderState,
+    updateReputationBuilderState
   });
 }

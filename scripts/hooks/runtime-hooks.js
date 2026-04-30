@@ -8,6 +8,7 @@ import { buildSettingHookModule } from "./runtime-modules/settings.js";
 import { buildTimeHookModule } from "./runtime-modules/time.js";
 import { buildTokenHookModule } from "./runtime-modules/tokens.js";
 import { buildUserPresenceHookModule } from "./runtime-modules/user-presence.js";
+import { buildLootRecentRollsCacheHookModule } from "../features/loot-recent-rolls-cache.js";
 
 export function registerHookModule({
   HooksRef = globalThis.Hooks,
@@ -53,6 +54,7 @@ export function buildPartyOpsRuntimeHookModules({
   notifyDailyInjuryReminders,
   handleAutomaticOperationalUpkeepTick,
   handleAutomaticMerchantAutoRefreshTick,
+  handleAutomaticCalendarWeatherTick,
   handleAutomaticUpkeepChatAction,
   schedulePendingSopNoteSync,
   applyAutoInventoryToUnlinkedToken,
@@ -80,6 +82,7 @@ export function buildPartyOpsRuntimeHookModules({
       notifyDailyInjuryReminders,
       handleAutomaticOperationalUpkeepTick,
       handleAutomaticMerchantAutoRefreshTick,
+      handleAutomaticCalendarWeatherTick,
       gameRef
     }),
     buildChatHookModule({
@@ -129,6 +132,7 @@ export function buildPartyOpsRuntimeHookModules({
       queueManagedAudioMixPlaybackResync,
       gameRef,
       perfTracker
-    })
+    }),
+    buildLootRecentRollsCacheHookModule()
   ];
 }

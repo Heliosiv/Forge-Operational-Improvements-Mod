@@ -63,6 +63,7 @@ export function createGmAudioPageApp(deps) {
     restoreAllHiddenAudioLibraryTracks,
     restoreHiddenAudioLibraryTrack,
     playSelectedAudioMixPreset,
+    playAudioScenePreset,
     playSelectedAudioMixCandidate,
     toggleAudioMixPlayback,
     playNextAudioMixTrack,
@@ -142,9 +143,11 @@ export function createGmAudioPageApp(deps) {
     }
 
     _shouldHandleInputAction(action) {
-      return action === "set-audio-library-draft-field"
-        || action === "set-audio-library-filter"
-        || action === "set-audio-mix-preset-option";
+      return (
+        action === "set-audio-library-draft-field" ||
+        action === "set-audio-library-filter" ||
+        action === "set-audio-mix-preset-option"
+      );
     }
 
     async _onPostRender(context, options) {
@@ -168,16 +171,29 @@ export function createGmAudioPageApp(deps) {
       const root = this.element;
       if (!root || root.dataset.poAudioRowOptionsBound === "1") return;
       root.dataset.poAudioRowOptionsBound = "1";
-      root.addEventListener("toggle", (event) => {
-        const details = event.target;
-        if (!(details instanceof HTMLDetailsElement) || !details.classList.contains("po-audio-row-options") || !details.open) return;
-        this._closeAudioRowOptionMenus(details);
-      }, true);
-      root.addEventListener("pointerdown", (event) => {
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest?.("details.po-audio-row-options")) return;
-        this._closeAudioRowOptionMenus();
-      }, true);
+      root.addEventListener(
+        "toggle",
+        (event) => {
+          const details = event.target;
+          if (
+            !(details instanceof HTMLDetailsElement) ||
+            !details.classList.contains("po-audio-row-options") ||
+            !details.open
+          )
+            return;
+          this._closeAudioRowOptionMenus(details);
+        },
+        true
+      );
+      root.addEventListener(
+        "pointerdown",
+        (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (target?.closest?.("details.po-audio-row-options")) return;
+          this._closeAudioRowOptionMenus();
+        },
+        true
+      );
       if (!this._audioRowOptionsDocumentPointerHandler) {
         this._audioRowOptionsDocumentPointerHandler = (event) => {
           const rootNow = this.element;
@@ -206,7 +222,7 @@ export function createGmAudioPageApp(deps) {
       if (!(targetRow instanceof HTMLElement)) return null;
       const targetIndex = Math.max(0, Math.floor(Number(targetRow.dataset.queueIndex ?? 0) || 0));
       const rect = targetRow.getBoundingClientRect();
-      const shouldInsertAfter = clientY >= rect.top + (rect.height / 2);
+      const shouldInsertAfter = clientY >= rect.top + rect.height / 2;
       const proposedIndex = shouldInsertAfter ? targetIndex + 1 : targetIndex;
       const sourceIndex = Math.max(0, Math.floor(Number(this._audioQueueDragState?.sourceIndex ?? 0) || 0));
       const adjustedIndex = sourceIndex < proposedIndex ? proposedIndex - 1 : proposedIndex;
@@ -334,21 +350,25 @@ export function createGmAudioPageApp(deps) {
     _bindLiveVolumeInput(input) {
       if (!(input instanceof HTMLInputElement) || input.dataset.poAudioLiveVolumeBound === "1") return;
       input.dataset.poAudioLiveVolumeBound = "1";
-      input.addEventListener("wheel", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const min = Number(input.min || 0);
-        const max = Number(input.max || 100);
-        const step = Math.max(1, Number(input.step || 1) || 1);
-        const direction = event.deltaY < 0 ? 1 : -1;
-        const multiplier = event.shiftKey ? 5 : 1;
-        const current = Number(input.value || 0);
-        const next = Math.max(min, Math.min(max, current + (direction * step * multiplier)));
-        if (next === current) return;
-        input.value = String(next);
-        this._syncAudioLiveVolumeLabel(input);
-        this._queueAudioLiveVolumeSave(input);
-      }, { passive: false });
+      input.addEventListener(
+        "wheel",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const min = Number(input.min || 0);
+          const max = Number(input.max || 100);
+          const step = Math.max(1, Number(input.step || 1) || 1);
+          const direction = event.deltaY < 0 ? 1 : -1;
+          const multiplier = event.shiftKey ? 5 : 1;
+          const current = Number(input.value || 0);
+          const next = Math.max(min, Math.min(max, current + direction * step * multiplier));
+          if (next === current) return;
+          input.value = String(next);
+          this._syncAudioLiveVolumeLabel(input);
+          this._queueAudioLiveVolumeSave(input);
+        },
+        { passive: false }
+      );
       input.addEventListener("pointerdown", (event) => {
         event.stopPropagation();
       });
@@ -386,10 +406,18 @@ export function createGmAudioPageApp(deps) {
         const seek = player.querySelector("[data-role='seek']");
         const volume = player.querySelector("[data-role='volume']");
         const volumeLabel = player.querySelector("[data-role='volume-label']");
-        if (!(media instanceof HTMLAudioElement) || !(seek instanceof HTMLInputElement) || !(volume instanceof HTMLInputElement)) continue;
+        if (
+          !(media instanceof HTMLAudioElement) ||
+          !(seek instanceof HTMLInputElement) ||
+          !(volume instanceof HTMLInputElement)
+        )
+          continue;
 
         let isSeeking = false;
-        const defaultDuration = Math.max(0, Number(player.dataset.defaultDuration ?? media.dataset.defaultDuration ?? 0) || 0);
+        const defaultDuration = Math.max(
+          0,
+          Number(player.dataset.defaultDuration ?? media.dataset.defaultDuration ?? 0) || 0
+        );
         const syncPlayState = () => {
           const isPlaying = !media.paused && !media.ended;
           toggle?.setAttribute("aria-label", isPlaying ? "Pause audio preview" : "Play audio preview");
@@ -402,9 +430,13 @@ export function createGmAudioPageApp(deps) {
           const duration = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
           const current = Number.isFinite(media.currentTime) && media.currentTime > 0 ? media.currentTime : 0;
           if (currentLabel) currentLabel.textContent = formatAudioPreviewTime(current);
-          if (durationLabel) durationLabel.textContent = duration > 0
-            ? formatAudioPreviewTime(duration)
-            : (defaultDuration > 0 ? formatAudioPreviewTime(defaultDuration) : "--:--");
+          if (durationLabel)
+            durationLabel.textContent =
+              duration > 0
+                ? formatAudioPreviewTime(duration)
+                : defaultDuration > 0
+                  ? formatAudioPreviewTime(defaultDuration)
+                  : "--:--";
           if (!isSeeking) {
             seek.disabled = duration <= 0;
             seek.value = duration > 0 ? String(Math.round((current / duration) * 1000)) : "0";
@@ -495,10 +527,11 @@ export function createGmAudioPageApp(deps) {
         const snapshotCurrentSeconds = Math.max(0, Number(snapshot?.currentSeconds ?? 0) || 0);
         const snapshotDurationSeconds = Math.max(0, Number(snapshot?.durationSeconds ?? 0) || 0);
         const snapshotProgressPermille = Math.max(0, Math.min(1000, Number(snapshot?.progressPermille ?? 0) || 0));
-        const hasActiveProgress = snapshotDurationSeconds > 0 && snapshotProgressPermille > 0 && snapshotProgressPermille < 1000;
-        const isAdvancing = snapshotCurrentSeconds > (previousCurrentSeconds + 0.01);
+        const hasActiveProgress =
+          snapshotDurationSeconds > 0 && snapshotProgressPermille > 0 && snapshotProgressPermille < 1000;
+        const isAdvancing = snapshotCurrentSeconds > previousCurrentSeconds + 0.01;
         previousCurrentSeconds = snapshotCurrentSeconds;
-        idleTicks = (hasActiveProgress || isAdvancing) ? 0 : (idleTicks + 1);
+        idleTicks = hasActiveProgress || isAdvancing ? 0 : idleTicks + 1;
 
         const nextPollMs = idleTicks >= 3 ? IDLE_POLL_MS : FAST_POLL_MS;
         if (nextPollMs !== currentPollMs) {
@@ -516,11 +549,14 @@ export function createGmAudioPageApp(deps) {
           const volumeLabel = card.querySelector("[data-role='live-volume-label']");
           const currentSeconds = isActive ? Math.max(0, Number(snapshot?.currentSeconds ?? 0) || 0) : 0;
           const durationSeconds = isActive ? Math.max(0, Number(snapshot?.durationSeconds ?? 0) || 0) : 0;
-          const progressPermille = isActive ? Math.max(0, Math.min(1000, Number(snapshot?.progressPermille ?? 0) || 0)) : 0;
+          const progressPermille = isActive
+            ? Math.max(0, Math.min(1000, Number(snapshot?.progressPermille ?? 0) || 0))
+            : 0;
           const volumePercent = isActive ? Math.max(0, Math.min(100, Number(snapshot?.volumePercent ?? 0) || 0)) : 0;
 
           if (currentLabel) currentLabel.textContent = formatAudioPreviewTime(currentSeconds);
-          if (durationLabel) durationLabel.textContent = durationSeconds > 0 ? formatAudioPreviewTime(durationSeconds) : "--:--";
+          if (durationLabel)
+            durationLabel.textContent = durationSeconds > 0 ? formatAudioPreviewTime(durationSeconds) : "--:--";
 
           if (progress instanceof HTMLInputElement) {
             progress.disabled = durationSeconds <= 0;
@@ -572,12 +608,20 @@ export function createGmAudioPageApp(deps) {
           setAudioLibraryFilterField(actionElement);
         }),
         "select-audio-track": rerenderIfTruthy((actionElement) => selectAudioLibraryTrack(actionElement)),
-        "toggle-audio-track-selection": rerenderIfTruthy((actionElement) => toggleAudioLibraryTrackSelection(actionElement)),
+        "toggle-audio-track-selection": rerenderIfTruthy((actionElement) =>
+          toggleAudioLibraryTrackSelection(actionElement)
+        ),
         "select-visible-audio-tracks": rerenderIfTruthy(() => selectVisibleAudioLibraryTracks()),
         "clear-selected-audio-tracks": rerenderIfTruthy(() => clearAudioLibraryTrackSelections()),
-        "set-audio-mix-track-browser-view": rerenderIfTruthy((actionElement) => setAudioMixTrackBrowserView(actionElement)),
-        "change-audio-mix-track-browser-page": rerenderIfTruthy((actionElement) => changeAudioMixTrackBrowserPage(actionElement)),
-        "toggle-audio-mix-track-selection": rerenderIfTruthy((actionElement) => toggleAudioMixTrackSelection(actionElement)),
+        "set-audio-mix-track-browser-view": rerenderIfTruthy((actionElement) =>
+          setAudioMixTrackBrowserView(actionElement)
+        ),
+        "change-audio-mix-track-browser-page": rerenderIfTruthy((actionElement) =>
+          changeAudioMixTrackBrowserPage(actionElement)
+        ),
+        "toggle-audio-mix-track-selection": rerenderIfTruthy((actionElement) =>
+          toggleAudioMixTrackSelection(actionElement)
+        ),
         "select-visible-audio-mix-tracks": rerenderIfTruthy(() => selectVisibleAudioMixTracks()),
         "clear-selected-audio-mix-tracks": rerenderIfTruthy(() => clearAudioMixTrackSelections()),
         "select-audio-mix-preset": rerenderIfTruthy((actionElement) => selectAudioMixPreset(actionElement)),
@@ -618,7 +662,10 @@ export function createGmAudioPageApp(deps) {
           return queueSelectedTrackNext(actionElement);
         }),
         "move-audio-mix-track": rerenderAlways((actionElement) => {
-          return moveTrackWithinSelectedAudioMixPreset(actionElement?.dataset?.trackId, actionElement?.dataset?.direction);
+          return moveTrackWithinSelectedAudioMixPreset(
+            actionElement?.dataset?.trackId,
+            actionElement?.dataset?.direction
+          );
         }),
         "move-audio-mix-track-to-top": rerenderAlways((actionElement) => {
           return moveTrackToTopInSelectedAudioMixPreset(actionElement?.dataset?.trackId);
@@ -634,6 +681,9 @@ export function createGmAudioPageApp(deps) {
         }),
         "play-audio-mix": rerenderAlways(() => {
           return playSelectedAudioMixPreset();
+        }),
+        "play-audio-scene-preset": rerenderAlways((actionElement) => {
+          return playAudioScenePreset(actionElement);
         }),
         "play-audio-mix-candidate": rerenderAlways((actionElement) => {
           return playSelectedAudioMixCandidate(actionElement);

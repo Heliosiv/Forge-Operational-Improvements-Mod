@@ -62,6 +62,36 @@ class FakeElement {
 }
 
 {
+  globalThis.foundry = {
+    applications: {
+      api: {
+        ApplicationV2: class {
+          static DEFAULT_OPTIONS = {};
+        },
+        HandlebarsApplicationMixin: (Base) => Base
+      }
+    },
+    utils: {
+      mergeObject: (...objects) => Object.assign({}, ...objects.filter(Boolean))
+    }
+  };
+
+  const { buildSharedNoteLinkPromptContent } = await import("./apps/rest-watch-shared-note-app.js");
+  const promptContent = buildSharedNoteLinkPromptContent({
+    defaultUrl: 'https://example.test/?q="><script>alert(1)</script>',
+    selectedText: 'Click "me" <img src=x onerror=alert(1)>'
+  });
+
+  assert.match(
+    promptContent,
+    /value="https:\/\/example\.test\/\?q=&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;"/
+  );
+  assert.match(promptContent, /value="Click &quot;me&quot; &lt;img src=x onerror=alert\(1\)&gt;"/);
+  assert.doesNotMatch(promptContent, /<script>alert/);
+  assert.doesNotMatch(promptContent, /<img src=x/);
+}
+
+{
   const ops = new Set([
     "assignMe",
     "clearEntry",

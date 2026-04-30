@@ -77,6 +77,18 @@ export default [
     }
   },
   {
+    files: [
+      "scripts/apps/**/*.js",
+      "scripts/core/**/*.js",
+      "scripts/features/**/*.js",
+      "scripts/hooks/**/*.js",
+      "scripts/runtime/**/*.js"
+    ],
+    rules: {
+      "no-undef": "error"
+    }
+  },
+  {
     files: ["scripts/**/*.cjs", "*.cjs"],
     languageOptions: {
       ecmaVersion: "latest",

@@ -552,6 +552,14 @@
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close Workspace</button>
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-tradable-none">Deselect All Merchants</button>
             </div>
+            <div class="po-gm-loot-summary-grid po-merchant-availability-dashboard" role="list" aria-label="Merchant availability dashboard">
+              <div class="po-gm-loot-summary-chip" role="listitem"><span>Workspace</span><strong>{{#if merchants.gm.availabilityDashboard.shopOpen}}Open{{else}}Closed{{/if}}</strong></div>
+              <div class="po-gm-loot-summary-chip" role="listitem"><span>Live</span><strong>{{merchants.gm.availabilityDashboard.liveCount}}</strong></div>
+              <div class="po-gm-loot-summary-chip" role="listitem"><span>Stocked</span><strong>{{merchants.gm.availabilityDashboard.stockedCount}}</strong></div>
+              <div class="po-gm-loot-summary-chip" role="listitem"><span>Refresh Due</span><strong>{{merchants.gm.availabilityDashboard.staleCount}}</strong></div>
+              <div class="po-gm-loot-summary-chip" role="listitem"><span>Empty</span><strong>{{merchants.gm.availabilityDashboard.emptyCount}}</strong></div>
+            </div>
+            <div class="po-op-summary">{{merchants.gm.availabilityDashboard.summaryLabel}}</div>
             {{#if merchants.gm.hasDefinitions}}
             {{#if merchants.gm.hasFilteredDefinitions}}
             <div class="po-roles-grid po-merchant-definition-grid">
@@ -609,7 +617,7 @@
                     <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>
                     <div class="po-op-summary">Sellback: {{#if sellEnabled}}Enabled {{sellRatePercentLabel}}{{else}}Disabled{{/if}} | Cash: {{cashOnHandLabel}}</div>
                     <div class="po-op-summary">Barter: {{#if barterEnabled}}Enabled{{else}}Disabled{{/if}} | Buyback: {{buybackTypeSummary}}</div>
-                    <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
+                    <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | <span class="{{stockFreshnessToneClass}}">{{stockFreshnessLabel}}</span> | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
                   </div>
                   <div class="po-merchant-access-panel">
                     <div class="po-section-head-row">

@@ -43,14 +43,17 @@ export function createLogger(scope = "core") {
     async time(label, fn) {
       const runLabel = String(label ?? "operation").trim() || "operation";
       const start = globalThis.performance?.now?.() ?? Date.now();
+      let result;
       try {
-        return await fn();
+        result = await fn();
       } finally {
-        if (!isDebugEnabled()) return;
-        const end = globalThis.performance?.now?.() ?? Date.now();
-        const elapsedMs = Math.max(0, end - start);
-        writeLog("debug", resolvedScope, `${runLabel} completed in ${elapsedMs.toFixed(2)}ms`);
+        if (isDebugEnabled()) {
+          const end = globalThis.performance?.now?.() ?? Date.now();
+          const elapsedMs = Math.max(0, end - start);
+          writeLog("debug", resolvedScope, `${runLabel} completed in ${elapsedMs.toFixed(2)}ms`);
+        }
       }
+      return result;
     }
   };
 }

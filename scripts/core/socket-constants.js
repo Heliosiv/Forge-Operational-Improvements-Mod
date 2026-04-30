@@ -20,6 +20,7 @@ export const SOCKET_MARCH_OPS = new Set([
   "setNote",
   "setLight",
   "setLightRange",
+  "swapActors",
   "replaceState"
 ]);
 

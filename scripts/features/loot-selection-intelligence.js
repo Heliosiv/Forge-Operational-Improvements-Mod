@@ -1,35 +1,42 @@
 import { getRecentRollMalus } from "./loot-recent-rolls-cache.js";
-import {
-  getLootPracticalUsefulnessFactor,
-  isLootCommodityLike
-} from "./loot-practicality.js";
+import { getLootPracticalUsefulnessFactor, isLootCommodityLike } from "./loot-practicality.js";
 
 function normalizeText(value = "") {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeList(values = []) {
-  return (Array.isArray(values) ? values : [])
-    .map((entry) => normalizeText(entry))
-    .filter(Boolean);
+  return (Array.isArray(values) ? values : []).map((entry) => normalizeText(entry)).filter(Boolean);
 }
 
 function normalizeVariableTreasureKind(value = "") {
   const normalized = normalizeText(value);
-  if (normalized === "gem" || normalized === "gems" || normalized === "gemstone" || normalized === "gemstones") return "gem";
-  if (normalized === "art" || normalized === "art-item" || normalized === "art-items" || normalized === "art-object" || normalized === "art-objects") return "art";
+  if (normalized === "gem" || normalized === "gems" || normalized === "gemstone" || normalized === "gemstones")
+    return "gem";
+  if (
+    normalized === "art" ||
+    normalized === "art-item" ||
+    normalized === "art-items" ||
+    normalized === "art-object" ||
+    normalized === "art-objects"
+  )
+    return "art";
   return "";
 }
 
 function normalizeSourceClass(value = "") {
   const normalized = normalizeText(value);
-  if (normalized === "curated" || normalized === "manual" || normalized === "table" || normalized === "generated") return normalized;
+  if (normalized === "curated" || normalized === "manual" || normalized === "table" || normalized === "generated")
+    return normalized;
   return "generated";
 }
 
 function normalizeSourcePolicy(value = "") {
   const normalized = normalizeText(value).replace(/_/g, "-");
-  if (normalized === "anchor" || normalized === "bonus" || normalized === "outside-budget" || normalized === "normal") return normalized;
+  if (normalized === "anchor" || normalized === "bonus" || normalized === "outside-budget" || normalized === "normal")
+    return normalized;
   if (normalized === "outsidebudget") return "outside-budget";
   return "normal";
 }
@@ -43,7 +50,7 @@ function normalizeCurationScore(value = 0) {
 function normalizeStrictnessValue(value = 100) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 1;
-  const normalized = numeric > 10 ? (numeric / 100) : numeric;
+  const normalized = numeric > 10 ? numeric / 100 : numeric;
   return Math.max(0.5, Math.min(3, normalized));
 }
 
@@ -56,10 +63,6 @@ function getEntryIdentity(entry = {}) {
   const sourceId = normalizeText(entry?.sourceId ?? entry?.sourceLabel);
   if (!name) return "";
   return `name:${name}|type:${itemType}|rarity:${rarity}|source:${sourceId}`;
-}
-
-function getEntryPrimaryCategory(entry = {}) {
-  return normalizeList(entry?.merchantCategories)[0] ?? "";
 }
 
 function countCategoryOverlap(candidateCategories = [], selectedEntry = {}) {
@@ -137,55 +140,60 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
 
   if (sameTypeCount > 0) {
     const typePenalty = mode === "horde" ? 0.18 : 0.28;
-    weight *= 1 / (1 + (sameTypeCount * typePenalty * phaseInfluence));
+    weight *= 1 / (1 + sameTypeCount * typePenalty * phaseInfluence);
   }
 
   if (sameKindCount > 0) {
-    weight *= 1 / (1 + (sameKindCount * 0.12 * phaseInfluence));
+    weight *= 1 / (1 + sameKindCount * 0.12 * phaseInfluence);
   }
 
   if (overlappingCategoryCount > 0) {
-    weight *= 1 / (1 + (overlappingCategoryCount * 0.08 * phaseInfluence));
+    weight *= 1 / (1 + overlappingCategoryCount * 0.08 * phaseInfluence);
   }
 
   if (samePrimaryCategoryCount > 0) {
-    weight *= 1 / (1 + (samePrimaryCategoryCount * 0.16 * phaseInfluence));
+    weight *= 1 / (1 + samePrimaryCategoryCount * 0.16 * phaseInfluence);
   }
 
   if (sameSourceCount > 0) {
-    weight *= 1 / (1 + (sameSourceCount * 0.05 * phaseInfluence));
+    weight *= 1 / (1 + sameSourceCount * 0.05 * phaseInfluence);
   }
 
   if (sameSourceClassCount > 0) {
-    weight *= 1 / (1 + (sameSourceClassCount * 0.07 * phaseInfluence));
+    weight *= 1 / (1 + sameSourceClassCount * 0.07 * phaseInfluence);
   }
 
   if (sameSourcePolicyCount > 0) {
-    weight *= 1 / (1 + (sameSourcePolicyCount * 0.06 * phaseInfluence));
+    weight *= 1 / (1 + sameSourcePolicyCount * 0.06 * phaseInfluence);
   }
 
   if (candidateType && !selectedTypes.has(candidateType)) {
-    weight *= 1 + (0.16 * phaseInfluence);
+    weight *= 1 + 0.16 * phaseInfluence;
   }
 
   if (candidatePrimaryCategory && !selectedCategories.has(candidatePrimaryCategory)) {
-    weight *= 1 + (0.12 * phaseInfluence);
+    weight *= 1 + 0.12 * phaseInfluence;
   }
 
-  if (candidateKind && selected.every((selectedEntry) => normalizeVariableTreasureKind(selectedEntry?.variableTreasureKind) !== candidateKind)) {
-    weight *= 1 + (0.08 * phaseInfluence);
+  if (
+    candidateKind &&
+    selected.every(
+      (selectedEntry) => normalizeVariableTreasureKind(selectedEntry?.variableTreasureKind) !== candidateKind
+    )
+  ) {
+    weight *= 1 + 0.08 * phaseInfluence;
   }
 
   if (candidateSourceClass === "curated") {
-    weight *= 1 + (0.08 * phaseInfluence);
+    weight *= 1 + 0.08 * phaseInfluence;
   } else if (candidateSourceClass === "manual") {
     weight *= 0.96;
   } else if (candidateSourceClass === "table") {
-    weight *= 1 + (0.03 * phaseInfluence);
+    weight *= 1 + 0.03 * phaseInfluence;
   }
 
   if (candidateSourceClass && !selectedSourceClasses.has(candidateSourceClass)) {
-    weight *= 1 + (0.05 * phaseInfluence);
+    weight *= 1 + 0.05 * phaseInfluence;
   }
 
   if (candidateSourcePolicy === "anchor") {
@@ -196,13 +204,10 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
     weight *= phaseKey === "fill" ? 1.35 : 0.88;
   }
 
-  const curationFactor = 0.9 + ((candidateCurationScore / 10) * 0.2);
-  const usefulnessCurationLift = usefulnessDelta > 0
-    ? 1 + (usefulnessDelta * ((candidateCurationScore / 10) * 0.32))
-    : 1;
-  const generatedFillerPenalty = candidateSourceClass === "generated" && usefulnessDelta < 0
-    ? Math.max(0.72, 1 + (usefulnessDelta * 0.32))
-    : 1;
+  const curationFactor = 0.9 + (candidateCurationScore / 10) * 0.2;
+  const usefulnessCurationLift = usefulnessDelta > 0 ? 1 + usefulnessDelta * ((candidateCurationScore / 10) * 0.32) : 1;
+  const generatedFillerPenalty =
+    candidateSourceClass === "generated" && usefulnessDelta < 0 ? Math.max(0.72, 1 + usefulnessDelta * 0.32) : 1;
   weight *= curationFactor * practicalUsefulnessFactor * usefulnessCurationLift * generatedFillerPenalty;
 
   // Apply recently-rolled item penalty to reduce repetition across multiple horde rolls in same scene
@@ -224,13 +229,13 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
         weight *= Math.max(0.45, 1 - penaltyStrength);
       }
       if (candidateSourceClass === "curated") {
-        weight *= 1 + (0.1 * strictnessPressure);
+        weight *= 1 + 0.1 * strictnessPressure;
       }
       if (candidateSourcePolicy === "anchor") {
-        weight *= 1 + (0.12 * strictnessPressure);
+        weight *= 1 + 0.12 * strictnessPressure;
       }
       if (candidateSourcePolicy === "outside-budget" && phaseKey === "spend") {
-        weight *= Math.max(0.6, 1 - (0.22 * strictnessPressure));
+        weight *= Math.max(0.6, 1 - 0.22 * strictnessPressure);
       }
     }
 

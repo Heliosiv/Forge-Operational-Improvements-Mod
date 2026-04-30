@@ -17,19 +17,19 @@ The module is in a deliberate modular rebuild state.
 1. `scripts/module.js` registers Foundry lifecycle hooks only.
 2. `scripts/hooks/*.js` wires `init` and `ready` registration.
 3. `scripts/bootstrap/runtime.js` lazy-loads `scripts/party-operations.js`.
-4. `scripts/party-operations.js` is now a small compatibility facade that re-exports `scripts/runtime/index.js`.
-5. `scripts/runtime/*` owns the stripped rebuild shell: API registration, app stubs, lifecycle config, navigation stubs, rebuild maps, settings stubs, socket stubs, and runtime state.
+4. `scripts/party-operations.js` is still an active compatibility/runtime layer. It owns rebuilt feature wiring, legacy behavior that has not yet been extracted, and some exported application classes.
+5. `scripts/runtime/*` owns the newer rebuild shell: API registration, app adapters, lifecycle config, navigation helpers, rebuild maps, settings helpers, socket helpers, and runtime state.
 6. `legacy/party-operations-monolith.js` is a reference copy of the old runtime. It is intentionally outside `scripts/` so it is not loaded, linted, or packaged as active module code.
 7. `legacy/slices/*` contains generated text slices from the monolith, aligned with `scripts/runtime/rebuild/legacy-source-map.js`.
 
-Most feature behavior is intentionally disabled in this shell. Rebuild work should move behavior into bounded modules under `scripts/core`, `scripts/features`, `scripts/apps`, `scripts/hooks`, and `scripts/runtime`, then retire the matching legacy reference sections.
+The module is currently hybrid, not fully stripped. Rebuild work should move behavior into bounded modules under `scripts/core`, `scripts/features`, `scripts/apps`, `scripts/hooks`, and `scripts/runtime`, then retire the matching active code in `scripts/party-operations.js` and the matching legacy reference sections.
 
 ## Refactor Rules
 
 - Keep `scripts/module.js` free of feature logic.
 - Register hooks once, from dedicated hook modules.
 - Prefer extracting pure logic into `scripts/features` or narrower folders before touching UI code.
-- Treat `scripts/party-operations.js` as a compatibility adapter only.
+- Treat `scripts/party-operations.js` as active legacy compatibility code; avoid adding new behavior there unless the surrounding feature has not been extracted yet.
 - Treat `legacy/party-operations-monolith.js` as read-only reference material until a feature is rebuilt.
 - Regenerate legacy slices with `node scripts/refactor/split-legacy-runtime.mjs` after changing the source map.
 - Keep temporary legacy source-text tests slice-scoped through `scripts/test-utils/legacy-runtime-source.mjs`.

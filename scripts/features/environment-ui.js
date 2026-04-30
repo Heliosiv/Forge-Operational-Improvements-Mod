@@ -37,8 +37,20 @@ export function createGmEnvironmentPageApp(deps) {
     gmQuickSubmitWeather,
     gmQuickSelectWeatherPreset,
     gmQuickUpdateWeatherDraftField,
+    gmCalendarWeatherSetClimate,
+    gmCalendarWeatherToggleAutoClimate,
+    gmCalendarWeatherApplySuggestedClimate,
+    gmCalendarWeatherSetTerrain,
+    gmCalendarWeatherClearTerrain,
+    gmCalendarWeatherSetTerrainImage,
+    gmCalendarWeatherBrowseTerrainImage,
+    gmCalendarWeatherPreviewTerrainImage,
+    gmCalendarWeatherImportTerrainImage,
+    gmCalendarWeatherToggleAuto,
+    gmCalendarWeatherRoll,
     loadWeatherLogToQuickPanel,
     removeWeatherLogById,
+    openJournalEntryFromElement,
     openGmPanelByKey
   } = deps;
 
@@ -78,6 +90,8 @@ export function createGmEnvironmentPageApp(deps) {
     _shouldHandleInputAction(action) {
       return [
         "gm-quick-weather-set",
+        "gm-calendar-weather-set-terrain",
+        "gm-calendar-weather-set-terrain-image",
         "set-environment-note",
         "set-environment-successive",
         "set-environment-preset-field",
@@ -135,8 +149,24 @@ export function createGmEnvironmentPageApp(deps) {
         "gm-quick-weather-set": async (actionElement) => {
           gmQuickUpdateWeatherDraftField(actionElement);
         },
-        "load-weather-log": rerenderIfTruthy((actionElement) => loadWeatherLogToQuickPanel(actionElement?.dataset?.logId)),
-        "remove-weather-log": rerenderIfTruthy((actionElement) => removeWeatherLogById(actionElement?.dataset?.logId))
+        "gm-calendar-weather-set-climate": rerenderAlways(gmCalendarWeatherSetClimate),
+        "gm-calendar-weather-toggle-auto-climate": rerenderAlways(gmCalendarWeatherToggleAutoClimate),
+        "gm-calendar-weather-apply-suggested-climate": rerenderAlways(() => gmCalendarWeatherApplySuggestedClimate()),
+        "gm-calendar-weather-set-terrain": rerenderAlways(gmCalendarWeatherSetTerrain),
+        "gm-calendar-weather-clear-terrain": rerenderAlways(() => gmCalendarWeatherClearTerrain()),
+        "gm-calendar-weather-set-terrain-image": rerenderUnlessInput(gmCalendarWeatherSetTerrainImage),
+        "gm-calendar-weather-browse-terrain-image": rerenderAlways(() => gmCalendarWeatherBrowseTerrainImage()),
+        "gm-calendar-weather-preview-terrain-image": rerenderAlways(() => gmCalendarWeatherPreviewTerrainImage()),
+        "gm-calendar-weather-import-terrain-image": rerenderAlways(() => gmCalendarWeatherImportTerrainImage()),
+        "gm-calendar-weather-toggle-auto": rerenderAlways(gmCalendarWeatherToggleAuto),
+        "gm-calendar-weather-roll": rerenderAlways(() => gmCalendarWeatherRoll()),
+        "load-weather-log": rerenderIfTruthy((actionElement) =>
+          loadWeatherLogToQuickPanel(actionElement?.dataset?.logId)
+        ),
+        "remove-weather-log": rerenderIfTruthy((actionElement) => removeWeatherLogById(actionElement?.dataset?.logId)),
+        "open-journal-entry": async (actionElement) => {
+          await openJournalEntryFromElement?.(actionElement);
+        }
       };
     }
   };

@@ -1,7 +1,7 @@
 /**
  * Manages a session-scoped cache of recently rolled loot items to prevent
  * repetition of the same items across multiple horde rolls within a scene.
- * 
+ *
  * This cache applies a 0.5x weight malus to items that have appeared in
  * the previous 2 horde rolls, helping maintain perceived diversity even
  * when pool sizes are small and high-weight items dominate.
@@ -32,18 +32,16 @@ function getRecentItemsCache() {
  */
 export function recordRecentlyRolledItem(entry = {}) {
   if (!entry || typeof entry !== "object") return;
-  
+
   const identity = buildItemIdentity(entry);
   if (!identity) return;
-  
+
   const cache = getRecentItemsCache();
   const now = Date.now();
-  
+
   // Check if already recorded in current batch
-  const exists = cache.some((record) => 
-    record.identity === identity && (now - record.timestamp) < 500
-  );
-  
+  const exists = cache.some((record) => record.identity === identity && now - record.timestamp < 500);
+
   if (!exists) {
     cache.push({
       identity,
@@ -62,12 +60,12 @@ export function flushExpiredRecentRolls() {
   const cache = getRecentItemsCache();
   const now = Date.now();
   const decayMs = RECENT_ROLL_DECAY_MS;
-  
+
   // Keep only recent rolls within decay window
-  while (cache.length > 0 && (now - cache[0].timestamp) > decayMs) {
+  while (cache.length > 0 && now - cache[0].timestamp > decayMs) {
     cache.shift();
   }
-  
+
   // Cap to max recent rolls
   while (cache.length > MAX_RECENT_ROLLS * 10) {
     cache.shift();
@@ -81,13 +79,13 @@ export function flushExpiredRecentRolls() {
  */
 export function getRecentRollMalus(entry = {}) {
   if (!entry || typeof entry !== "object") return 1.0;
-  
+
   const identity = buildItemIdentity(entry);
   if (!identity) return 1.0;
-  
+
   const cache = getRecentItemsCache();
   const now = Date.now();
-  
+
   // Accumulate recency pressure for matching entries.
   // Fresh repeats are penalized strongly; older repeats decay quickly.
   let repeatPressure = 0;
@@ -105,7 +103,7 @@ export function getRecentRollMalus(entry = {}) {
   }
 
   if (repeatPressure <= 0) return 1.0;
-  return Math.max(0.04, Number((1 / (1 + (repeatPressure * 2.25))).toFixed(6)));
+  return Math.max(0.04, Number((1 / (1 + repeatPressure * 2.25)).toFixed(6)));
 }
 
 /**
@@ -114,7 +112,7 @@ export function getRecentRollMalus(entry = {}) {
  */
 export function recordHordeRollItems(items = []) {
   if (!Array.isArray(items)) return;
-  
+
   for (const item of items) {
     recordRecentlyRolledItem(item);
   }
@@ -130,22 +128,28 @@ export function clearRecentRollsCache() {
   }
 }
 
-/**
- * Hook to clear cache when scene changes.
- */
-if (globalThis?.Hooks?.on) {
-  globalThis.Hooks.on("canvasReady", () => {
-    clearRecentRollsCache();
-  });
+export function buildLootRecentRollsCacheHookModule() {
+  return {
+    id: "loot-recent-rolls-cache",
+    registrations: [["canvasReady", () => clearRecentRollsCache()]]
+  };
 }
 
 // Helper to build item identity
 function buildItemIdentity(entry = {}) {
-  const name = String(entry?.name ?? "").trim().toLowerCase();
-  const itemType = String(entry?.itemType ?? "").trim().toLowerCase();
-  const rarity = String(entry?.rarityBucket ?? entry?.rarity ?? "").trim().toLowerCase();
-  const sourceId = String(entry?.sourceId ?? "").trim().toLowerCase();
-  
+  const name = String(entry?.name ?? "")
+    .trim()
+    .toLowerCase();
+  const itemType = String(entry?.itemType ?? "")
+    .trim()
+    .toLowerCase();
+  const rarity = String(entry?.rarityBucket ?? entry?.rarity ?? "")
+    .trim()
+    .toLowerCase();
+  const sourceId = String(entry?.sourceId ?? "")
+    .trim()
+    .toLowerCase();
+
   if (!name) return "";
   return `${name}|${itemType}|${rarity}|${sourceId}`;
 }
@@ -156,7 +160,7 @@ function buildItemIdentity(entry = {}) {
 export function debugGetRecentRollsCache() {
   const cache = getRecentItemsCache();
   const now = Date.now();
-  
+
   return {
     count: cache.length,
     items: cache.map((rec) => ({
