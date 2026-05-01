@@ -5,7 +5,7 @@
       <div class="po-subtitle" aria-live="polite">GM Merchants - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
     </div>
     <div class="po-controls">
-      <button type="button" class="po-btn po-btn-sm" data-action="gm-merchants-page-back">Back</button>
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-merchants-page-back">Back to Cockpit</button>
       <button type="button" class="po-icon-btn" data-action="gm-merchants-page-refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
       </button>
@@ -35,6 +35,14 @@
           <div class="po-section-title">Shop Session</div>
           <div class="po-hint">Control who can open each merchant, what they can trade, and whether the current roster is live.</div>
           {{/if}}
+          <div class="po-op-action-row po-gm-page-actions">
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="merchant-shop-bell">
+              <i class="fa-solid fa-bell"></i>
+              <span>Open Shops</span>
+            </button>
+            <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close Shops</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="merchant-gm-view-tab" data-tab="configured-merchants">Manage Merchants</button>
+          </div>
         </div>
         <div class="po-gm-page-stat-grid" role="list" aria-label="Merchant workspace summary">
           <div class="po-gm-page-stat" role="listitem">
@@ -456,7 +464,7 @@
         {{/if}}
 
         {{#if merchants.gm.viewTabShopSession}}
-        <details class="po-panel-disclosure" open>
+        <details class="po-panel-disclosure po-gm-advanced-disclosure">
           <summary class="po-panel-disclosure-summary">
             <span class="po-section-title">Shop Session</span>
             <span class="po-op-summary">{{merchants.gm.shopSession.statusLabel}} - {{merchants.gm.shopSession.accessSummary}}</span>
@@ -511,7 +519,7 @@
         {{/if}}
 
         {{#if merchants.gm.viewTabConfiguredMerchants}}
-        <details class="po-panel-disclosure" open>
+        <details class="po-panel-disclosure po-gm-advanced-disclosure">
           <summary class="po-panel-disclosure-summary">
             <span class="po-section-title">Configured Merchants</span>
             <span class="po-op-summary">{{merchants.gm.filteredDefinitionCount}} shown / {{merchants.gm.totalDefinitionCount}} total</span>

@@ -16,7 +16,8 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
     buildLootClaimsContext,
     logUiDebug,
     openOperationsLootClaimsTabForPlayer,
-    openRestWatchUiForCurrentUser
+    openRestWatchUiForCurrentUser,
+    setPlayerHubTab
   } = context;
 
   if (message.type === "ops:player-action-result") {
@@ -68,6 +69,16 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
     return true;
   }
 
+  if (message.type === "players:openDowntimeSession") {
+    const targetUserId = String(message.userId ?? "").trim();
+    const broadcast = !targetUserId || targetUserId === "*" || targetUserId.toLowerCase() === "all";
+    if (!broadcast && targetUserId !== currentUserId) return true;
+    if (currentUser?.isGM) return true;
+    setPlayerHubTab?.("downtime");
+    openRestWatchUiForCurrentUser({ force: true, hubTab: "downtime" });
+    return true;
+  }
+
   if (message.type === "refresh") {
     if (message.userId && message.userId === currentUserId) return true;
     const scopes = normalizeRefreshScopeList(message?.scopes);
@@ -109,6 +120,8 @@ export async function routeGmSocketMessage(message, context = {}) {
     applyPlayerSopNoteRequest,
     applyPlayerOperationsLedgerWriteRequest,
     applyPlayerDowntimeSubmitRequest,
+    applyPlayerDowntimeV2SubmitRequest,
+    applyPlayerDowntimeV2AckResult,
     applyPlayerDowntimeClearRequest,
     applyPlayerDowntimeQueueEditRequest,
     applyPlayerDowntimeCollectRequest,
@@ -210,6 +223,8 @@ export async function routeGmSocketMessage(message, context = {}) {
     applyPlayerSopNoteRequest,
     applyPlayerOperationsLedgerWriteRequest,
     applyPlayerDowntimeSubmitRequest,
+    applyPlayerDowntimeV2SubmitRequest,
+    applyPlayerDowntimeV2AckResult,
     applyPlayerDowntimeClearRequest,
     applyPlayerDowntimeQueueEditRequest,
     applyPlayerDowntimeCollectRequest,

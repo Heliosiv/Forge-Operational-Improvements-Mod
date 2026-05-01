@@ -16,6 +16,7 @@
     "check:check-coverage": "node scripts/verify-check-coverage.mjs",
     "check:deep-design-corrections": "node scripts/test-deep-design-corrections.mjs",
     "check:downtime-policy": "node scripts/test-downtime-policy.mjs",
+    "check:downtime-v2": "node scripts/test-downtime-v2-service.mjs",
     "check:downtime-phase1": "node scripts/test-downtime-phase1-service.mjs",
     "check:downtime-submission-ui": "node scripts/test-downtime-submission-ui.mjs",
     "check:downtime-effects-ledger": "node scripts/test-downtime-effects-ledger.mjs",

@@ -1,9 +1,11 @@
 <section id="po-player-hub-panel-loot" class="po-player-hub-panel po-loot-claims-panel" role="tabpanel" aria-label="Loot">
   <div class="po-section-head-row">
-    <div class="po-section-title">Loot Claims</div>
-    <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.hasSelectedRun}}disabled{{/unless}}>Open Live Claim Board</button>
+    <div>
+      <div class="po-section-title">Loot Claims</div>
+      <div class="po-hint">Open the live board directly from the run you want to claim from.</div>
+    </div>
+    <span class="po-pill">{{lootClaims.openRunCount}} open</span>
   </div>
-  <div class="po-hint">Claims are resolved in the Live Claim Board. Pick a run and open it.</div>
   {{#if lootClaims.hasOpenRuns}}
   <div class="po-loot-claims-run-grid">
     {{#each lootClaims.openRuns}}
@@ -15,6 +17,7 @@
       <div class="po-loot-claim-tags">
         <span class="po-pill">Items: {{itemCount}}</span>
         <span class="po-pill">Claims: {{claimsLogCount}}</span>
+        {{#if hasCurrencyRemaining}}<span class="po-pill">{{currencyRemainingLabel}}</span>{{/if}}
         {{#if hasContestedItems}}<span class="po-pill is-warn">Contested: {{contestedItemCount}}</span>{{/if}}
       </div>
       <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>

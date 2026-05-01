@@ -97,8 +97,22 @@ class FakeElement {
 
   assert.equal(
     resolveMarchActorImage(actor),
+    "portraits/maja.webp",
+    "march actor images should keep the actor portrait ahead of active scene token art"
+  );
+}
+
+{
+  const actor = {
+    img: "icons/svg/mystery-man.svg",
+    prototypeToken: { texture: { src: "icons/svg/mystery-man.svg" } },
+    getActiveTokens: () => [{ document: { texture: { src: "tokens/scene-token.webp" } } }]
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor),
     "tokens/scene-token.webp",
-    "march actor images should prefer active scene token art when it exists"
+    "march actor images should use active scene token art when the actor portrait is generic"
   );
 }
 

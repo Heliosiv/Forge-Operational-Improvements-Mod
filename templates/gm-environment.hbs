@@ -5,7 +5,7 @@
       <div class="po-subtitle" aria-live="polite">GM Environment - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
     </div>
     <div class="po-controls">
-      <button type="button" class="po-btn po-btn-sm" data-action="gm-environment-page-back">Back</button>
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-environment-page-back">Back to Cockpit</button>
       <button type="button" class="po-icon-btn" data-action="gm-environment-page-refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
       </button>
@@ -22,6 +22,11 @@
           <div class="po-pill">Active Environment</div>
           <h2 class="po-section-title">{{environment.preset.label}}</h2>
           <div class="po-op-summary">{{environment.preset.description}}</div>
+          <div class="po-op-action-row po-gm-page-actions">
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="request-environment-checks" {{#unless environment.canRequestChecks}}disabled{{/unless}}>Push Check To Players</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Log Setup</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-weather">Log Weather</button>
+          </div>
         </div>
         <div class="po-env-metric-grid po-gm-page-stat-grid" role="list" aria-label="Environment summary">
           <div class="po-env-metric po-gm-page-stat" role="listitem">
@@ -168,6 +173,17 @@
           </div>
         </div>
 
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-submit-weather">Log Weather</button>
+        </div>
+
+        <details class="po-panel-disclosure po-gm-advanced-disclosure">
+          <summary class="po-panel-disclosure-summary">
+            <span class="po-section-title">Advanced Weather Setup</span>
+            <span class="po-op-summary">Calendar automation, terrain import, and custom presets</span>
+          </summary>
+          <div class="po-panel-disclosure-body">
+
         <div class="po-op-divider"></div>
         <div class="po-env-field-grid is-compact">
           <label class="po-resource-row">
@@ -289,11 +305,12 @@
         <div class="po-op-action-row">
           <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-save-preset">Save Custom Preset</button>
           <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-delete-preset">Delete Custom</button>
-          <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-submit-weather">Log Weather</button>
         </div>
+          </div>
+        </details>
       </section>
 
-      <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+      <details class="po-panel-disclosure po-panel-disclosure-lg po-gm-advanced-disclosure">
         <summary class="po-panel-disclosure-summary">
           <span class="po-section-title">Configure Library</span>
           <span class="po-op-summary">{{environment.configure.presetCount}} presets • {{environment.configure.actionCount}} actor actions • changes save immediately</span>

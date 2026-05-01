@@ -941,236 +941,163 @@
 
         {{#if @root.showGmPageTab}}
         {{#if operationsPageGm}}
-        <section id="po-gm-workspace" class="po-content po-gm-shell po-gm-workspace-shell">
-          {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs"}}
+        <section id="po-gm-workspace" class="po-content po-gm-shell po-gm-workspace-shell po-gm-cockpit">
+          {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isCockpit=true}}
 
-          <div class="po-gm-workspace-grid po-gm-workspace-grid-compact">
-            <section class="po-gm-section po-gm-workspace-card po-gm-resource-workspace po-gm-resource-workspace-compact">
-              <div class="po-collapsible-head">
-                <div>
-                  <div class="po-section-title">Resources</div>
-                  <div class="po-hint">Assign gatherers manually, set the hidden difficulty, then push the Survival roll through Monk's TokenBar.</div>
-                </div>
-                <div class="po-pill">{{operations.resources.gatherRequests.count}} pending</div>
+          <section class="po-gm-section po-gm-page-intro po-gm-cockpit-hero">
+            <div class="po-gm-page-copy">
+              <div class="po-gm-page-eyebrow">GM Cockpit</div>
+              <div class="po-section-title">Live Session</div>
+              <div class="po-hint">Run the next table action from here, then open the focused page only when you need deeper setup.</div>
+            </div>
+            <div class="po-gm-page-stat-grid po-gm-cockpit-stat-grid" role="list" aria-label="GM cockpit summary">
+              {{#each gmCockpit.topStats}}
+              <div class="po-gm-page-stat" role="listitem">
+                <span>{{label}}</span>
+                <strong>{{value}}</strong>
               </div>
-              <div class="po-gm-workspace-meta">
-                <span class="po-pill">Food {{operations.resources.summary.pendingGatherFood}}</span>
-                <span class="po-pill">Water {{operations.resources.summary.pendingGatherWater}}</span>
+              {{/each}}
+            </div>
+          </section>
+
+          {{#if gmCockpit.hasWarnings}}
+          <section class="po-gm-section po-gm-cockpit-alerts" aria-label="GM attention queue">
+            <div class="po-section-title">Needs Attention</div>
+            <div class="po-gm-cockpit-alert-list">
+              {{#each gmCockpit.warnings}}
+              <div class="po-op-summary is-warn">{{this}}</div>
+              {{/each}}
+            </div>
+          </section>
+          {{/if}}
+
+          <div class="po-gm-cockpit-grid">
+            <article class="po-gm-section po-gm-cockpit-card">
+              <div class="po-gm-cockpit-card-head">
+                <div>
+                  <div class="po-section-title">Gather</div>
+                  <div class="po-op-summary">{{gmCockpit.gather.summaryLabel}}</div>
+                </div>
+                <span class="po-pill">{{gmCockpit.gather.statusLabel}}</span>
+              </div>
+              <div class="po-gm-cockpit-metrics">
+                <span>Pending {{gmCockpit.gather.pendingCount}}</span>
+                <span>{{gmCockpit.gather.activePlayerLabel}}</span>
               </div>
               <div class="po-op-action-row">
-                {{#if @root.isGM}}
-                <button type="button" class="po-btn po-btn-sm po-gather-launch-btn" data-action="gather-resource-check" title="Assign a gatherer and push the Survival roll">
-                  <i class="fa-solid fa-seedling" aria-hidden="true"></i>
-                  <span class="po-gather-launch-btn-copy">
-                    <span class="po-gather-launch-btn-main">Assign Gather</span>
-                    <span class="po-gather-launch-btn-sub">Check</span>
-                  </span>
-                </button>
-                <button type="button" class="po-btn po-btn-sm" data-action="call-gather-requests" {{#unless operations.resources.gatherDelivery.activePlayerCount}}disabled{{/unless}}>
-                  <i class="fa-solid fa-bullhorn" aria-hidden="true"></i>
-                  Call Players
-                </button>
-                {{/if}}
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.gather.primaryAction}}" {{#if gmCockpit.gather.primaryDisabled}}disabled{{/if}}>{{gmCockpit.gather.primaryLabel}}</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="operations-page" data-page="planning">Manage</button>
               </div>
-              <div class="po-op-summary">Use Monk's TokenBar for the player-facing roll. Party Operations records the result and adds gathered food or water after the roll resolves.</div>
-              {{#if operations.resources.gatherDelivery.hasRows}}
-              <div class="po-op-divider"></div>
-              <div class="po-gather-history-panel po-gather-delivery-panel">
-                <div class="po-section-head-row po-gather-history-head">
-                  <div>
-                    <div class="po-section-title">Gather Delivery</div>
-                    <div class="po-hint">{{operations.resources.gatherDelivery.activePlayerLabel}}. Resend only targets active players who have not responded.</div>
-                  </div>
+            </article>
+
+            <article class="po-gm-section po-gm-cockpit-card">
+              <div class="po-gm-cockpit-card-head">
+                <div>
+                  <div class="po-section-title">Weather / Environment</div>
+                  <div class="po-op-summary">{{gmCockpit.environment.presetLabel}} - {{gmCockpit.environment.actionLabel}}</div>
                 </div>
-                <div class="po-gather-request-list">
-                  {{#each operations.resources.gatherDelivery.rows}}
-                  <article class="po-gather-request-card">
-                    <div class="po-gather-request-head">
-                      <div class="po-gather-request-title-wrap">
-                        <div class="po-op-role-name">Call from {{promptedBy}}</div>
-                        <div class="po-op-summary">{{sentAtLabel}} | {{summaryLabel}}</div>
-                      </div>
-                      <button type="button" class="po-btn po-btn-sm" data-action="resend-gather-call" data-call-id="{{id}}" {{#unless hasAwaitingRecipients}}disabled{{/unless}}>Resend Missed</button>
-                    </div>
-                    <div class="po-gather-chip-row">
-                      {{#each recipients}}
-                      <span class="po-gather-chip {{statusClass}}">{{userName}}: {{statusLabel}}</span>
-                      {{/each}}
-                    </div>
-                  </article>
-                  {{/each}}
-                </div>
+                <span class="po-pill">{{gmCockpit.environment.statusLabel}}</span>
               </div>
-              {{/if}}
-              {{#if operations.resources.gatherRequests.hasRows}}
-              <div class="po-op-divider"></div>
-              <div class="po-gather-history-panel po-gather-queue-panel">
-                <div class="po-section-head-row po-gather-history-head">
-                  <div class="po-section-title">Pending Requests</div>
-                  <div class="po-gather-history-head-tools">
-                    <div class="po-op-summary">{{operations.resources.gatherRequests.count}} pending</div>
-                  </div>
-                </div>
-                <div class="po-hint">Resolve request cards first. Prompt roll for standard cases, review details only when needed.</div>
-                {{#if operations.resources.gatherRequests.hasRows}}
-                <div class="po-gather-request-list">
-                  {{#each operations.resources.gatherRequests.rows}}
-                  <article class="po-gather-request-card {{#if isSafeDefault}}is-safe{{else}}is-risk{{/if}}">
-                    <div class="po-gather-request-head">
-                      <div class="po-gather-request-title-wrap">
-                        <div class="po-op-role-name">{{actorName}}</div>
-                        <div class="po-op-summary">Requester {{requesterName}} | {{requestedAtLabel}}</div>
-                      </div>
-                      <div class="po-gather-request-tier">{{riskLevelLabel}}</div>
-                    </div>
-
-                    <div class="po-gather-chip-row">
-                      <span class="po-gather-chip">{{resourceTypeLabel}}</span>
-                      <span class="po-gather-chip">{{gatherModeLabel}}</span>
-                      <span class="po-gather-chip">{{travelModeLabel}}</span>
-                      <span class="po-gather-chip">{{environmentLabel}}</span>
-                      <span class="po-gather-chip">{{travelTradeoffLabel}}</span>
-                    </div>
-
-                    <div class="po-gather-mod-summary">{{modifierSummary}}</div>
-
-                    {{#if hasRiskTags}}
-                    <div class="po-gather-chip-row">
-                      {{#each riskTags}}
-                      <span class="po-gather-chip is-{{tone}}">{{label}}</span>
-                      {{/each}}
-                    </div>
-                    {{/if}}
-
-                    {{#if hasMatchingPreset}}
-                    <div class="po-op-summary">Preset match: {{matchingPresetLabel}}</div>
-                    {{/if}}
-
-                    {{#if @root.operations.resources.gatherRequests.isManager}}
-                    <div class="po-op-action-row">
-                      <button type="button" class="po-btn po-btn-sm" data-action="approve-gather-request" data-request-id="{{id}}">{{primaryActionLabel}}</button>
-                      <button type="button" class="po-btn po-btn-sm is-danger" data-action="decline-gather-request" data-request-id="{{id}}">{{declineActionLabel}}</button>
-                    </div>
-                    {{/if}}
-                  </article>
-                  {{/each}}
-                </div>
-                {{else}}
-                <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherRequests.emptyMessage}}</div>
-                {{/if}}
+              <div class="po-gm-cockpit-metrics">
+                <span>{{gmCockpit.environment.weatherLabel}}</span>
+                <span>Visibility {{gmCockpit.environment.weatherModifier}}</span>
+                <span>Darkness {{gmCockpit.environment.weatherDarkness}}</span>
               </div>
-              {{/if}}
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.environment.primaryAction}}" {{#if gmCockpit.environment.primaryDisabled}}disabled{{/if}}>{{gmCockpit.environment.primaryLabel}}</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="environment">Manage</button>
+              </div>
+            </article>
 
-              <div class="po-op-divider"></div>
-              <details class="po-panel-disclosure po-gather-history-disclosure">
-                <summary class="po-panel-disclosure-summary">
-                  <span class="po-section-title">Gather History</span>
-                  <span class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</span>
-                </summary>
-                <div class="po-panel-disclosure-body">
-                  <div class="po-gather-history-head-tools">
-                    <div class="po-gather-history-head-actions">
-                      <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history-filters">Reset Filters</button>
-                      <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history">Clear History</button>
-                    </div>
-                  </div>
-                  <div class="po-gather-history-controls">
-                    <label class="po-resource-row is-search">
-                      <span>Search</span>
-                      <input
-                        type="text"
-                        class="po-input"
-                        data-action="set-gather-history-filter"
-                        data-filter-key="search"
-                        value="{{operations.resources.gatherHistory.filters.search}}"
-                        placeholder="{{operations.resources.gatherHistory.filters.searchPlaceholder}}" />
-                    </label>
-                    <label class="po-resource-row">
-                      <span>Result</span>
-                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="result">
-                        {{#each operations.resources.gatherHistory.resultOptions}}
-                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                        {{/each}}
-                      </select>
-                    </label>
-                    <label class="po-resource-row">
-                      <span>Type</span>
-                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="resource">
-                        {{#each operations.resources.gatherHistory.resourceOptions}}
-                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                        {{/each}}
-                      </select>
-                    </label>
-                    <label class="po-resource-row">
-                      <span>Environment</span>
-                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="environment">
-                        {{#each operations.resources.gatherHistory.environmentOptions}}
-                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                        {{/each}}
-                      </select>
-                    </label>
-                    <label class="po-resource-row">
-                      <span>Actor</span>
-                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="actor">
-                        {{#each operations.resources.gatherHistory.actorOptions}}
-                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                        {{/each}}
-                      </select>
-                    </label>
-                    <label class="po-resource-row is-sort">
-                      <span>Sort</span>
-                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="sort">
-                        {{#each operations.resources.gatherHistory.sortOptions}}
-                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                        {{/each}}
-                      </select>
-                    </label>
-                  </div>
-                  {{#if operations.resources.gatherHistory.hasRows}}
-                  <div class="po-gather-history-wrap">
-                    <table class="po-gather-history-table">
-                      <thead>
-                        <tr>
-                          <th>When</th>
-                          <th>Actor</th>
-                          <th>Environment</th>
-                          <th>Result</th>
-                          <th>Roll</th>
-                          <th>Type</th>
-                          <th>Rations</th>
-                          <th>Notes</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {{#each operations.resources.gatherHistory.rows}}
-                        <tr>
-                          <td>{{timestampLabel}}</td>
-                          <td>{{actorName}}</td>
-                          <td>{{environmentLabel}}</td>
-                          <td><span class="po-gather-history-result {{resultClass}}">{{resultLabel}}</span></td>
-                          <td>{{rollVsDc}}</td>
-                          <td>{{resourceTypeLabel}}</td>
-                          <td>{{rations}}</td>
-                          <td class="po-gather-history-notes">{{detailsText}}</td>
-                          <td class="po-gather-history-actions">
-                            <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-gather-history-entry" data-history-id="{{id}}">Delete</button>
-                          </td>
-                        </tr>
-                        {{/each}}
-                      </tbody>
-                    </table>
-                  </div>
-                  {{else}}
-                  <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherHistory.emptyMessage}}</div>
-                  {{/if}}
+            <article class="po-gm-section po-gm-cockpit-card">
+              <div class="po-gm-cockpit-card-head">
+                <div>
+                  <div class="po-section-title">Downtime</div>
+                  <div class="po-op-summary">{{gmCockpit.downtime.statusLabel}}</div>
                 </div>
-              </details>
-            </section>
+                <span class="po-pill">{{gmCockpit.downtime.pendingCount}} pending</span>
+              </div>
+              <div class="po-gm-cockpit-metrics">
+                <span>Resolved {{gmCockpit.downtime.resolvedCount}}</span>
+                <span>Logs {{gmCockpit.downtime.logCount}}</span>
+              </div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-panel-tab" data-panel="downtime" {{#if gmCockpit.downtime.primaryDisabled}}disabled{{/if}}>{{gmCockpit.downtime.buttonLabel}}</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="downtime">Manage</button>
+              </div>
+            </article>
+
+            <article class="po-gm-section po-gm-cockpit-card">
+              <div class="po-gm-cockpit-card-head">
+                <div>
+                  <div class="po-section-title">Merchants</div>
+                  <div class="po-op-summary">{{gmCockpit.merchants.summaryLabel}}</div>
+                </div>
+                <span class="po-pill">{{gmCockpit.merchants.shopStatusLabel}}</span>
+              </div>
+              <div class="po-gm-cockpit-metrics">
+                <span>Live {{gmCockpit.merchants.liveCount}}</span>
+                <span>Total {{gmCockpit.merchants.totalCount}}</span>
+                <span>Refresh Due {{gmCockpit.merchants.staleCount}}</span>
+              </div>
+              <div class="po-op-summary">Next: {{gmCockpit.merchants.featuredName}}</div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="merchant-make-available-now" data-merchant-id="{{gmCockpit.merchants.featuredId}}" data-available="{{gmCockpit.merchants.primaryAvailableValue}}" {{#if gmCockpit.merchants.primaryDisabled}}disabled{{/if}}>{{gmCockpit.merchants.primaryLabel}}</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="merchants">Manage</button>
+              </div>
+            </article>
+
+            <article class="po-gm-section po-gm-cockpit-card">
+              <div class="po-gm-cockpit-card-head">
+                <div>
+                  <div class="po-section-title">Loot</div>
+                  <div class="po-op-summary">{{gmCockpit.loot.statusLabel}}</div>
+                </div>
+                <span class="po-pill">{{gmCockpit.loot.builderItemCount}} builder items</span>
+              </div>
+              <div class="po-gm-cockpit-metrics">
+                <span>Open Boards {{gmCockpit.loot.openRunCount}}</span>
+                <span>Claim Items {{gmCockpit.loot.claimItemCount}}</span>
+                <span>Published {{gmCockpit.loot.publishedAtLabel}}</span>
+              </div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.loot.primaryAction}}">{{gmCockpit.loot.primaryLabel}}</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="loot">Manage</button>
+              </div>
+            </article>
+
+            <article class="po-gm-section po-gm-cockpit-card">
+              <div class="po-gm-cockpit-card-head">
+                <div>
+                  <div class="po-section-title">Audio</div>
+                  <div class="po-op-summary">{{gmCockpit.audio.statusLabel}}</div>
+                </div>
+                <span class="po-pill">{{#if gmCockpit.audio.isPlaying}}Playing{{else}}Ready{{/if}}</span>
+              </div>
+              <div class="po-gm-cockpit-metrics">
+                <span>Tracks {{gmCockpit.audio.trackCount}}</span>
+                <span>Categories {{gmCockpit.audio.categoryCount}}</span>
+                <span>Preset {{gmCockpit.audio.selectedPresetLabel}}</span>
+              </div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="play-audio-scene-preset" data-preset-id="{{gmCockpit.audio.primaryPresetId}}" {{#if gmCockpit.audio.primaryPresetDisabled}}disabled{{/if}}>{{gmCockpit.audio.primaryPresetLabel}}</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="audio">Manage</button>
+              </div>
+            </article>
           </div>
+
+          <section class="po-gm-section po-gm-cockpit-manage">
+            <div>
+              <div class="po-section-title">Manage</div>
+              <div class="po-op-summary">Reputation {{gmCockpit.reputation.trackedCount}} tracked / {{gmCockpit.reputation.revealedCount}} revealed - {{gmCockpit.reputation.statusLabel}}</div>
+            </div>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="faction">Reputation</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="settings">Settings</button>
+            </div>
+          </section>
         </section>
 
-        
         {{/if}}
         {{/if}}
       </aside>

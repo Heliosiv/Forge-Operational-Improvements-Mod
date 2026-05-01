@@ -1,29 +1,29 @@
 /* =========================================================
    GM Standalone Layout Hotfix
    ========================================================= */
-.party-operations :is(
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"]
-) {
+.party-operations :is(.po-window[data-tool="gm-environment"], .po-window[data-tool="gm-downtime"]) {
   --po-layout-max: clamp(920px, 88vw, 1260px);
 }
 
-.party-operations :is(
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) {
+.party-operations
+  :is(
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  ) {
   --po-layout-max: clamp(980px, 90vw, 1380px);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-panel-tabs {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -31,14 +31,17 @@
   align-items: flex-start;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-panel-tabs .po-tab {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs
+  .po-tab {
   width: auto;
   flex: 0 1 auto;
   min-width: 0;
@@ -55,23 +58,27 @@
 }
 
 @media (max-width: 1360px) {
-  .party-operations :is(
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-panel-tabs {
+  .party-operations
+    :is(
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 960px) {
-  .party-operations :is(
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-panel-tabs {
+  .party-operations
+    :is(
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -85,12 +92,14 @@
 }
 
 @media (max-width: 560px) {
-  .party-operations :is(
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-panel-tabs {
+  .party-operations
+    :is(
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs {
     grid-template-columns: 1fr;
   }
 }
@@ -98,61 +107,72 @@
 /* =========================================================
    GM Standalone Readability Pass
    ========================================================= */
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  ) {
   --po-panel-gap: 12px;
   --po-form-label-col: clamp(136px, 16vw, 210px);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) .po-section-title {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  )
+  .po-section-title {
   font-size: 0.86rem;
   letter-spacing: 0.02em;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) :is(.po-op-summary, .po-hint) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  )
+  :is(.po-op-summary, .po-hint) {
   font-size: 0.84rem;
   line-height: 1.35;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) .po-resource-row > span {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  )
+  .po-resource-row
+  > span {
   font-size: 0.76rem;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) .po-resource-row :is(.po-input, .po-select) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  )
+  .po-resource-row
+  :is(.po-input, .po-select) {
   min-height: 32px;
 }
 
@@ -253,13 +273,18 @@
 }
 
 @media (max-width: 780px) {
-  .party-operations .po-window[data-tool="gm-downtime"] :is(.po-downtime-resolver-actions, .po-downtime-log-actions, .po-downtime-queue-actions) {
+  .party-operations
+    .po-window[data-tool="gm-downtime"]
+    :is(.po-downtime-resolver-actions, .po-downtime-log-actions, .po-downtime-queue-actions) {
     display: grid;
     grid-template-columns: 1fr;
     gap: 6px;
   }
 
-  .party-operations .po-window[data-tool="gm-downtime"] :is(.po-downtime-resolver-actions, .po-downtime-log-actions, .po-downtime-queue-actions) .po-btn {
+  .party-operations
+    .po-window[data-tool="gm-downtime"]
+    :is(.po-downtime-resolver-actions, .po-downtime-log-actions, .po-downtime-queue-actions)
+    .po-btn {
     width: 100%;
   }
 }
@@ -293,19 +318,20 @@
   }
 }
 
-
 /* =========================================================
    GM Workspace Standardization
    ========================================================= */
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  ) {
   --po-gm-shell-border: color-mix(in srgb, var(--po-border-strong) 38%, var(--po-border));
   --po-gm-shell-shadow: 0 10px 24px color-mix(in srgb, #5d3b16 12%, transparent);
   --po-gm-shell-surface: linear-gradient(
@@ -315,29 +341,33 @@
   );
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-content.po-gm-shell {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-content.po-gm-shell {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
   position: sticky;
   top: 0;
   z-index: 7;
@@ -348,22 +378,33 @@
   border: 1px solid var(--po-gm-shell-border);
   border-radius: 16px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 96%, transparent), color-mix(in srgb, var(--po-bg-alt) 90%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated) 96%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 90%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 420px 420px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 36%, transparent), 0 8px 20px color-mix(in srgb, #5d3b16 10%, transparent);
+  background-size:
+    100% 100%,
+    420px 420px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
+    0 8px 20px color-mix(in srgb, #5d3b16 10%, transparent);
   backdrop-filter: blur(5px);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+  .po-tab {
   width: 100%;
   min-width: 0;
   min-height: 56px;
@@ -378,30 +419,36 @@
   border-radius: 12px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-title {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+  .po-gm-tab-title {
   font-size: 0.78rem;
   line-height: 1.15;
   letter-spacing: 0.02em;
   color: var(--po-text-strong);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-sub {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+  .po-gm-tab-sub {
   display: block;
   max-width: 100%;
   overflow: hidden;
@@ -411,61 +458,75 @@
   text-overflow: ellipsis;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab.is-utility {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+  .po-tab.is-utility {
   border-style: dashed;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-subtabs {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-subtabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px;
   border: 1px solid color-mix(in srgb, var(--po-border) 86%, white 14%);
   border-radius: 14px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, white 6%), color-mix(in srgb, var(--po-bg-alt) 88%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated) 94%, white 6%),
+    color-mix(in srgb, var(--po-bg-alt) 88%, transparent)
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 34%, transparent);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-tabs.po-gm-subtabs .po-tab {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-subtabs
+  .po-tab {
   width: auto;
   flex: 0 0 auto;
   min-width: 120px;
   padding-inline: 12px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-intro {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-intro {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
@@ -476,35 +537,95 @@
   border-radius: 18px;
   background:
     radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--po-accent) 12%, transparent), transparent 28%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 96%, white 4%), color-mix(in srgb, var(--po-bg-alt) 86%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated) 96%, white 4%),
+      color-mix(in srgb, var(--po-bg-alt) 86%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 100% 100%, 560px 560px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), var(--po-gm-shell-shadow);
+  background-size:
+    100% 100%,
+    100% 100%,
+    560px 560px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    var(--po-gm-shell-shadow);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-copy {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-copy {
   display: grid;
   gap: 6px;
   align-content: start;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-eyebrow {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-actions {
+  margin-top: 8px;
+  align-items: center;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-actions
+  .po-btn {
+  flex: 0 1 auto;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-advanced-disclosure {
+  margin-top: 10px;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-eyebrow {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -512,57 +633,67 @@
   color: color-mix(in srgb, var(--po-muted) 92%, var(--po-text));
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-intro .po-section-title {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-intro
+  .po-section-title {
   font-size: 1.14rem;
   line-height: 1.15;
   letter-spacing: 0.02em;
   color: var(--po-text-strong);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-intro :is(.po-hint, .po-op-summary) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-intro
+  :is(.po-hint, .po-op-summary) {
   max-width: 70ch;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-stat-grid {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
   gap: 10px;
   align-items: stretch;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-stat {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-stat {
   min-height: 0;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--po-border) 88%, white 12%);
@@ -574,15 +705,18 @@
   align-content: start;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-stat :is(span, .po-env-metric-label) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-stat
+  :is(span, .po-env-metric-label) {
   font-size: 0.68rem;
   line-height: 1.2;
   letter-spacing: 0.06em;
@@ -591,44 +725,51 @@
   font-weight: 700;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) .po-gm-page-stat :is(strong, .po-env-metric-value) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-page-stat
+  :is(strong, .po-env-metric-value) {
   font-size: 0.98rem;
   line-height: 1.25;
   color: var(--po-text-strong);
   white-space: normal;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"]
-) :is(
-  .po-loot-control-card,
-  .po-loot-sidebar-card,
-  .po-loot-warning-card,
-  .po-loot-roll-card,
-  .po-env-summary-item,
-  .po-merchant-city-catalog-item,
-  .po-merchant-location-assigned-item,
-  .po-gm-workspace-card,
-  .po-gm-loot-summary-chip,
-  .po-audio-summary-chip
-) {
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  :is(
+    .po-loot-control-card,
+    .po-loot-sidebar-card,
+    .po-loot-warning-card,
+    .po-loot-roll-card,
+    .po-env-summary-item,
+    .po-merchant-city-catalog-item,
+    .po-merchant-location-assigned-item,
+    .po-gm-workspace-card,
+    .po-gm-loot-summary-chip,
+    .po-audio-summary-chip
+  ) {
   border-color: color-mix(in srgb, var(--po-border-strong) 34%, var(--po-border));
   background: var(--po-gm-shell-surface);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), 0 8px 18px color-mix(in srgb, #5d3b16 10%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    0 8px 18px color-mix(in srgb, #5d3b16 10%, transparent);
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-hero {
@@ -702,7 +843,10 @@
   padding: 12px 14px;
 }
 
-.party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-gm-resource-workspace-compact .po-gm-workspace-meta {
+.party-operations
+  .po-window[data-tool="rest-watch"][data-main-tab="gm"]
+  .po-gm-resource-workspace-compact
+  .po-gm-workspace-meta {
   margin-top: 0;
 }
 
@@ -717,40 +861,46 @@
 }
 
 @media (max-width: 1280px) {
-  .party-operations :is(
-    .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+  .party-operations
+    :is(
+      .po-window[data-tool="global-modifiers"],
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
   .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 1180px) {
-  .party-operations :is(
-    .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+  .party-operations
+    :is(
+      .po-window[data-tool="global-modifiers"],
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
   .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .party-operations :is(
-    .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-gm-page-intro,
+  .party-operations
+    :is(
+      .po-window[data-tool="global-modifiers"],
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-gm-page-intro,
   .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-gm-page-intro,
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-hero {
     grid-template-columns: 1fr;
@@ -762,40 +912,47 @@
 }
 
 @media (max-width: 900px) {
-  .party-operations :is(
-    .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+  .party-operations
+    :is(
+      .po-window[data-tool="global-modifiers"],
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
   .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 640px) {
-  .party-operations :is(
-    .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+  .party-operations
+    :is(
+      .po-window[data-tool="global-modifiers"],
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
   .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
     grid-template-columns: 1fr;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  ) .po-tabs.po-gm-subtabs .po-tab {
+  .party-operations
+    :is(
+      .po-window[data-tool="global-modifiers"],
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-subtabs
+    .po-tab {
     width: 100%;
   }
 }
@@ -803,16 +960,17 @@
 /* =========================================================
    GM Width Unification
    ========================================================= */
-.party-operations :is(
-  .po-window[data-tool="gm-factions"],
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-audio"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) {
+.party-operations
+  :is(
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  ) {
   --po-layout-max: clamp(980px, 92vw, 1540px);
   --po-panel-gap: 12px;
   --po-form-label-col: clamp(128px, 15vw, 188px);
@@ -845,10 +1003,18 @@
   border: 1px solid var(--po-gm-shell-border);
   border-radius: 16px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 96%, transparent), color-mix(in srgb, var(--po-bg-alt) 90%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated) 96%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 90%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 420px 420px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 36%, transparent), 0 8px 20px color-mix(in srgb, #5d3b16 10%, transparent);
+  background-size:
+    100% 100%,
+    420px 420px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
+    0 8px 20px color-mix(in srgb, #5d3b16 10%, transparent);
   backdrop-filter: blur(5px);
 }
 
@@ -898,10 +1064,19 @@
   border-radius: 18px;
   background:
     radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--po-accent) 12%, transparent), transparent 28%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 96%, white 4%), color-mix(in srgb, var(--po-bg-alt) 86%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated) 96%, white 4%),
+      color-mix(in srgb, var(--po-bg-alt) 86%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 100% 100%, 560px 560px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), var(--po-gm-shell-shadow);
+  background-size:
+    100% 100%,
+    100% 100%,
+    560px 560px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    var(--po-gm-shell-shadow);
 }
 
 .party-operations .po-window[data-tool="gm-factions"] .po-gm-page-copy {
@@ -968,11 +1143,9 @@
   gap: 12px;
 }
 
-.party-operations .po-window[data-tool="gm-factions"] :is(
-  .po-reputation-builder-grid,
-  .po-reputation-detail-grid,
-  .po-reputation-edit-grid
-) {
+.party-operations
+  .po-window[data-tool="gm-factions"]
+  :is(.po-reputation-builder-grid, .po-reputation-detail-grid, .po-reputation-edit-grid) {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
@@ -1012,5 +1185,221 @@
 @media (max-width: 640px) {
   .party-operations .po-window[data-tool="gm-factions"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
     grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   GM Cockpit
+   ========================================================= */
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  grid-template-columns: none;
+  gap: 8px;
+  align-items: stretch;
+  border-radius: 14px;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-nav-group {
+  display: flex;
+  flex: 1 1 240px;
+  gap: 6px;
+  align-items: stretch;
+  min-width: min(100%, 240px);
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-nav-group-primary {
+  flex: 0 1 260px;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-nav-group-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 70px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
+  border-radius: calc(var(--po-radius) - 2px);
+  background: color-mix(in srgb, var(--po-bg-alt) 88%, transparent);
+  color: var(--po-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-gm-nav-group
+  .po-tab {
+  flex: 1 1 126px;
+  width: auto;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit {
+  gap: 12px;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.35fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-stat-grid {
+  align-self: stretch;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alerts {
+  display: grid;
+  gap: 8px;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alert-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alert-list .po-op-summary {
+  margin: 0;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 210px;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-card-head .po-pill {
+  flex: 0 0 auto;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-metrics span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border) 80%, transparent);
+  border-radius: calc(var(--po-radius) - 2px);
+  background: color-mix(in srgb, var(--po-bg-alt) 82%, transparent);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-manage {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+@media (max-width: 1180px) {
+  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-grid {
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+  }
+
+  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .party-operations
+    :is(
+      .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+      .po-window[data-tool="operations-shell"][data-main-tab="gm"],
+      .po-window[data-tool="gm-factions"],
+      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-gm-nav-group {
+    flex-direction: column;
+  }
+
+  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-manage {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

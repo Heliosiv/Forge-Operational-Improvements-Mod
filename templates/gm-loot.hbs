@@ -5,7 +5,7 @@
       <div class="po-subtitle" aria-live="polite">GM Loot - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
     </div>
     <div class="po-controls">
-      <button type="button" class="po-btn po-btn-sm" data-action="gm-loot-page-back">Back</button>
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-loot-page-back">Back to Cockpit</button>
       <button type="button" class="po-icon-btn" data-action="gm-loot-page-refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
       </button>
@@ -22,6 +22,11 @@
           <div class="po-section-title">Loot Workspace</div>
           <div class="po-hint">Build treasure, tune registry sources, and keep player claim boards aligned with the same shell used across the rest of the GM workspace.</div>
           <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status aria-live="polite">{{uiActionStatusMessage}}</div>
+          <div class="po-op-action-row po-gm-page-actions">
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="roll-loot-preview">Generate Loot</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="publish-loot-claims">Give to Players</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Claim Board</button>
+          </div>
         </div>
         <div class="po-gm-loot-summary-grid po-gm-page-stat-grid" role="list" aria-label="Loot workspace summary">
           <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Item Source</span><strong>Compendium</strong></div>
@@ -405,7 +410,7 @@
 
         {{#if operations.lootSources.settingsTabFilters}}
         <div id="po-loot-settings-filters-panel" class="po-gm-loot-settings-pane" role="tabpanel" aria-label="Loot filter settings">
-          <details class="po-panel-disclosure po-gm-loot-disclosure" open>
+          <details class="po-panel-disclosure po-gm-loot-disclosure po-gm-advanced-disclosure">
             <summary class="po-panel-disclosure-summary"><span class="po-section-title">World Rarity</span><span class="po-op-summary">Adjusts loot outcomes and merchant stock weighting</span></summary>
             <div class="po-panel-disclosure-body">
               <div class="po-resource-row po-merchant-rarity-row">
@@ -423,7 +428,7 @@
             </div>
           </details>
 
-          <details class="po-panel-disclosure po-gm-loot-disclosure" open>
+          <details class="po-panel-disclosure po-gm-loot-disclosure po-gm-advanced-disclosure">
             <summary class="po-panel-disclosure-summary"><span class="po-section-title">Item Filters</span><span class="po-op-summary">{{sourceSummary.enabledItemTypes}} enabled of {{sourceSummary.totalItemTypes}}</span></summary>
             <div class="po-panel-disclosure-body">
               <div class="po-loot-taxonomy-shell">

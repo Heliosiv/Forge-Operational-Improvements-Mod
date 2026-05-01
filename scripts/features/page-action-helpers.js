@@ -1,7 +1,9 @@
 import { createModulePerfTracker } from "../core/perf.js";
 
 function normalizePanelKey(value) {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function buildActionMeta(actionElement, event) {
@@ -19,17 +21,18 @@ function resolveActionControl(actionElement) {
 }
 
 function setPanelBusyState(app, isBusy) {
-  const root = app?.element instanceof HTMLElement
-    ? app.element
-    : (app?.element?.[0] instanceof HTMLElement ? app.element[0] : null);
+  const root =
+    app?.element instanceof HTMLElement
+      ? app.element
+      : app?.element?.[0] instanceof HTMLElement
+        ? app.element[0]
+        : null;
   if (!root) return;
   if (isBusy) root.setAttribute("aria-busy", "true");
   else root.removeAttribute("aria-busy");
 }
 
-export function createPageActionHelpers(app, {
-  perfTracker = createModulePerfTracker("page-actions")
-} = {}) {
+export function createPageActionHelpers(app, { perfTracker = createModulePerfTracker("page-actions") } = {}) {
   const inflightActionKeys = new Set();
 
   const rerender = (meta = {}) => {
@@ -76,6 +79,7 @@ export function createPageActionHelpers(app, {
     if (!panelKey) return;
     if (panelKey === normalizePanelKey(currentPanelKey)) return;
     app.persistWindowPosition?.({ immediate: true });
+    if (panelKey === "cockpit") await app.close?.();
     if (typeof openPanelByKey === "function") openPanelByKey(panelKey, { force: true });
   };
 

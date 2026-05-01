@@ -31,12 +31,11 @@
   letter-spacing: 0.04em;
   text-shadow: 0 1px 0 color-mix(in srgb, white 40%, transparent);
   border-color: color-mix(in srgb, var(--po-select-border) 80%, var(--po-border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--po-select-bg-light) 92%, white 8%),
-      var(--po-select-bg-dark)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-select-bg-light) 92%, white 8%),
+    var(--po-select-bg-dark)
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
 }
 
@@ -88,20 +87,163 @@
 /* Player Hub simplification */
 .party-operations .po-player-hub-shell {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.85rem;
 }
 
-.party-operations .po-player-hub-tabs {
+.party-operations .po-player-hub-nav {
   position: sticky;
   top: 0;
   z-index: 5;
-  background: var(--po-surface, rgba(16, 20, 28, 0.92));
-  padding-bottom: 0.25rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 0.55rem;
+  padding: 0.55rem;
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-surface) 82%, transparent);
 }
 
 .party-operations .po-player-hub-panel {
   display: grid;
+  gap: 0.75rem;
+}
+
+.party-operations .po-player-hub-nav-card {
+  display: grid;
+  gap: 0.2rem;
+  align-content: start;
+  min-width: 0;
+  min-height: 116px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
+  border-radius: calc(var(--po-radius) - 1px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated) 88%, transparent),
+    color-mix(in srgb, var(--po-bg-alt) 74%, transparent)
+  );
+  color: var(--po-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.party-operations .po-player-hub-nav-card.is-active {
+  border-color: color-mix(in srgb, var(--po-brass-strong) 68%, var(--po-border));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--po-brass) 38%, transparent),
+    0 0 12px color-mix(in srgb, var(--po-brass) 20%, transparent);
+}
+
+.party-operations .po-player-hub-nav-card.is-alert {
+  border-color: color-mix(in srgb, var(--po-warn) 72%, var(--po-border));
+}
+
+.party-operations .po-player-hub-nav-card.is-muted {
+  opacity: 0.78;
+}
+
+.party-operations .po-player-hub-nav-label,
+.party-operations .po-player-hub-nav-action,
+.party-operations .po-player-hub-nav-blocked,
+.party-operations .po-player-hub-attention > span,
+.party-operations .po-player-hub-focus-card span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--po-muted);
+}
+
+.party-operations .po-player-hub-nav-value {
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+  color: var(--po-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.party-operations .po-player-hub-nav-detail,
+.party-operations .po-player-hub-attention > div {
+  min-width: 0;
+  color: var(--po-muted);
+  font-size: 0.8rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.party-operations .po-player-hub-nav-action {
+  margin-top: 0.25rem;
+  color: var(--po-accent-contrast);
+}
+
+.party-operations .po-player-hub-nav-blocked {
+  color: var(--po-warn);
+}
+
+.party-operations .po-player-hub-attention,
+.party-operations .po-player-hub-panel-head,
+.party-operations .po-player-hub-section,
+.party-operations .po-player-hub-focus-card {
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-surface) 82%, transparent);
+}
+
+.party-operations .po-player-hub-attention {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.party-operations .po-player-hub-attention.is-alert {
+  border-color: color-mix(in srgb, var(--po-warn) 68%, var(--po-border));
+  background: color-mix(in srgb, var(--po-warn) 12%, var(--po-surface));
+}
+
+.party-operations .po-player-hub-attention.is-muted {
+  background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
+}
+
+.party-operations .po-player-hub-attention > strong {
+  color: var(--po-text-strong);
+  font-size: 0.96rem;
+}
+
+.party-operations .po-player-hub-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.party-operations .po-player-hub-panel-head > div {
+  min-width: 0;
+}
+
+.party-operations .po-player-hub-section {
+  display: grid;
   gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.party-operations .po-player-hub-focus-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.party-operations .po-player-hub-focus-card > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.party-operations .po-player-hub-focus-card strong {
+  min-width: 0;
+  color: var(--po-text-strong);
+  overflow-wrap: anywhere;
 }
 
 .party-operations .po-player-march-actions {
@@ -109,39 +251,48 @@
 }
 
 @media (max-width: 720px) {
-  .party-operations .po-player-hub-tabs {
+  .party-operations .po-player-hub-nav {
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
     overflow-x: auto;
-    white-space: nowrap;
+  }
+
+  .party-operations .po-player-hub-panel-head,
+  .party-operations .po-player-hub-focus-card {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-player-hub-panel-head {
+    display: grid;
   }
 }
-
 
 /* =========================================================
    Shared Control Theme Pass
    ========================================================= */
-.party-operations .po-window :is(
-  input[type="text"],
-  input[type="number"],
-  input[type="search"],
-  input[type="email"],
-  input[type="url"],
-  input[type="password"],
-  input[type="tel"],
-  textarea,
-  .po-input:not([type="range"]),
-  .po-time-range-input,
-  .po-notes-input
-) {
+.party-operations
+  .po-window
+  :is(
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    input[type="email"],
+    input[type="url"],
+    input[type="password"],
+    input[type="tel"],
+    textarea,
+    .po-input:not([type="range"]),
+    .po-time-range-input,
+    .po-notes-input
+  ) {
   color: var(--po-select-ink);
   color-scheme: light;
   caret-color: var(--po-select-ink);
   border-color: color-mix(in srgb, var(--po-select-border) 80%, var(--po-border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--po-select-bg-light) 94%, white 6%),
-      color-mix(in srgb, var(--po-select-bg-dark) 82%, white 18%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-select-bg-light) 94%, white 6%),
+    color-mix(in srgb, var(--po-select-bg-dark) 82%, white 18%)
+  );
   text-shadow: 0 1px 0 color-mix(in srgb, white 34%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 44%, transparent),
@@ -152,17 +303,19 @@
     background-color 140ms ease;
 }
 
-.party-operations .po-window :is(
-  input[type="text"],
-  input[type="number"],
-  input[type="search"],
-  input[type="email"],
-  input[type="url"],
-  input[type="password"],
-  input[type="tel"],
-  .po-input:not([type="range"]),
-  .po-time-range-input
-) {
+.party-operations
+  .po-window
+  :is(
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    input[type="email"],
+    input[type="url"],
+    input[type="password"],
+    input[type="tel"],
+    .po-input:not([type="range"]),
+    .po-time-range-input
+  ) {
   min-height: clamp(36px, 2.3vw, 40px);
   padding: 6px 10px;
 }
@@ -172,35 +325,39 @@
   line-height: 1.42;
 }
 
-.party-operations .po-window :is(
-  input[type="text"],
-  input[type="number"],
-  input[type="search"],
-  input[type="email"],
-  input[type="url"],
-  input[type="password"],
-  input[type="tel"],
-  textarea,
-  .po-input:not([type="range"]),
-  .po-time-range-input,
-  .po-notes-input
-)::placeholder {
+.party-operations
+  .po-window
+  :is(
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    input[type="email"],
+    input[type="url"],
+    input[type="password"],
+    input[type="tel"],
+    textarea,
+    .po-input:not([type="range"]),
+    .po-time-range-input,
+    .po-notes-input
+  )::placeholder {
   color: color-mix(in srgb, var(--po-select-ink) 54%, white 46%);
 }
 
-.party-operations .po-window :is(
-  input[type="text"],
-  input[type="number"],
-  input[type="search"],
-  input[type="email"],
-  input[type="url"],
-  input[type="password"],
-  input[type="tel"],
-  textarea,
-  .po-input:not([type="range"]),
-  .po-time-range-input,
-  .po-notes-input
-):is(:focus, :focus-visible) {
+.party-operations
+  .po-window
+  :is(
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    input[type="email"],
+    input[type="url"],
+    input[type="password"],
+    input[type="tel"],
+    textarea,
+    .po-input:not([type="range"]),
+    .po-time-range-input,
+    .po-notes-input
+  ):is(:focus, :focus-visible) {
   border-color: color-mix(in srgb, var(--po-neon-green) 55%, var(--po-select-border));
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 48%, transparent),
@@ -209,27 +366,28 @@
   outline: none;
 }
 
-.party-operations .po-window :is(
-  input[type="text"],
-  input[type="number"],
-  input[type="search"],
-  input[type="email"],
-  input[type="url"],
-  input[type="password"],
-  input[type="tel"],
-  textarea,
-  .po-input:not([type="range"]),
-  .po-time-range-input,
-  .po-notes-input
-):disabled {
+.party-operations
+  .po-window
+  :is(
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    input[type="email"],
+    input[type="url"],
+    input[type="password"],
+    input[type="tel"],
+    textarea,
+    .po-input:not([type="range"]),
+    .po-time-range-input,
+    .po-notes-input
+  ):disabled {
   color: color-mix(in srgb, var(--po-select-ink) 52%, white 48%);
   border-color: color-mix(in srgb, var(--po-select-border) 48%, white 18%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--po-select-bg-light) 80%, white 20%),
-      color-mix(in srgb, var(--po-select-bg-dark) 64%, white 36%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-select-bg-light) 80%, white 20%),
+    color-mix(in srgb, var(--po-select-bg-dark) 64%, white 36%)
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent);
   opacity: 1;
 }
@@ -244,12 +402,11 @@
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--po-select-border) 82%, var(--po-border));
   border-radius: 5px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--po-select-bg-light) 95%, white 5%),
-      color-mix(in srgb, var(--po-select-bg-dark) 78%, white 22%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-select-bg-light) 95%, white 5%),
+    color-mix(in srgb, var(--po-select-bg-dark) 78%, white 22%)
+  );
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 42%, transparent),
     0 1px 2px color-mix(in srgb, #5d3b16 12%, transparent);
@@ -283,12 +440,11 @@
 
 .party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]:checked {
   border-color: color-mix(in srgb, #7c5624 72%, var(--po-select-border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, #c5963f 56%, var(--po-select-bg-light) 44%),
-      color-mix(in srgb, #7c5624 66%, var(--po-select-bg-dark) 34%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #c5963f 56%, var(--po-select-bg-light) 44%),
+    color-mix(in srgb, #7c5624 66%, var(--po-select-bg-dark) 34%)
+  );
 }
 
 .party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]:checked::before {
@@ -309,12 +465,19 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 26%, transparent);
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) :is(.po-resource-row, .po-switch) > input[type="checkbox"] {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  :is(.po-resource-row, .po-switch)
+  > input[type="checkbox"] {
   justify-self: start;
   align-self: center;
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider) {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  ) {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
@@ -326,22 +489,29 @@
   cursor: pointer;
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-webkit-slider-runnable-track {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  )::-webkit-slider-runnable-track {
   height: 10px;
   border: 1px solid color-mix(in srgb, var(--po-select-border) 78%, var(--po-border));
   border-radius: 999px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--po-select-bg-light) 88%, white 12%),
-      color-mix(in srgb, var(--po-select-bg-dark) 86%, #7c5624 14%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-select-bg-light) 88%, white 12%),
+    color-mix(in srgb, var(--po-select-bg-dark) 86%, #7c5624 14%)
+  );
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 48%, transparent),
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-webkit-slider-thumb {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  )::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 16px;
@@ -349,49 +519,62 @@
   margin-top: -4px;
   border: 2px solid color-mix(in srgb, white 84%, var(--po-select-bg-light) 16%);
   border-radius: 999px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, #8f6f3f 48%, var(--po-select-bg-light) 52%),
-      color-mix(in srgb, #4b3115 76%, black 24%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #8f6f3f 48%, var(--po-select-bg-light) 52%),
+    color-mix(in srgb, #4b3115 76%, black 24%)
+  );
   box-shadow: 0 1px 4px color-mix(in srgb, #241814 28%, transparent);
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-moz-range-track {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  )::-moz-range-track {
   height: 10px;
   border: 1px solid color-mix(in srgb, var(--po-select-border) 78%, var(--po-border));
   border-radius: 999px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--po-select-bg-light) 88%, white 12%),
-      color-mix(in srgb, var(--po-select-bg-dark) 86%, #7c5624 14%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-select-bg-light) 88%, white 12%),
+    color-mix(in srgb, var(--po-select-bg-dark) 86%, #7c5624 14%)
+  );
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 48%, transparent),
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-moz-range-thumb {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  )::-moz-range-thumb {
   width: 16px;
   height: 16px;
   border: 2px solid color-mix(in srgb, white 84%, var(--po-select-bg-light) 16%);
   border-radius: 999px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, #8f6f3f 48%, var(--po-select-bg-light) 52%),
-      color-mix(in srgb, #4b3115 76%, black 24%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #8f6f3f 48%, var(--po-select-bg-light) 52%),
+    color-mix(in srgb, #4b3115 76%, black 24%)
+  );
   box-shadow: 0 1px 4px color-mix(in srgb, #241814 28%, transparent);
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible) {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  ):is(:focus, :focus-visible) {
   outline: none;
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible)::-webkit-slider-runnable-track {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  ):is(:focus, :focus-visible)::-webkit-slider-runnable-track {
   border-color: color-mix(in srgb, var(--po-neon-green) 52%, var(--po-select-border));
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--po-accent) 16%, transparent),
@@ -399,7 +582,11 @@
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible)::-moz-range-track {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  ):is(:focus, :focus-visible)::-moz-range-track {
   border-color: color-mix(in srgb, var(--po-neon-green) 52%, var(--po-select-border));
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--po-accent) 16%, transparent),
@@ -407,7 +594,11 @@
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):disabled {
+.party-operations
+  .po-window:is([data-tool], [data-main-tab])
+  input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(
+    .po-audio-live-volume-slider
+  ):disabled {
   cursor: default;
   opacity: 0.58;
 }
@@ -423,12 +614,11 @@
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--po-select-border) 54%, var(--po-border));
   border-radius: 14px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--po-surface-elevated) 94%, white 6%),
-      color-mix(in srgb, var(--po-select-bg-light) 82%, var(--po-select-bg-dark) 18%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated) 94%, white 6%),
+    color-mix(in srgb, var(--po-select-bg-light) 82%, var(--po-select-bg-dark) 18%)
+  );
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 42%, transparent),
     0 6px 14px color-mix(in srgb, #5d3b16 10%, transparent);
@@ -455,11 +645,19 @@
   grid-area: dim-input;
 }
 
-.party-operations [data-tool="marching-order"] .po-march-light-grid .po-checkbox-target > .po-light-range-label:nth-of-type(1) {
+.party-operations
+  [data-tool="marching-order"]
+  .po-march-light-grid
+  .po-checkbox-target
+  > .po-light-range-label:nth-of-type(1) {
   grid-area: bright-label;
 }
 
-.party-operations [data-tool="marching-order"] .po-march-light-grid .po-checkbox-target > .po-light-range-label:nth-of-type(2) {
+.party-operations
+  [data-tool="marching-order"]
+  .po-march-light-grid
+  .po-checkbox-target
+  > .po-light-range-label:nth-of-type(2) {
   grid-area: dim-label;
 }
 

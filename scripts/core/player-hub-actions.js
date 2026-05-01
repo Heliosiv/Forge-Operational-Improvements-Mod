@@ -1,7 +1,4 @@
-export function createPlayerHubActions({
-  playerHubActionTypes = {},
-  playerHubClaimVariants = {}
-} = {}) {
+export function createPlayerHubActions({ playerHubActionTypes = {}, playerHubClaimVariants = {} } = {}) {
   function normalizePlayerHubActionType(value) {
     const normalized = String(value ?? "").trim();
     switch (normalized) {
@@ -21,14 +18,18 @@ export function createPlayerHubActions({
   }
 
   function normalizePlayerHubClaimVariant(value, fallback = playerHubClaimVariants.ITEM ?? "item") {
-    const normalized = String(value ?? "").trim().toLowerCase();
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
     if (normalized === playerHubClaimVariants.CURRENCY) return playerHubClaimVariants.CURRENCY;
     if (normalized === playerHubClaimVariants.ITEM) return playerHubClaimVariants.ITEM;
     return fallback;
   }
 
   function getPlayerHubActionRequestFromUiAction(action) {
-    const normalized = String(action ?? "").trim().toLowerCase();
+    const normalized = String(action ?? "")
+      .trim()
+      .toLowerCase();
     switch (normalized) {
       case "assign-me":
         return { type: playerHubActionTypes.ASSIGN_WATCH };
@@ -38,7 +39,11 @@ export function createPlayerHubActions({
         return { type: playerHubActionTypes.SUBMIT_DOWNTIME };
       case "submit-downtime-action-replace":
         return { type: playerHubActionTypes.SUBMIT_DOWNTIME };
+      case "submit-downtime-v2":
+        return { type: playerHubActionTypes.SUBMIT_DOWNTIME };
       case "collect-downtime-result":
+        return { type: playerHubActionTypes.COLLECT_DOWNTIME };
+      case "ack-downtime-v2-result":
         return { type: playerHubActionTypes.COLLECT_DOWNTIME };
       case "claim-loot-item":
         return {

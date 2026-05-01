@@ -15,13 +15,6 @@
   <div class="po-body">
     {{#if playerHubSimpleMode}}
     <section class="po-content po-player-hub-shell">
-      <nav class="po-tabs po-tabs-sub po-player-hub-tabs" role="tablist" aria-label="Player Hub Tabs">
-        <button type="button" role="tab" aria-controls="po-player-hub-panel-watch" tabindex="{{#if playerHubWatch}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubWatch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="watch" aria-selected="{{#if playerHubWatch}}true{{else}}false{{/if}}">Watch</button>
-        <button type="button" role="tab" aria-controls="po-player-hub-panel-march" tabindex="{{#if playerHubMarch}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubMarch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="march" aria-selected="{{#if playerHubMarch}}true{{else}}false{{/if}}">March</button>
-        <button type="button" role="tab" aria-controls="po-player-hub-panel-loot" tabindex="{{#if playerHubLoot}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubLoot}}is-active{{/if}}" data-action="player-hub-tab" data-tab="loot" aria-selected="{{#if playerHubLoot}}true{{else}}false{{/if}}">Loot</button>
-        <button type="button" role="tab" aria-controls="po-player-hub-panel-downtime" tabindex="{{#if playerHubDowntime}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubDowntime}}is-active{{/if}}" data-action="player-hub-tab" data-tab="downtime" aria-selected="{{#if playerHubDowntime}}true{{else}}false{{/if}}">Downtime</button>
-      </nav>
-
       {{#if playerActorSelector.hasChoices}}
       <div class="po-player-character-strip" aria-label="Active character">
         <span class="po-player-character-strip-label">Using</span>
@@ -37,14 +30,24 @@
       {{/if}}
 
       {{#if playerHubFlow.hasCards}}
-      <section class="po-overview po-player-hub-flow" aria-label="Player workflow">
+      <nav class="po-player-hub-nav" role="tablist" aria-label="Player Hub Tabs">
         {{#each playerHubFlow.cards}}
-        <button type="button" class="po-overview-card {{toneClass}} {{#if selected}}is-active{{/if}}" data-action="player-hub-tab" data-tab="{{tab}}" aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
-          <span>{{label}}</span>
-          <strong>{{value}}</strong>
-          <div class="po-overview-card-detail">{{detail}}</div>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-{{tab}}" tabindex="{{#if selected}}0{{else}}-1{{/if}}" class="po-player-hub-nav-card {{toneClass}} {{#if selected}}is-active{{/if}}" data-action="player-hub-tab" data-tab="{{tab}}" aria-selected="{{#if selected}}true{{else}}false{{/if}}">
+          <span class="po-player-hub-nav-label">{{label}}</span>
+          <strong class="po-player-hub-nav-value">{{value}}</strong>
+          <span class="po-player-hub-nav-detail">{{detail}}</span>
+          <span class="po-player-hub-nav-action">{{nextActionLabel}}</span>
+          {{#if hasBlockedReason}}<span class="po-player-hub-nav-blocked">{{blockedReason}}</span>{{/if}}
         </button>
         {{/each}}
+      </nav>
+      {{/if}}
+
+      {{#if playerHubFlow.hasAttention}}
+      <section class="po-player-hub-attention {{playerHubFlow.attention.toneClass}}" aria-label="What needs my attention">
+        <span>What needs my attention?</span>
+        <strong>{{playerHubFlow.attention.nextActionLabel}}</strong>
+        <div>{{playerHubFlow.attention.detail}}{{#if playerHubFlow.attention.hasBlockedReason}} - {{playerHubFlow.attention.blockedReason}}{{/if}}</div>
       </section>
       {{/if}}
 

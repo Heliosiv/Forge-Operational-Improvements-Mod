@@ -80,12 +80,29 @@ export function createRestWatchPlayerAppClass(deps = {}) {
     downtime = {},
     playerHubTab = "watch"
   } = {}) {
+    const openWatchSlots = Math.max(
+      0,
+      (Number(overview.totalSlots ?? 0) || 0) - (Number(overview.occupiedSlots ?? 0) || 0)
+    );
+    const openLootRuns = Math.max(0, Number(lootClaims.openRunCount ?? 0) || 0);
+    const lootItemCount = Math.max(0, Number(lootClaims.itemCount ?? 0) || 0);
+    const downtimePendingCount = Math.max(0, Number(downtime.pendingCount ?? 0) || 0);
+    const downtimeCollectCount = Array.isArray(downtime.entries)
+      ? downtime.entries.filter((entry) => entry?.canCollect).length
+      : 0;
+    const downtimeQueuedCount = Array.isArray(downtime.entries)
+      ? downtime.entries.reduce((sum, entry) => sum + Math.max(0, Number(entry?.queueCount ?? 0) || 0), 0)
+      : 0;
+
     const cards = [
       {
         tab: "watch",
         label: "Watch",
         value: `${Math.max(0, Number(overview.occupiedSlots ?? 0) || 0)}/${Math.max(0, Number(overview.totalSlots ?? 0) || 0)}`,
-        detail: `${Math.max(0, Number(overview.assignedEntries ?? 0) || 0)} assigned`,
+        detail: openWatchSlots > 0 ? `${openWatchSlots} slot(s) open` : "All visible slots filled",
+        nextActionLabel: openWatchSlots > 0 ? "Claim a watch slot" : "Review coverage",
+        blockedReason: overview.hasLowDarkvisionCoverage ? "Low darkvision coverage" : "",
+        hasBlockedReason: Boolean(overview.hasLowDarkvisionCoverage),
         selected: playerHubTab === "watch",
         toneClass: overview.hasLowDarkvisionCoverage ? "is-alert" : ""
       },
@@ -94,29 +111,49 @@ export function createRestWatchPlayerAppClass(deps = {}) {
         label: "March",
         value: String(playerMarch.currentRankLabel ?? "Unassigned"),
         detail: playerMarch.hasActor ? String(playerMarch.actorName ?? "") : "No active character",
+        nextActionLabel: playerMarch.canSetRank ? "Choose your rank" : "View current position",
+        blockedReason: playerMarch.hasActor ? String(playerMarch.lockState ?? "") : "No active character",
+        hasBlockedReason: !playerMarch.hasActor || !playerMarch.canSetRank,
         selected: playerHubTab === "march",
         toneClass: playerMarch.canSetRank ? "" : "is-muted"
       },
       {
         tab: "loot",
         label: "Loot",
-        value: `${Math.max(0, Number(lootClaims.openRunCount ?? 0) || 0)} open`,
-        detail: `${Math.max(0, Number(lootClaims.itemCount ?? 0) || 0)} item(s) visible`,
+        value: `${openLootRuns} open`,
+        detail: `${lootItemCount} item(s) visible`,
+        nextActionLabel: openLootRuns > 0 ? "Open a claim board" : "Waiting for loot",
+        blockedReason: openLootRuns > 0 ? "" : "No active boards",
+        hasBlockedReason: openLootRuns <= 0,
         selected: playerHubTab === "loot",
         toneClass: lootClaims.hasOpenRuns ? "" : "is-muted"
       },
       {
         tab: "downtime",
         label: "Downtime",
-        value: `${Math.max(0, Number(downtime.pendingCount ?? 0) || 0)} pending`,
-        detail: downtime?.publication?.statusLabel ?? "Not published",
+        value: downtimeCollectCount > 0 ? `${downtimeCollectCount} collect` : `${downtimePendingCount} pending`,
+        detail:
+          downtimeQueuedCount > 0
+            ? `${downtimeQueuedCount} queued`
+            : (downtime?.publication?.statusLabel ?? "Not published"),
+        nextActionLabel:
+          downtimeCollectCount > 0
+            ? "Collect rewards"
+            : downtime?.submit?.canSubmit
+              ? "Submit downtime"
+              : "Check status",
+        blockedReason: downtime?.submit?.canSubmit ? "" : String(downtime?.submit?.disabledReason ?? ""),
+        hasBlockedReason: !downtime?.submit?.canSubmit,
         selected: playerHubTab === "downtime",
-        toneClass: downtime?.submit?.canSubmit ? "" : "is-muted"
+        toneClass: downtimeCollectCount > 0 ? "is-alert" : downtime?.submit?.canSubmit ? "" : "is-muted"
       }
     ];
+    const attention = cards.find((card) => card.selected) ?? cards[0] ?? null;
     return {
       cards,
-      hasCards: cards.length > 0
+      hasCards: cards.length > 0,
+      attention,
+      hasAttention: Boolean(attention)
     };
   }
 

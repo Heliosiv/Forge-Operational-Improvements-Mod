@@ -52,7 +52,12 @@ export async function applyPlayerSettingWriteRequest(message, requesterRef = nul
   const settingKey = String(message?.settingKey ?? "").trim();
   if (!isWritableModuleSettingKey(settingKey)) return;
   const settingRecord = game.settings?.settings?.get?.(`${moduleId}.${settingKey}`) ?? null;
-  if (String(settingRecord?.scope ?? "").trim().toLowerCase() === "client") return;
+  if (
+    String(settingRecord?.scope ?? "")
+      .trim()
+      .toLowerCase() === "client"
+  )
+    return;
 
   try {
     const fullSettingKey = `${moduleId}.${settingKey}`;
@@ -124,8 +129,8 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
     return;
   }
 
-  const folderWithinOperationsRoot = folderId === rootFolderId
-    || Boolean(journalFolderIsUnderRoot?.(folderId, rootFolderId));
+  const folderWithinOperationsRoot =
+    folderId === rootFolderId || Boolean(journalFolderIsUnderRoot?.(folderId, rootFolderId));
   if (!folderWithinOperationsRoot) {
     ui.notifications?.warn("That folder is outside Party Operations journal logs.");
     return;
@@ -157,7 +162,8 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
       foldersToUpdate.push(targetFolder);
     }
     for (const document of Array.from(targetFolder?.contents ?? [])) {
-      if (!document || String(document?.documentName ?? "") !== "JournalEntry" || typeof document.update !== "function") continue;
+      if (!document || String(document?.documentName ?? "") !== "JournalEntry" || typeof document.update !== "function")
+        continue;
       const documentId = String(document?.id ?? "").trim();
       if (!documentId || seenDocumentIds.has(documentId)) continue;
       seenDocumentIds.add(documentId);
@@ -172,9 +178,10 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
 
   let updatedFolderCount = 0;
   for (const targetFolder of foldersToUpdate) {
-    const currentOwnership = targetFolder?.ownership && typeof targetFolder.ownership === "object"
-      ? foundry.utils.deepClone(targetFolder.ownership)
-      : { default: Number(constDocOwnershipLevels?.NONE ?? 0) };
+    const currentOwnership =
+      targetFolder?.ownership && typeof targetFolder.ownership === "object"
+        ? foundry.utils.deepClone(targetFolder.ownership)
+        : { default: Number(constDocOwnershipLevels?.NONE ?? 0) };
     let changed = false;
     for (const [ownershipKey, level] of Object.entries(levels)) {
       if (Number(currentOwnership[ownershipKey]) === Number(level)) continue;
@@ -195,9 +202,10 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
 
   let updatedCount = 0;
   for (const document of documents) {
-    const currentOwnership = document?.ownership && typeof document.ownership === "object"
-      ? foundry.utils.deepClone(document.ownership)
-      : { default: Number(constDocOwnershipLevels?.NONE ?? 0) };
+    const currentOwnership =
+      document?.ownership && typeof document.ownership === "object"
+        ? foundry.utils.deepClone(document.ownership)
+        : { default: Number(constDocOwnershipLevels?.NONE ?? 0) };
     let changed = false;
     for (const [ownershipKey, level] of Object.entries(levels)) {
       if (Number(currentOwnership[ownershipKey]) === Number(level)) continue;
@@ -218,13 +226,13 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
   }
 
   if (updatedFolderCount > 0 || updatedCount > 0) {
-    const folderSummary = updatedFolderCount > 0
-      ? `${updatedFolderCount} folder${updatedFolderCount === 1 ? "" : "s"}`
-      : "0 folders";
-    const documentSummary = updatedCount > 0
-      ? `${updatedCount} document${updatedCount === 1 ? "" : "s"}`
-      : "0 documents";
-    ui.notifications?.info(`Updated permissions on ${folderSummary} and ${documentSummary} in "${String(folder?.name ?? "Folder")}".`);
+    const folderSummary =
+      updatedFolderCount > 0 ? `${updatedFolderCount} folder${updatedFolderCount === 1 ? "" : "s"}` : "0 folders";
+    const documentSummary =
+      updatedCount > 0 ? `${updatedCount} document${updatedCount === 1 ? "" : "s"}` : "0 documents";
+    ui.notifications?.info(
+      `Updated permissions on ${folderSummary} and ${documentSummary} in "${String(folder?.name ?? "Folder")}".`
+    );
     refreshOpenApps({ scope: refreshScopeKeys.OPERATIONS });
     emitSocketRefresh({ scope: refreshScopeKeys.OPERATIONS });
   }
@@ -308,6 +316,26 @@ export async function applyPlayerDowntimeSubmitRequest(message, requesterRef = n
   await applyDowntimeSubmissionForUser(requester, normalizedEntry);
 }
 
+export async function applyPlayerDowntimeV2SubmitRequest(message, requesterRef = null, deps = {}) {
+  const { resolveRequester, applyDowntimeV2SubmissionForUser } = deps;
+
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const submission = message?.submission && typeof message.submission === "object" ? message.submission : null;
+  if (!submission) return;
+  await applyDowntimeV2SubmissionForUser(requester, submission);
+}
+
+export async function applyPlayerDowntimeV2AckResult(message, requesterRef = null, deps = {}) {
+  const { resolveRequester, acknowledgeDowntimeV2ResultForUser } = deps;
+
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const resultId = String(message?.resultId ?? "").trim();
+  if (!resultId) return;
+  await acknowledgeDowntimeV2ResultForUser(requester, resultId);
+}
+
 export async function applyPlayerDowntimeClearRequest(message, requesterRef = null, deps = {}) {
   const {
     resolveRequester,
@@ -361,7 +389,9 @@ export async function applyPlayerDowntimeQueueEditRequest(message, requesterRef 
   const actor = game.actors.get(actorId);
   if (!actor || !canUserManageDowntimeActor(requester, actor)) return;
 
-  const operation = String(message?.operation ?? "").trim().toLowerCase();
+  const operation = String(message?.operation ?? "")
+    .trim()
+    .toLowerCase();
   const queueIndexRaw = Number(message?.queueIndex);
   const queueIndex = Number.isFinite(queueIndexRaw) ? Math.max(0, Math.floor(queueIndexRaw)) : -1;
   const targetQueueIndexRaw = Number(message?.targetQueueIndex);
@@ -469,5 +499,7 @@ export async function applyPlayerDowntimeCollectRequest(message, requesterRef = 
     ui.notifications?.warn(`Downtime collect failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
     return;
   }
-  ui.notifications?.info(`${requester.name} collected downtime rewards for ${outcome.actorName}. ${getDowntimeCollectionSummary(outcome)}`);
+  ui.notifications?.info(
+    `${requester.name} collected downtime rewards for ${outcome.actorName}. ${getDowntimeCollectionSummary(outcome)}`
+  );
 }

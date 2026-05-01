@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
 import {
+  applyPlayerDowntimeV2AckResult,
+  applyPlayerDowntimeV2SubmitRequest,
   applyPlayerFolderOwnershipWriteRequest,
   applyPlayerOperationsLedgerWriteRequest,
   applyPlayerSopNoteRequest
@@ -149,50 +151,70 @@ import {
     ["child", childFolder]
   ]);
 
-  await applyPlayerFolderOwnershipWriteRequest({
-    userId: "player-1",
-    folderId: "root",
-    levels: { default: 2, "user-1": 3 }
-  }, null, {
-    resolveRequester: () => ({ id: "player-1" }),
-    canAccessAllPlayerOps: () => true,
-    sanitizeSocketIdentifier: (value) => String(value ?? "").trim(),
-    constDocOwnershipLevels: { NONE: 0, OBSERVER: 2, OWNER: 3 },
-    game: {
-      folders: {
-        get: (id) => folders.get(id) ?? null,
-        contents: [rootFolder, childFolder]
-      }
+  await applyPlayerFolderOwnershipWriteRequest(
+    {
+      userId: "player-1",
+      folderId: "root",
+      levels: { default: 2, "user-1": 3 }
     },
-    foundry: {
-      utils: {
-        deepClone: (value) => structuredClone(value)
-      }
-    },
-    ui: {
-      notifications: {
-        warn: (message) => notifications.push(["warn", message]),
-        info: (message) => notifications.push(["info", message])
-      }
-    },
-    refreshOpenApps: (payload) => refreshCalls.push(payload),
-    refreshScopeKeys: { OPERATIONS: "operations" },
-    emitSocketRefresh: (payload) => socketCalls.push(payload),
-    moduleId: "party-operations",
-    findOperationsJournalRootFolder: () => rootFolder,
-    journalFolderIsUnderRoot: (folderId, rootFolderId) => folderId === "child" && rootFolderId === "root"
-  });
+    null,
+    {
+      resolveRequester: () => ({ id: "player-1" }),
+      canAccessAllPlayerOps: () => true,
+      sanitizeSocketIdentifier: (value) => String(value ?? "").trim(),
+      constDocOwnershipLevels: { NONE: 0, OBSERVER: 2, OWNER: 3 },
+      game: {
+        folders: {
+          get: (id) => folders.get(id) ?? null,
+          contents: [rootFolder, childFolder]
+        }
+      },
+      foundry: {
+        utils: {
+          deepClone: (value) => structuredClone(value)
+        }
+      },
+      ui: {
+        notifications: {
+          warn: (message) => notifications.push(["warn", message]),
+          info: (message) => notifications.push(["info", message])
+        }
+      },
+      refreshOpenApps: (payload) => refreshCalls.push(payload),
+      refreshScopeKeys: { OPERATIONS: "operations" },
+      emitSocketRefresh: (payload) => socketCalls.push(payload),
+      moduleId: "party-operations",
+      findOperationsJournalRootFolder: () => rootFolder,
+      journalFolderIsUnderRoot: (folderId, rootFolderId) => folderId === "child" && rootFolderId === "root"
+    }
+  );
 
   assert.deepEqual(folderUpdates, [
     ["root", { ownership: { default: 2, "user-1": 3 } }],
     ["child", { ownership: { default: 2, "user-1": 3 } }]
   ]);
-  assert.deepEqual(entryUpdates, [
-    ["entry-1", { ownership: { default: 2, "user-1": 3 } }]
-  ]);
+  assert.deepEqual(entryUpdates, [["entry-1", { ownership: { default: 2, "user-1": 3 } }]]);
   assert.deepEqual(refreshCalls, [{ scope: "operations" }]);
   assert.deepEqual(socketCalls, [{ scope: "operations" }]);
   assert.match(String(notifications.at(-1)?.[1] ?? ""), /Updated permissions on 2 folders and 1 document/);
+}
+
+{
+  const calls = [];
+  await applyPlayerDowntimeV2SubmitRequest({ userId: "player-1", submission: { actorId: "actor-1" } }, null, {
+    resolveRequester: () => ({ id: "player-1", name: "Player" }),
+    applyDowntimeV2SubmissionForUser: async (requester, submission) => calls.push([requester.id, submission.actorId])
+  });
+  assert.deepEqual(calls, [["player-1", "actor-1"]]);
+}
+
+{
+  const calls = [];
+  await applyPlayerDowntimeV2AckResult({ userId: "player-1", resultId: "result-1" }, null, {
+    resolveRequester: () => ({ id: "player-1", name: "Player" }),
+    acknowledgeDowntimeV2ResultForUser: async (requester, resultId) => calls.push([requester.id, resultId])
+  });
+  assert.deepEqual(calls, [["player-1", "result-1"]]);
 }
 
 process.stdout.write("operations player handlers validation passed\n");

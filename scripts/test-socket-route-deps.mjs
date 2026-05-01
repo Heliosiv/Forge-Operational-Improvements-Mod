@@ -19,6 +19,7 @@ import { buildPartyOperationsSocketRouteDeps, createPartyOperationsSocketHandler
     logUiDebug: "log-debug",
     openOperationsLootClaimsTabForPlayer: "open-claims",
     openRestWatchUiForCurrentUser: "open-rest",
+    setPlayerHubTab: "set-player-tab",
     refreshOpenApps: "refresh-open-apps",
     schedulePendingSopNoteSync: "schedule-sop",
     syncMerchantBarterStatusForOpenDialogs: "sync-barter",
@@ -40,6 +41,7 @@ import { buildPartyOperationsSocketRouteDeps, createPartyOperationsSocketHandler
 
   assert.equal(routeDeps.settings, settings);
   assert.equal(routeDeps.refreshScopeKeys, refreshScopeKeys);
+  assert.equal(routeDeps.setPlayerHubTab, "set-player-tab");
   assert.deepEqual(routeDeps.normalizeSocketRestRequest("rest-request"), {
     request: "rest-request",
     options: {
@@ -98,6 +100,14 @@ import { buildPartyOperationsSocketRouteDeps, createPartyOperationsSocketHandler
       return { message, requesterRef, options };
     },
     buildDefaultOperationsLedger: "build-default-operations-ledger",
+    applyPlayerDowntimeV2SubmitRequestFeature(message, requesterRef, options) {
+      return { message, requesterRef, options };
+    },
+    applyDowntimeV2SubmissionForUser: "apply-downtime-v2-submission",
+    applyPlayerDowntimeV2AckResultFeature(message, requesterRef, options) {
+      return { message, requesterRef, options };
+    },
+    acknowledgeDowntimeV2ResultForUser: "ack-downtime-v2-result",
     isWritableModuleSettingKey: "is-writable-setting",
     foundry,
     moduleId: "party-operations",
@@ -204,6 +214,22 @@ import { buildPartyOperationsSocketRouteDeps, createPartyOperationsSocketHandler
       refreshOpenApps: "refresh-open-apps",
       refreshScopeKeys,
       emitSocketRefresh: "emit-refresh"
+    }
+  });
+  assert.deepEqual(routeDeps.applyPlayerDowntimeV2SubmitRequest("message", "player-1"), {
+    message: "message",
+    requesterRef: "player-1",
+    options: {
+      resolveRequester: "resolve-requester",
+      applyDowntimeV2SubmissionForUser: "apply-downtime-v2-submission"
+    }
+  });
+  assert.deepEqual(routeDeps.applyPlayerDowntimeV2AckResult("message", "player-1"), {
+    message: "message",
+    requesterRef: "player-1",
+    options: {
+      resolveRequester: "resolve-requester",
+      acknowledgeDowntimeV2ResultForUser: "ack-downtime-v2-result"
     }
   });
 }

@@ -15,6 +15,7 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     logUiDebug,
     openOperationsLootClaimsTabForPlayer,
     openRestWatchUiForCurrentUser,
+    setPlayerHubTab,
     refreshOpenApps,
     schedulePendingSopNoteSync,
     syncMerchantBarterStatusForOpenDialogs,
@@ -29,6 +30,8 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     applyPlayerSopNoteRequest,
     applyPlayerOperationsLedgerWriteRequest,
     applyPlayerDowntimeSubmitRequest,
+    applyPlayerDowntimeV2SubmitRequest,
+    applyPlayerDowntimeV2AckResult,
     applyPlayerDowntimeClearRequest,
     applyPlayerDowntimeQueueEditRequest,
     applyPlayerDowntimeCollectRequest,
@@ -60,7 +63,8 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     buildLootClaimsContext,
     logUiDebug,
     openOperationsLootClaimsTabForPlayer,
-    openRestWatchUiForCurrentUser
+    openRestWatchUiForCurrentUser,
+    setPlayerHubTab
   });
   if (playerHandled) return true;
 
@@ -77,6 +81,8 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     applyPlayerSopNoteRequest,
     applyPlayerOperationsLedgerWriteRequest,
     applyPlayerDowntimeSubmitRequest,
+    applyPlayerDowntimeV2SubmitRequest,
+    applyPlayerDowntimeV2AckResult,
     applyPlayerDowntimeClearRequest,
     applyPlayerDowntimeQueueEditRequest,
     applyPlayerDowntimeCollectRequest,

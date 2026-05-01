@@ -21,6 +21,10 @@ export function createGmDowntimePageApp(deps) {
     editDowntimeResult,
     editDowntimeQueueEntry,
     submitDowntimeAction,
+    saveDowntimeV2ConfigFromElement,
+    addDowntimeV2Card,
+    launchDowntimeV2Session,
+    deliverDowntimeV2Result,
     clearDowntimeEntry,
     clearDowntimeResults,
     unarchiveDowntimeLogEntry,
@@ -153,6 +157,27 @@ export function createGmDowntimePageApp(deps) {
             failure: "Failed to publish downtime hours."
           })
         ),
+        "downtime-v2-save-config": rerenderAlways(
+          withActionStatus(saveDowntimeV2ConfigFromElement, {
+            pending: "Saving downtime setup...",
+            success: "Downtime setup saved.",
+            failure: "Unable to save downtime setup."
+          })
+        ),
+        "downtime-v2-add-card": rerenderAlways(
+          withActionStatus(addDowntimeV2Card, {
+            pending: "Adding action card...",
+            success: "Action card added.",
+            failure: "Unable to add action card."
+          })
+        ),
+        "downtime-v2-launch-session": rerenderAlways(
+          withActionStatus(launchDowntimeV2Session, {
+            pending: "Launching downtime session...",
+            success: "Downtime session launched.",
+            failure: "Unable to launch downtime session."
+          })
+        ),
         "set-downtime-hours": rerenderAlways(setDowntimeHoursGranted),
         "set-downtime-tuning": rerenderAlways(setDowntimeTuningField),
         "refresh-downtime-submit-selection": async (actionElement) => {
@@ -230,6 +255,13 @@ export function createGmDowntimePageApp(deps) {
             pending: "Collecting downtime result…",
             success: "Downtime result collected.",
             failure: "Unable to collect downtime result."
+          })
+        ),
+        "downtime-v2-deliver-result": rerenderAlways(
+          withActionStatus(deliverDowntimeV2Result, {
+            pending: "Delivering downtime result...",
+            success: "Downtime result delivered.",
+            failure: "Unable to deliver downtime result."
           })
         ),
         "remove-downtime-material-drop": async (actionElement) => {

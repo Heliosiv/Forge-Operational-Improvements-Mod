@@ -5,7 +5,7 @@
       <div class="po-subtitle" aria-live="polite">GM Audio - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
     </div>
     <div class="po-controls">
-      <button type="button" class="po-btn po-btn-sm" data-action="gm-audio-page-back">Back</button>
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-audio-page-back">Back to Cockpit</button>
       <button type="button" class="po-icon-btn" data-action="gm-audio-page-refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
       </button>
@@ -27,6 +27,11 @@
           <div class="po-section-title">Live Mix Table</div>
           <div class="po-hint">Queue tracks, swap presets quickly, and keep transport controls close. Edit-heavy controls stay in the drawers below so the main mix view stays clean.</div>
           {{/if}}
+          <div class="po-op-action-row po-gm-page-actions">
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="play-audio-mix" {{#unless audio.mix.hasCandidates}}disabled{{/unless}}>Play Mix</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="stop-audio-mix">Stop</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="scan-audio-library">Scan Library</button>
+          </div>
         </div>
         <div class="po-audio-hero-meta">
           <div class="po-gm-loot-summary-grid po-gm-page-stat-grid" role="list" aria-label="Audio library summary">

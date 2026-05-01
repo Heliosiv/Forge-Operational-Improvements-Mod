@@ -7,7 +7,8 @@ const actions = createPlayerHubActions({
     ASSIGN_WATCH: "assign-watch",
     SET_MARCH_RANK: "set-march-rank",
     CLAIM_LOOT: "claim-loot",
-    SUBMIT_DOWNTIME: "submit-downtime"
+    SUBMIT_DOWNTIME: "submit-downtime",
+    COLLECT_DOWNTIME: "collect-downtime"
   },
   playerHubClaimVariants: {
     ITEM: "item",
@@ -31,6 +32,12 @@ assert.deepEqual(actions.getPlayerHubActionRequestFromUiAction("set-player-rank"
 });
 assert.deepEqual(actions.getPlayerHubActionRequestFromUiAction("submit-downtime-action"), {
   type: "submit-downtime"
+});
+assert.deepEqual(actions.getPlayerHubActionRequestFromUiAction("submit-downtime-v2"), {
+  type: "submit-downtime"
+});
+assert.deepEqual(actions.getPlayerHubActionRequestFromUiAction("ack-downtime-v2-result"), {
+  type: "collect-downtime"
 });
 assert.deepEqual(actions.getPlayerHubActionRequestFromUiAction("claim-loot-item"), {
   type: "claim-loot",

@@ -46,18 +46,27 @@ export function resolveMarchActorImage(
     fallback = DEFAULT_MARCH_ACTOR_IMAGE
   } = {}
 ) {
-  const candidates = [
+  const portraitCandidates = [actor?.img];
+  const tokenCandidates = [
     ...getActiveTokenTextureSources(actor),
-    actor?.img,
     actor?.prototypeToken?.texture?.src,
     actor?.token?.texture?.src
   ];
-  const normalizedCandidates = candidates
-    .map((candidate) => normalizeImagePath(candidate, { fallback: "" }))
-    .map((candidate) => String(candidate ?? "").trim())
-    .filter(Boolean);
-  const preferred = normalizedCandidates.find((candidate) => !isDefaultFoundryActorImagePath(candidate));
-  if (preferred) return preferred;
+  const normalizeCandidates = (candidates) =>
+    candidates
+      .map((candidate) => normalizeImagePath(candidate, { fallback: "" }))
+      .map((candidate) => String(candidate ?? "").trim())
+      .filter(Boolean);
+
+  const normalizedPortraits = normalizeCandidates(portraitCandidates);
+  const preferredPortrait = normalizedPortraits.find((candidate) => !isDefaultFoundryActorImagePath(candidate));
+  if (preferredPortrait) return preferredPortrait;
+
+  const normalizedTokenCandidates = normalizeCandidates(tokenCandidates);
+  const preferredToken = normalizedTokenCandidates.find((candidate) => !isDefaultFoundryActorImagePath(candidate));
+  if (preferredToken) return preferredToken;
+
+  const normalizedCandidates = [...normalizedPortraits, ...normalizedTokenCandidates];
   const firstCandidate = normalizedCandidates[0] ?? "";
   return normalizeImagePath(firstCandidate, { fallback }) || fallback;
 }

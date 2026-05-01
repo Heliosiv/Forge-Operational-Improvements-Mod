@@ -23,6 +23,7 @@ const CHECK_COMMANDS = [
   [process.execPath, ["scripts/test-config-access.mjs"]],
   [process.execPath, ["scripts/test-deep-design-corrections.mjs"]],
   [process.execPath, ["scripts/test-downtime-policy.mjs"]],
+  [process.execPath, ["scripts/test-downtime-v2-service.mjs"]],
   [process.execPath, ["scripts/test-downtime-phase1-service.mjs"]],
   [process.execPath, ["scripts/test-downtime-submission-ui.mjs"]],
   [process.execPath, ["scripts/test-downtime-effects-ledger.mjs"]],

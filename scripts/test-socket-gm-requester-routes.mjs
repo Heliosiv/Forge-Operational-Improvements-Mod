@@ -8,6 +8,8 @@ const handlers = {
   applyPlayerSopNoteRequest: () => "sop",
   applyPlayerOperationsLedgerWriteRequest: () => "ledger",
   applyPlayerDowntimeSubmitRequest: () => "submit",
+  applyPlayerDowntimeV2SubmitRequest: () => "submit-v2",
+  applyPlayerDowntimeV2AckResult: () => "ack-v2",
   applyPlayerDowntimeClearRequest: () => "clear",
   applyPlayerDowntimeCollectRequest: () => "collect",
   applyPlayerMerchantBarterRequest: () => "barter",
@@ -25,6 +27,8 @@ assert.equal(routes["ops:folder-ownership-write"], handlers.applyPlayerFolderOwn
 assert.equal(routes["ops:setSopNote"], handlers.applyPlayerSopNoteRequest);
 assert.equal(routes["ops:ledger-write"], handlers.applyPlayerOperationsLedgerWriteRequest);
 assert.equal(routes["ops:downtime-submit"], handlers.applyPlayerDowntimeSubmitRequest);
+assert.equal(routes["ops:downtimeV2-submit"], handlers.applyPlayerDowntimeV2SubmitRequest);
+assert.equal(routes["ops:downtimeV2-ack-result"], handlers.applyPlayerDowntimeV2AckResult);
 assert.equal(routes["ops:downtime-clear"], handlers.applyPlayerDowntimeClearRequest);
 assert.equal(routes["ops:downtime-collect"], handlers.applyPlayerDowntimeCollectRequest);
 assert.equal(routes["ops:merchant-barter-request"], handlers.applyPlayerMerchantBarterRequest);

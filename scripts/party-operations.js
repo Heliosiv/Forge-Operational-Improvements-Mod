@@ -85,6 +85,8 @@ import {
   applyPlayerDowntimeQueueEditRequest as applyPlayerDowntimeQueueEditRequestFeature,
   applyPlayerDowntimeCollectRequest as applyPlayerDowntimeCollectRequestFeature,
   applyPlayerDowntimeSubmitRequest as applyPlayerDowntimeSubmitRequestFeature,
+  applyPlayerDowntimeV2AckResult as applyPlayerDowntimeV2AckResultFeature,
+  applyPlayerDowntimeV2SubmitRequest as applyPlayerDowntimeV2SubmitRequestFeature,
   applyPlayerFolderOwnershipWriteRequest as applyPlayerFolderOwnershipWriteRequestFeature,
   applyPlayerOperationsLedgerWriteRequest as applyPlayerOperationsLedgerWriteRequestFeature,
   applyPlayerSettingWriteRequest as applyPlayerSettingWriteRequestFeature,
@@ -121,6 +123,25 @@ import {
   normalizeDowntimePublication,
   resolveDowntimeVisibleHours
 } from "./core/downtime-policy.js";
+import {
+  DOWNTIME_V2_CARD_TYPES,
+  acknowledgeDowntimeV2Result,
+  applyDowntimeV2ResultToActorProjects,
+  applyDowntimeV2Submission,
+  buildDefaultDowntimeV2State,
+  buildDowntimeV2ResultDraft,
+  deliverDowntimeV2Submission,
+  getDowntimeV2AvailableCards,
+  getDowntimeV2CardById,
+  getDowntimeV2CardTypeLabel,
+  isDowntimeV2SessionLaunched,
+  normalizeDowntimeV2Ability,
+  normalizeDowntimeV2ActorProjects,
+  normalizeDowntimeV2Card,
+  normalizeDowntimeV2CardType,
+  normalizeDowntimeV2Session,
+  normalizeDowntimeV2State
+} from "./core/downtime-v2.js";
 import {
   applyDowntimeRewardEffectsToLedger,
   consumeDowntimeRewardEffectsForCraftingCost,
@@ -1527,6 +1548,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "adjust-loot-preview-currency",
   "clear-loot-preview",
   "publish-loot-claims",
+  "play-audio-scene-preset",
   "clear-loot-claims",
   "set-environment-preset",
   "set-environment-dc",
@@ -1552,6 +1574,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "remove-environment-log",
   "request-environment-checks",
   "gm-quick-add-faction",
+  "gm-quick-open-environment",
   "gm-quick-open-downtime",
   "gm-quick-set-staged-field",
   "gm-quick-submit-faction",
@@ -5665,10 +5688,10 @@ async function submitPlayerHubAction(type, payload = {}) {
       }
       return { handled: true, rerender: false };
     case PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME:
-      await submitDowntimeAction(element);
+      await submitDowntimeV2Action(element);
       return { handled: true, rerender: true };
     case PLAYER_HUB_ACTION_TYPES.COLLECT_DOWNTIME:
-      await collectDowntimeResult(element);
+      await acknowledgeDowntimeV2ResultFromElement(element);
       return { handled: true, rerender: true };
     default:
       return { handled: false, rerender: false };
@@ -7755,6 +7778,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           )
         : 0;
       const autofillOverflowCount = Math.max(0, autofillRosterCount - autofillVisibleCapacity);
+      const mainSubtitleLabel = mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch";
+      const gmCockpit = buildGmCockpitContext(operations, {
+        lastUpdatedAt: state.lastUpdatedAt ?? "-",
+        mainSubtitleLabel
+      });
 
       const context = {
         isGM,
@@ -7768,7 +7796,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         lastUpdatedBy: state.lastUpdatedBy ?? "-",
         moduleVersion,
         mainContextLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
-        mainSubtitleLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        mainSubtitleLabel,
         visibilityOptions: buildVisibilityOptions(visibility),
         highestPP: isGM ? computeHighestPP(slots) : "-",
         noDarkvision: isGM ? computeNoDarkvision(slots) : "",
@@ -7780,6 +7808,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         campfireOverview,
         light,
         operations,
+        gmCockpit,
         injuryRecovery,
         miniViz,
         ...miniVizUi,
@@ -7853,6 +7882,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         : 0;
       const fallbackAutofillOverflowCount = Math.max(0, fallbackAutofillRosterCount - fallbackAutofillVisibleCapacity);
       const fallbackGmOpsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
+      const fallbackOperations = this._lastGoodOperationsContext ?? buildOperationsContextFallback();
+      const fallbackMainSubtitleLabel =
+        mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch";
+      const fallbackGmCockpit = buildGmCockpitContext(fallbackOperations, {
+        lastUpdatedAt: fallbackState.lastUpdatedAt ?? "-",
+        mainSubtitleLabel: fallbackMainSubtitleLabel
+      });
       const fallbackOpsPage =
         mainTab === "gm"
           ? "gm"
@@ -7878,7 +7914,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         lastUpdatedBy: fallbackState.lastUpdatedBy ?? "-",
         moduleVersion: getCurrentModuleVersion(),
         mainContextLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
-        mainSubtitleLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        mainSubtitleLabel: fallbackMainSubtitleLabel,
         visibilityOptions: buildVisibilityOptions(fallbackVisibility),
         highestPP: isGM ? computeHighestPP(fallbackSlots) : "-",
         noDarkvision: isGM ? computeNoDarkvision(fallbackSlots) : "",
@@ -7889,7 +7925,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         campfire: fallbackCampfireOverview.anyLit,
         campfireOverview: fallbackCampfireOverview,
         light: calculateLightSources(fallbackState.slots, fallbackCampfireOverview.anyLit),
-        operations: this._lastGoodOperationsContext ?? buildOperationsContextFallback(),
+        operations: fallbackOperations,
+        gmCockpit: fallbackGmCockpit,
         injuryRecovery: this._lastGoodInjuryRecoveryContext ?? {},
         miniViz: {},
         ...buildMiniVizUiContext(),
@@ -8444,6 +8481,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await openMerchantShopFromElement(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "merchant-make-available-now": async () => {
+            const updated = await setMerchantAvailableNowFromElement(element);
+            if (updated) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "merchant-settlement": async () => {
             await setMerchantSettlementFromElement(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8947,6 +8988,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await publishLootPreviewToClaims();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "play-audio-scene-preset": async () => {
+            const played = await playAudioScenePresetFromElement(element);
+            if (played) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "clear-loot-claims": async () => {
             await clearLootClaimsPool();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -9024,7 +9069,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "gm-quick-open-environment": async () => {
-            openGmDowntimePage({ force: true });
+            openGmEnvironmentPage({ force: true });
           },
           "gm-quick-open-downtime": async () => {
             openGmDowntimePage({ force: true });
@@ -9308,6 +9353,201 @@ function getStandaloneOpsContext() {
   }
 }
 
+function buildGmCockpitContext(operations = {}, options = {}) {
+  const activePlayers = (game.users?.contents ?? []).filter((user) => Boolean(user?.active) && !Boolean(user?.isGM));
+  const resources = operations?.resources ?? {};
+  const gatherRequests = resources?.gatherRequests ?? {};
+  const gatherDelivery = resources?.gatherDelivery ?? {};
+  const downtime = operations?.downtime ?? {};
+  const environment = operations?.environment ?? {};
+  const weather = operations?.weather ?? {};
+  const merchants = operations?.merchants ?? {};
+  const lootSources = operations?.lootSources ?? {};
+  const lootClaims = operations?.lootClaims ?? {};
+  const reputation = operations?.reputation ?? {};
+  const warnings = [];
+  const addWarning = (message) => {
+    const text = String(message ?? "").trim();
+    if (text) warnings.push(text);
+  };
+  const count = (value) => Math.max(0, Math.floor(Number(value ?? 0) || 0));
+
+  const gatherPending = count(gatherRequests?.count ?? gatherRequests?.rows?.length);
+  const gatherActivePlayerCount = count(gatherDelivery?.activePlayerCount ?? activePlayers.length);
+  const gatherFood = count(resources?.summary?.pendingGatherFood ?? resources?.pendingGatherFood);
+  const gatherWater = count(resources?.summary?.pendingGatherWater ?? resources?.pendingGatherWater);
+  const gatherPrimaryAction =
+    gatherPending > 0 && gatherActivePlayerCount > 0 ? "call-gather-requests" : "gather-resource-check";
+  if (gatherPending > 0) addWarning(`${gatherPending} gather request${gatherPending === 1 ? "" : "s"} pending.`);
+
+  const downtimePending = count(downtime?.pendingCount);
+  const downtimePublished = Boolean(downtime?.publication?.isPublished);
+  if (downtimePending > 0)
+    addWarning(`${downtimePending} downtime entr${downtimePending === 1 ? "y" : "ies"} pending.`);
+  if (!downtimePublished) addWarning("Downtime session is not open to players.");
+
+  const environmentPresetLabel = String(environment?.preset?.label ?? "None").trim() || "None";
+  const environmentCanRequestChecks = Boolean(environment?.canRequestChecks);
+  const weatherLabel = String(weather?.currentLabel ?? "Not logged").trim() || "Not logged";
+  const weatherModifier = formatSignedModifier(Number(weather?.currentVisibilityModifier ?? 0)) || "0";
+  const weatherDarkness = Number(weather?.currentDarkness ?? 0);
+  if (environmentPresetLabel === "None") addWarning("No active environment preset.");
+
+  const merchantDashboard = merchants?.gm?.availabilityDashboard ?? {};
+  const merchantDefinitions = Array.isArray(merchants?.gm?.definitions) ? merchants.gm.definitions : [];
+  const merchantLiveCount = count(merchantDashboard?.liveCount);
+  const merchantTotalCount = count(merchantDashboard?.totalCount ?? merchants?.gm?.totalDefinitionCount);
+  const merchantStaleCount = count(merchantDashboard?.staleCount);
+  const merchantFeatured =
+    merchantDefinitions.find(
+      (merchant) => !merchant?.availableNow && merchant?.hasStock && merchant?.shopTradable !== false
+    ) ??
+    merchantDefinitions.find((merchant) => !merchant?.availableNow) ??
+    merchantDefinitions.find((merchant) => merchant?.availableNow) ??
+    null;
+  if (merchantStaleCount > 0)
+    addWarning(`${merchantStaleCount} merchant stock list${merchantStaleCount === 1 ? "" : "s"} need refresh.`);
+
+  const preview = lootSources?.preview ?? {};
+  const previewItems = Array.isArray(preview?.itemsSorted)
+    ? preview.itemsSorted
+    : Array.isArray(preview?.items)
+      ? preview.items
+      : [];
+  const lootBuilderItemCount = count(preview?.stats?.itemCountGenerated ?? previewItems.length);
+  const lootOpenRunCount = count(lootClaims?.openRunCount);
+  const lootClaimItemCount = count(lootClaims?.itemCount);
+  if (lootOpenRunCount > 0)
+    addWarning(`${lootOpenRunCount} loot claim board${lootOpenRunCount === 1 ? "" : "s"} open.`);
+
+  let audio = {
+    trackCount: 0,
+    categoryCount: 0,
+    selectedPresetLabel: "No mix",
+    activeTrackName: "",
+    hasActiveTrack: false,
+    isPlaying: false,
+    primaryPresetId: "",
+    primaryPresetLabel: "Start Scene",
+    primaryPresetDisabled: true,
+    statusLabel: "No audio catalog scanned."
+  };
+  try {
+    const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
+    const hiddenTrackIds = getHiddenAudioLibraryTrackIds();
+    const catalog = getAudioLibraryCatalog();
+    const summary = buildAudioLibrarySummary(catalog, { hiddenCount: hiddenTrackIds.length });
+    const mix = buildAudioMixContext(catalog);
+    const primaryPreset =
+      (mix.scenePresets ?? []).find((preset) => count(preset?.candidateCount) > 0) ?? mix.scenePresets?.[0] ?? null;
+    audio = {
+      trackCount: count(summary?.trackCount ?? rawCatalog?.items?.length),
+      categoryCount: count(summary?.categoryCount),
+      selectedPresetLabel: String(mix?.selectedPreset?.label ?? "No mix").trim() || "No mix",
+      activeTrackName: String(mix?.playback?.activeTrackName ?? "").trim(),
+      hasActiveTrack: String(mix?.playback?.activeTrackName ?? "").trim().length > 0,
+      isPlaying: Boolean(mix?.playback?.isPlaying),
+      primaryPresetId: String(primaryPreset?.id ?? "").trim(),
+      primaryPresetLabel: String(primaryPreset?.label ?? "Start Scene").trim() || "Start Scene",
+      primaryPresetDisabled: !primaryPreset || count(primaryPreset?.candidateCount) <= 0,
+      statusLabel: mix?.playback?.isPlaying
+        ? `Playing ${String(mix?.playback?.activeTrackName ?? mix?.selectedPreset?.label ?? "mix").trim()}`
+        : `${String(mix?.selectedPreset?.label ?? "No mix").trim() || "No mix"} ready`
+    };
+  } catch (error) {
+    logUiFailure("gm-cockpit", "audio summary failed", error);
+  }
+
+  const hostileCount = count(reputation?.hostileCount);
+  if (hostileCount > 0) addWarning(`${hostileCount} hostile faction${hostileCount === 1 ? "" : "s"} tracked.`);
+
+  const attentionCount =
+    gatherPending +
+    downtimePending +
+    lootOpenRunCount +
+    merchantStaleCount +
+    (environmentPresetLabel === "None" ? 1 : 0);
+
+  return {
+    generatedAtLabel: String(options?.generatedAtLabel ?? new Date().toLocaleString()),
+    attentionCount,
+    warningCount: warnings.length,
+    hasWarnings: warnings.length > 0,
+    warnings: warnings.slice(0, 5),
+    topStats: [
+      { label: "Session", value: String(options?.mainSubtitleLabel ?? "GM") },
+      { label: "Attention", value: String(attentionCount) },
+      { label: "Players", value: String(activePlayers.length) },
+      { label: "Updated", value: String(options?.lastUpdatedAt ?? "-") }
+    ],
+    gather: {
+      pendingCount: gatherPending,
+      food: gatherFood,
+      water: gatherWater,
+      activePlayerCount: gatherActivePlayerCount,
+      activePlayerLabel: String(gatherDelivery?.activePlayerLabel ?? `${gatherActivePlayerCount} active players`),
+      primaryAction: gatherPrimaryAction,
+      primaryLabel: gatherPrimaryAction === "call-gather-requests" ? "Call Players" : "Assign Gather",
+      primaryDisabled: gatherPrimaryAction === "call-gather-requests" && gatherActivePlayerCount <= 0,
+      statusLabel: gatherPending > 0 ? `${gatherPending} pending` : "Ready",
+      summaryLabel: `Food ${gatherFood} | Water ${gatherWater}`
+    },
+    environment: {
+      presetLabel: environmentPresetLabel,
+      actionLabel: String(environment?.actionLabel ?? "No action").trim() || "No action",
+      targetCount: count(environment?.targetCount),
+      weatherLabel,
+      weatherModifier,
+      weatherDarkness: Number.isFinite(weatherDarkness) ? weatherDarkness.toFixed(2) : "0.00",
+      primaryAction: environmentCanRequestChecks ? "request-environment-checks" : "add-environment-log",
+      primaryLabel: environmentCanRequestChecks ? "Push Checks" : "Log Setup",
+      primaryDisabled: false,
+      statusLabel: environmentCanRequestChecks ? "Checks ready" : "No check target"
+    },
+    downtime: {
+      pendingCount: downtimePending,
+      resolvedCount: count(downtime?.resolvedCount),
+      logCount: count(downtime?.logCount),
+      isPublished: downtimePublished,
+      statusLabel: String(downtime?.publication?.statusLabel ?? (downtimePublished ? "Open" : "Not open")),
+      buttonLabel: String(downtime?.publication?.buttonLabel ?? "Open Session to Players"),
+      primaryDisabled: false
+    },
+    merchants: {
+      shopOpen: Boolean(merchants?.shopOpen ?? merchants?.gm?.shopSession?.isOpen),
+      shopStatusLabel: String(merchants?.shopStatusLabel ?? merchants?.gm?.shopSession?.statusLabel ?? "Closed"),
+      liveCount: merchantLiveCount,
+      totalCount: merchantTotalCount,
+      staleCount: merchantStaleCount,
+      summaryLabel: String(merchantDashboard?.summaryLabel ?? "No merchant summary available."),
+      featuredId: String(merchantFeatured?.id ?? "").trim(),
+      featuredName: String(merchantFeatured?.name ?? "No merchant ready").trim() || "No merchant ready",
+      featuredAvailableNow: Boolean(merchantFeatured?.availableNow),
+      primaryLabel: merchantFeatured?.availableNow ? "Hide Merchant" : "Make Available Now",
+      primaryAvailableValue: merchantFeatured?.availableNow ? "false" : "true",
+      primaryDisabled: !merchantFeatured
+    },
+    loot: {
+      builderItemCount: lootBuilderItemCount,
+      hasBuilderItems: lootBuilderItemCount > 0,
+      openRunCount: lootOpenRunCount,
+      claimItemCount: lootClaimItemCount,
+      publishedAtLabel: String(lootClaims?.publishedAtLabel ?? "-"),
+      primaryAction: lootBuilderItemCount > 0 ? "publish-loot-claims" : "roll-loot-preview",
+      primaryLabel: lootBuilderItemCount > 0 ? "Give to Players" : "Generate Loot",
+      statusLabel: lootOpenRunCount > 0 ? `${lootOpenRunCount} open board(s)` : "Builder ready"
+    },
+    audio,
+    reputation: {
+      trackedCount: count(reputation?.totalCount),
+      revealedCount: count(reputation?.revealedCount),
+      hostileCount,
+      highStandingCount: count(reputation?.highStandingCount),
+      statusLabel: hostileCount > 0 ? `${hostileCount} hostile` : "Stable"
+    }
+  };
+}
+
 function buildGmEnvironmentPageContext() {
   const operations = getStandaloneOpsContext();
   const environment = operations?.environment ?? {};
@@ -9386,7 +9626,7 @@ function buildGmDowntimePageContext() {
   const ledger = getOperationsLedger();
   const downtimeState = ensureDowntimeState(ledger);
   const viewState = getGmDowntimeViewState();
-  const downtime = buildDowntimeContext(downtimeState, {
+  const downtime = buildDowntimeV2Context(downtimeState, {
     user: game.user,
     entriesSort: viewState.entriesSort,
     logsSort: viewState.logsSort
@@ -9591,9 +9831,16 @@ function openGmFactionsPage(renderOptions = { force: true }) {
 }
 
 function openGmEnvironmentPage(renderOptions = { force: true }) {
-  openGmDowntimePage(renderOptions);
-  ui.notifications?.info("Environment has been removed from Party Operations.");
-  return null;
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view environment controls.");
+    return null;
+  }
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmEnvironmentPageApp(getResponsiveWindowOptions("gm-environment"));
+  app.render(renderOptions);
+  return app;
 }
 
 function openGmDowntimePage(renderOptions = { force: true }) {
@@ -9663,11 +9910,16 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   }
 
   let app = null;
-  if (key === "faction") {
+  if (key === "cockpit") {
+    setActiveRestMainTab("gm");
+    app = openMainTab("gm", { ...renderOptions, suppressHistory });
+  } else if (key === "settings") {
+    app = openPartyOperationsSettingsHub({ ...renderOptions, suppressHistory });
+  } else if (key === "faction") {
     setActiveGmQuickPanel("none");
     app = openGmFactionsPage({ ...renderOptions, suppressHistory });
   } else if (key === "environment") {
-    app = openGmDowntimePage({ ...renderOptions, suppressHistory });
+    app = openGmEnvironmentPage({ ...renderOptions, suppressHistory });
   } else if (key === "downtime") {
     app = openGmDowntimePage({ ...renderOptions, suppressHistory });
   } else if (key === "merchants") {
@@ -9780,7 +10032,7 @@ function bindTabListKeyboardNavigation(root) {
 
 const REST_WATCH_ACTION_CONTROL_SELECTOR = "select[data-action], input[data-action], textarea[data-action]";
 const REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR =
-  "select[name='downtimeActorId'], select[name='downtimeActionKey'], select[name='downtimeSubtypeKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']";
+  "select[name='downtimeActorId'], select[name='downtimeActionKey'], select[name='downtimeSubtypeKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId'], select[name='downtimeV2ActorId'], select[name='downtimeV2CardId'], textarea[name='downtimeV2Note']";
 const REST_WATCH_DOWNTIME_DRAFT_SELECTOR = `${REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR}, select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']`;
 
 function runRestWatchDelegatedHandlers(event, handlers = []) {
@@ -10136,6 +10388,10 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   editDowntimeResult,
   editDowntimeQueueEntry,
   submitDowntimeAction,
+  saveDowntimeV2ConfigFromElement,
+  addDowntimeV2Card,
+  launchDowntimeV2Session,
+  deliverDowntimeV2Result,
   clearDowntimeEntry,
   clearDowntimeResults,
   unarchiveDowntimeLogEntry,
@@ -10603,7 +10859,7 @@ export const RestWatchPlayerApp = createRestWatchPlayerAppClass({
   buildOperationsJournalContext,
   getOperationsLedger,
   ensureDowntimeState,
-  buildDowntimeContext,
+  buildDowntimeContext: buildDowntimeV2Context,
   buildPlayerMarchQuickContext,
   getCurrentModuleVersion,
   logUiDebug,
@@ -24308,19 +24564,7 @@ function buildDefaultOperationsLedger() {
         lastClosedBy: ""
       }
     },
-    downtime: {
-      hoursGranted: 4,
-      publishedHoursGranted: 0,
-      publishedAt: 0,
-      publishedBy: "",
-      tuning: {
-        economy: "standard",
-        risk: "standard",
-        discovery: "standard"
-      },
-      entries: {},
-      logs: []
-    },
+    downtime: buildDefaultDowntimeV2State(0),
     lootClaims: {
       publishedAt: 0,
       publishedBy: "",
@@ -24483,7 +24727,7 @@ function getOperationsLedger() {
   merged.recon = ensureObject(merged.recon, defaults.recon);
   merged.baseOperations = ensureObject(merged.baseOperations, defaults.baseOperations);
   merged.merchants = ensureObject(merged.merchants, defaults.merchants);
-  merged.downtime = ensureObject(merged.downtime, defaults.downtime);
+  merged.downtime = normalizeDowntimeV2State(ensureObject(merged.downtime, defaults.downtime), { now: Date.now() });
   merged.lootClaims = ensureObject(merged.lootClaims, defaults.lootClaims);
   merged.environment = ensureObject(merged.environment, defaults.environment);
   merged.weather = ensureObject(merged.weather, defaults.weather);
@@ -24499,7 +24743,6 @@ function getOperationsLedger() {
   merged.supplyLines.caches = Array.isArray(merged.supplyLines.caches) ? merged.supplyLines.caches : [];
   merged.supplyLines.safehouses = Array.isArray(merged.supplyLines.safehouses) ? merged.supplyLines.safehouses : [];
   merged.baseOperations.sites = Array.isArray(merged.baseOperations.sites) ? merged.baseOperations.sites : [];
-  merged.downtime.logs = Array.isArray(merged.downtime.logs) ? merged.downtime.logs : [];
   merged.lootClaims.boards = Array.isArray(merged.lootClaims.boards) ? merged.lootClaims.boards : [];
   merged.lootClaims.activeBoardId = normalizeLootClaimRunId(merged.lootClaims.activeBoardId);
   merged.lootClaims.items = Array.isArray(merged.lootClaims.items) ? merged.lootClaims.items : [];
@@ -24852,101 +25095,177 @@ function getSelectedResourceItemQuantity(resourcesState, resourceKey) {
   return Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
 }
 
-function buildDowntimeSummaryContext(downtimeState = {}, options = {}) {
+function formatDowntimeV2Timestamp(value = 0) {
+  const timestamp = Math.max(0, Number(value ?? 0) || 0);
+  return timestamp > 0 ? new Date(timestamp).toLocaleString() : "-";
+}
+
+function getDowntimeV2ActorProjects(actor) {
+  const rawProjects =
+    actor?.getFlag?.(MODULE_ID, "downtimeProjects") ??
+    actor?.flags?.[MODULE_ID]?.downtimeProjects ??
+    actor?.flags?.["party-operations"]?.downtimeProjects ??
+    [];
+  return normalizeDowntimeV2ActorProjects(rawProjects);
+}
+
+function buildDowntimeV2Context(downtimeState = {}, options = {}) {
   const user = options?.user ?? game.user;
   const canManageDowntime = canAccessAllPlayerOps(user);
-  const publication = normalizeDowntimePublication(downtimeState?.publication ?? {});
-  const entries = Array.isArray(downtimeState?.entries) ? downtimeState.entries : [];
-  const logs = Array.isArray(downtimeState?.logs) ? downtimeState.logs : [];
-  const pendingCount = entries.filter((entry) => !entry?.result).length;
-  const resolvedCount = Math.max(0, entries.length - pendingCount);
-  const visibleHoursGranted = resolveDowntimeVisibleHours({
-    isGM: canManageDowntime,
-    stateHoursGranted: downtimeState?.hoursGranted,
-    publicationHoursGranted: publication?.publishedHoursGranted,
-    published: publication?.isPublished
-  });
-  const draftHoursGranted = clampDowntimeHours(downtimeState?.hoursGranted ?? visibleHoursGranted, visibleHoursGranted);
-  const publishedAtLabel = publication.publishedAt > 0 ? new Date(publication.publishedAt).toLocaleString() : "-";
-  const canSubmit = canSubmitPublishedDowntime({
-    isGM: canManageDowntime,
-    isPublished: publication.isPublished
+  const downtime = normalizeDowntimeV2State(downtimeState, { now: Date.now() });
+  const session = normalizeDowntimeV2Session(downtime.activeSession, downtime.cardLibrary);
+  const launched = isDowntimeV2SessionLaunched(downtime);
+  const selectableActors = getDowntimeSelectableActorsForUser(user);
+  const rosterIds = new Set(session.rosterActorIds);
+  const availableCardIds = new Set(session.availableCardIds);
+  const visibleActorIds = new Set(selectableActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  const visibleResult = (entry) =>
+    canManageDowntime ||
+    (visibleActorIds.has(String(entry?.actorId ?? "").trim()) && rosterIds.has(String(entry?.actorId ?? "").trim()));
+
+  const actorOptions = selectableActors.map((actor) => {
+    const id = String(actor?.id ?? "").trim();
+    const projects = getDowntimeV2ActorProjects(actor);
+    const activeProjects = projects.filter((project) => project.status !== "completed");
+    return {
+      id,
+      name: String(actor?.name ?? "Actor").trim() || "Actor",
+      selected: rosterIds.has(id),
+      disabled: launched && !rosterIds.has(id),
+      projectCount: activeProjects.length,
+      projects: activeProjects,
+      hasProjects: activeProjects.length > 0
+    };
   });
 
+  const typeOptions = DOWNTIME_V2_CARD_TYPES.map((type) => ({
+    value: type,
+    label: getDowntimeV2CardTypeLabel(type)
+  }));
+  const abilityOptions = [
+    { value: "str", label: "Strength" },
+    { value: "dex", label: "Dexterity" },
+    { value: "con", label: "Constitution" },
+    { value: "int", label: "Intelligence" },
+    { value: "wis", label: "Wisdom" },
+    { value: "cha", label: "Charisma" }
+  ];
+
+  const cardLibrary = downtime.cardLibrary.map((card) => ({
+    ...card,
+    selected: availableCardIds.has(card.id),
+    typeOptions: typeOptions.map((option) => ({ ...option, selected: option.value === card.type })),
+    abilityOptions: abilityOptions.map((option) => ({ ...option, selected: option.value === card.ability })),
+    projectModeLabel: card.createsProject ? "Persistent project" : "One-session outcome"
+  }));
+  const availableCards = getDowntimeV2AvailableCards(downtime).map((card) => ({
+    ...card,
+    typeLabel: getDowntimeV2CardTypeLabel(card.type)
+  }));
+  const selectedCard = availableCards[0] ?? null;
+
+  const pendingSubmissions = downtime.submissions.filter(
+    (entry) => entry.status !== "delivered" && visibleResult(entry)
+  );
+  const deliveredResults = downtime.deliveredResults.filter(visibleResult);
+  const hasAssignedActors = actorOptions.some((entry) => entry.selected);
+  const playerActorOptions = actorOptions.filter((entry) => entry.selected);
+  const playerDeliveredResults = deliveredResults.map((entry) => ({
+    ...entry,
+    canAcknowledge: !entry.acknowledgedAt
+  }));
+
   return {
-    hoursGranted: visibleHoursGranted,
-    draftHoursGranted,
-    publishedHoursGranted: publication.publishedHoursGranted,
-    publication: {
-      isPublished: publication.isPublished,
-      publishedHoursGranted: publication.publishedHoursGranted,
-      publishedAt: publication.publishedAt,
-      publishedAtLabel,
-      publishedBy: publication.publishedBy || "-",
-      statusLabel: publication.isPublished ? `${publication.publishedHoursGranted} hour(s) open` : "Not open",
-      submitHint: publication.isPublished
-        ? `Players can spend up to ${publication.publishedHoursGranted} hour(s) from this downtime session.`
-        : "Players cannot spend downtime until the GM opens a session.",
-      buttonLabel: publication.isPublished ? "Republish Session to Players" : "Open Session to Players"
+    schemaVersion: 2,
+    legacyArchive: downtime.legacyArchive,
+    hasLegacyArchive: Boolean(downtime.legacyArchive),
+    cardLibrary,
+    hasCards: cardLibrary.length > 0,
+    typeOptions,
+    abilityOptions,
+    actorOptions,
+    hasActors: actorOptions.length > 0,
+    hasAssignedActors,
+    availableCards,
+    hasAvailableCards: availableCards.length > 0,
+    selectedCard,
+    activeSession: {
+      ...session,
+      launched,
+      launchedAtLabel: formatDowntimeV2Timestamp(session.launchedAt),
+      availableCardCount: availableCards.length,
+      rosterCount: session.rosterActorIds.length,
+      statusLabel: launched ? `${session.hours} hour(s) launched` : "Draft",
+      canLaunch:
+        canManageDowntime &&
+        session.hours > 0 &&
+        session.rosterActorIds.length > 0 &&
+        session.availableCardIds.length > 0
     },
-    pendingCount,
-    resolvedCount,
-    logs: [],
-    logCount: logs.length,
-    hasLogs: logs.length > 0,
-    entries: [],
-    hasEntries: entries.length > 0,
+    publication: {
+      isPublished: launched,
+      statusLabel: launched ? `${session.hours} hour(s) launched` : "Draft session",
+      publishedAtLabel: formatDowntimeV2Timestamp(session.launchedAt),
+      publishedBy: session.launchedBy || "-",
+      buttonLabel: "Launch Downtime Session",
+      submitHint: launched
+        ? "Assigned players can choose a GM action card and submit a roll."
+        : "Create the roster and action cards, then launch the session."
+    },
+    hoursGranted: session.hours,
+    draftHoursGranted: session.hours,
+    publishedHoursGranted: launched ? session.hours : 0,
+    pendingSubmissions,
+    pendingCount: pendingSubmissions.length,
+    resolvedCount: deliveredResults.length,
+    deliveredResults,
+    hasDeliveredResults: deliveredResults.length > 0,
+    submissions: pendingSubmissions,
+    hasSubmissions: pendingSubmissions.length > 0,
+    entries: pendingSubmissions,
+    hasEntries: pendingSubmissions.length > 0,
+    logs: deliveredResults,
+    logCount: deliveredResults.length,
+    hasLogs: deliveredResults.length > 0,
     submit: {
-      canSubmit,
-      canChooseActor: false,
-      actorName: "",
-      actorOptions: [],
-      actionOptions: [],
-      selectedActionKey: "browsing",
-      hoursMax: Math.max(1, visibleHoursGranted),
-      hours: String(Math.max(1, visibleHoursGranted)),
+      canSubmit: launched && hasAssignedActors && availableCards.length > 0,
+      canChooseActor: playerActorOptions.length > 1,
+      actorOptions: playerActorOptions,
+      actorName: playerActorOptions[0]?.name ?? "",
+      actionOptions: availableCards,
+      selectedActionKey: selectedCard?.id ?? "",
+      selectedCard,
       note: "",
-      areaSettingsLabel: formatPhase1AreaSettingsLabel(downtimeState?.tuning ?? {}),
-      showBrowsingFields: false,
-      showCraftingFields: false,
-      showProfessionFields: false,
-      browsingAbilityOptions: [],
-      craftingCategoryViews: [],
-      craftingCatalogCategoryViews: [],
-      hasCraftingOptions: false,
-      materialsOwnedOptions: [],
-      showMaterialDropZone: false,
-      materialDrops: [],
-      hasMaterialDrops: false,
-      materialDropsJson: "[]",
-      professionOptions: [],
-      hasProfessionOptions: false,
-      knownProfessionNames: [],
-      hasKnownProfessionNames: false,
-      selectedCraftableName: "",
-      hasSelectedCraftable: false,
-      selectedCraftableTool: "",
-      selectedCraftableProgressRequired: 0,
-      selectedCraftableMaterialCost: 0,
-      selectedCraftableBaseCost: 0,
-      hasCraftingProject: false,
-      craftingProjectProgressLabel: "",
-      selectedProfessionName: "",
-      selectedProfessionKnown: false,
-      disabledReason: canSubmit ? "" : "Waiting for GM to publish granted downtime hours."
+      disabledReason: launched
+        ? hasAssignedActors
+          ? availableCards.length > 0
+            ? ""
+            : "The GM has not selected action cards for this session."
+          : "No assigned character is available for this downtime session."
+        : "Waiting for the GM to launch downtime."
+    },
+    player: {
+      actorOptions: playerActorOptions,
+      hasAssignedActors,
+      availableCards,
+      hasAvailableCards: availableCards.length > 0,
+      selectedCard,
+      pendingSubmissions,
+      deliveredResults: playerDeliveredResults,
+      hasDeliveredResults: playerDeliveredResults.length > 0
     },
     gmResolve: {
-      hasPending: false,
-      pendingOptions: [],
-      selectedActorId: "",
-      selectedActorName: "",
-      selectedActionKey: "browsing",
-      selectedActionLabel: "Browsing",
-      selectedActionGuidance: "",
-      hasSelectedActionDetails: false,
-      selectedActionDetails: []
+      hasPending: pendingSubmissions.length > 0,
+      pendingOptions: pendingSubmissions.map((entry) => ({
+        value: entry.id,
+        label: `${entry.actorName || "Actor"} - ${entry.cardTitle || "Downtime"}`
+      }))
     }
   };
+}
+
+function buildDowntimeSummaryContext(downtimeState = {}, options = {}) {
+  return buildDowntimeV2Context(downtimeState, options);
 }
 
 function buildOperationsContext() {
@@ -24974,7 +25293,7 @@ function buildOperationsContext() {
     .toLowerCase();
   const shouldBuildDowntimeDetails = activeOperationsPage === "downtime";
   const downtime = shouldBuildDowntimeDetails
-    ? buildDowntimeContext(downtimeState)
+    ? buildDowntimeV2Context(downtimeState)
     : buildDowntimeSummaryContext(downtimeState);
   const lootSources = buildLootSourceRegistryContext();
   const lootClaims = buildLootClaimsContext(game.user);
@@ -33607,103 +33926,9 @@ function normalizeDowntimeEntryRecord(rawEntry, actorId, downtimeState, options 
  * but the infrastructure is ready for queue-based UI in templates.
  */
 function ensureDowntimeState(ledger) {
-  if (!ledger.downtime || typeof ledger.downtime !== "object") {
-    ledger.downtime = {};
-  }
-  const downtime = ledger.downtime;
-  downtime.hoursGranted = clampDowntimeHours(downtime.hoursGranted, 4);
-  const publication = normalizeDowntimePublication(downtime, downtime.hoursGranted);
-  downtime.publishedHoursGranted = publication.publishedHoursGranted;
-  downtime.publishedAt = publication.publishedAt;
-  downtime.publishedBy = publication.publishedBy;
-  if (!downtime.tuning || typeof downtime.tuning !== "object") downtime.tuning = {};
-
-  const economyAllowed = new Set(DOWNTIME_TUNING_ECONOMY_OPTIONS.map((entry) => entry.value));
-  const riskAllowed = new Set(DOWNTIME_TUNING_RISK_OPTIONS.map((entry) => entry.value));
-  const discoveryAllowed = new Set(DOWNTIME_TUNING_DISCOVERY_OPTIONS.map((entry) => entry.value));
-  const economy = String(downtime.tuning.economy ?? "standard")
-    .trim()
-    .toLowerCase();
-  const riskRaw = String(downtime.tuning.risk ?? "standard")
-    .trim()
-    .toLowerCase();
-  const discoveryRaw = String(downtime.tuning.discovery ?? "standard")
-    .trim()
-    .toLowerCase();
-  const risk = riskRaw === "safe" ? "low" : riskRaw === "hazardous" ? "high" : riskRaw;
-  const discovery = discoveryRaw === "low" ? "sparse" : discoveryRaw === "high" ? "rich" : discoveryRaw;
-  downtime.tuning.economy = economyAllowed.has(economy) ? economy : "standard";
-  downtime.tuning.risk = riskAllowed.has(risk) ? risk : "standard";
-  downtime.tuning.discovery = discoveryAllowed.has(discovery) ? discovery : "standard";
-
-  if (!downtime.entries || typeof downtime.entries !== "object" || Array.isArray(downtime.entries)) {
-    downtime.entries = {};
-  }
-
-  const normalizedEntries = {};
-  const archivedCollectedEntries = [];
-  for (const [rawActorId, rawEntry] of Object.entries(downtime.entries ?? {})) {
-    const actorId = String(rawEntry?.actorId ?? rawEntry?.active?.actorId ?? rawActorId ?? "").trim();
-    if (!actorId) continue;
-    const activeSource = rawEntry?.active && typeof rawEntry.active === "object" ? rawEntry.active : rawEntry;
-    const activeEntry = normalizeDowntimeEntryRecord(activeSource, actorId, downtime);
-    const queueEntries = Array.isArray(rawEntry?.queue)
-      ? rawEntry.queue.map((queueEntry) =>
-          normalizeDowntimeEntryRecord(queueEntry, actorId, downtime, {
-            hoursFallback: queueEntry?.hours ?? activeEntry.hours ?? downtime.hoursGranted
-          })
-        )
-      : [];
-
-    let currentEntry = activeEntry;
-    if (currentEntry.pending === false && currentEntry.lastResult?.collected === true) {
-      archivedCollectedEntries.push({
-        ...currentEntry.lastResult,
-        actorId,
-        actorName: currentEntry.actorName,
-        hours: currentEntry.hours
-      });
-      if (queueEntries.length > 0) currentEntry = queueEntries.shift();
-      else continue;
-    }
-
-    normalizedEntries[actorId] = {
-      ...currentEntry,
-      queue: queueEntries,
-      hoursInvested: Math.max(0, Number(rawEntry?.hoursInvested ?? 0) || 0),
-      currentMilestone: Math.max(0, Math.floor(Number(rawEntry?.currentMilestone ?? 0) || 0))
-    };
-  }
-  downtime.entries = normalizedEntries;
-
-  if (!Array.isArray(downtime.logs)) downtime.logs = [];
-  const mergedLogsSource = [...downtime.logs, ...archivedCollectedEntries];
-  const seenLogKeys = new Set();
-  downtime.logs = mergedLogsSource
-    .map((entry) => {
-      const normalized = normalizeDowntimeResult(entry);
-      return {
-        ...normalized,
-        actorId: String(entry?.actorId ?? "").trim(),
-        actorName: String(entry?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
-        hours: Math.max(1, Math.floor(Number(entry?.hours ?? 4) || 4))
-      };
-    })
-    .filter((entry) => {
-      if (!entry.actorId) return false;
-      const idKey = String(entry.id ?? "").trim();
-      const resolvedAtKey = Number(entry.resolvedAt ?? 0);
-      const dedupeKey = `${entry.actorId}::${idKey || resolvedAtKey}`;
-      if (seenLogKeys.has(dedupeKey)) return false;
-      seenLogKeys.add(dedupeKey);
-      return true;
-    })
-    .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
-    .slice(0, 80);
-
-  downtime.rewardEffectsLedger = normalizeDowntimeRewardEffectsLedger(downtime.rewardEffectsLedger);
-
-  return downtime;
+  if (!ledger || typeof ledger !== "object") return buildDefaultDowntimeV2State(Date.now());
+  ledger.downtime = normalizeDowntimeV2State(ledger.downtime, { now: Date.now() });
+  return ledger.downtime;
 }
 
 /**
@@ -36175,6 +36400,431 @@ function readDowntimeSubmissionFromUi(element) {
     materialDropsJson: String(root.querySelector("input[name='downtimeCraftMaterialDrops']")?.value ?? "[]"),
     professionId: String(root.querySelector("select[name='downtimeProfessionId']")?.value ?? "").trim()
   };
+}
+
+function getDowntimeV2Root(element) {
+  return (
+    element?.closest?.(".po-downtime-v2") ??
+    element?.closest?.("[data-tool='gm-downtime']") ??
+    element?.closest?.(".rest-watch-player") ??
+    element?.ownerDocument?.querySelector?.(".po-downtime-v2") ??
+    null
+  );
+}
+
+function getDowntimeV2CheckedValues(root, selector) {
+  return Array.from(root?.querySelectorAll?.(selector) ?? [])
+    .filter((input) => input?.checked !== false)
+    .map((input) => String(input?.value ?? "").trim())
+    .filter(Boolean);
+}
+
+function readDowntimeV2SessionDraftFromUi(element) {
+  const root = getDowntimeV2Root(element);
+  if (!root) return null;
+  const currentState = ensureDowntimeState(getOperationsLedger());
+  const existingSession = normalizeDowntimeV2Session(currentState.activeSession, currentState.cardLibrary);
+  const cardRows = Array.from(root.querySelectorAll("[data-downtime-v2-card-row]"));
+  const cardLibrary =
+    cardRows.length > 0
+      ? cardRows.map((row, index) =>
+          normalizeDowntimeV2Card(
+            {
+              id: row.dataset?.cardId,
+              title: row.querySelector("input[name='downtimeV2CardTitle']")?.value,
+              type: row.querySelector("select[name='downtimeV2CardType']")?.value,
+              ability: row.querySelector("select[name='downtimeV2CardAbility']")?.value,
+              dc: row.querySelector("input[name='downtimeV2CardDc']")?.value,
+              progressTarget: row.querySelector("input[name='downtimeV2CardProgressTarget']")?.value,
+              costGp: row.querySelector("input[name='downtimeV2CardCostGp']")?.value,
+              prompt: row.querySelector("textarea[name='downtimeV2CardPrompt']")?.value,
+              rewardText: row.querySelector("textarea[name='downtimeV2CardRewardText']")?.value,
+              completionName: row.querySelector("input[name='downtimeV2CardCompletionName']")?.value,
+              createsProject: row.querySelector("input[name='downtimeV2CardCreatesProject']")?.checked
+            },
+            index
+          )
+        )
+      : currentState.cardLibrary;
+  const cardIds = new Set(cardLibrary.map((card) => card.id));
+  const selectedCardIds = getDowntimeV2CheckedValues(root, "input[name='downtimeV2AvailableCardIds']").filter((id) =>
+    cardIds.has(id)
+  );
+  return {
+    cardLibrary,
+    activeSession: normalizeDowntimeV2Session(
+      {
+        ...existingSession,
+        title: root.querySelector("input[name='downtimeV2SessionTitle']")?.value ?? existingSession.title,
+        hours: root.querySelector("input[name='downtimeV2Hours']")?.value ?? existingSession.hours,
+        rosterActorIds: getDowntimeV2CheckedValues(root, "input[name='downtimeV2RosterActorIds']"),
+        availableCardIds: selectedCardIds.length > 0 ? selectedCardIds : existingSession.availableCardIds
+      },
+      cardLibrary
+    )
+  };
+}
+
+async function saveDowntimeV2ConfigFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can save downtime setup.");
+    return { ok: false, message: "GM only." };
+  }
+  const draft = readDowntimeV2SessionDraftFromUi(element);
+  if (!draft) return { ok: false, message: "Downtime setup form was not found." };
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    downtime.cardLibrary = draft.cardLibrary;
+    downtime.activeSession = {
+      ...draft.activeSession,
+      id: downtime.activeSession?.id ?? "",
+      status: downtime.activeSession?.status === "launched" ? "launched" : "draft",
+      launchedAt: downtime.activeSession?.launchedAt ?? 0,
+      launchedBy: downtime.activeSession?.launchedBy ?? "",
+      launchedByUserId: downtime.activeSession?.launchedByUserId ?? ""
+    };
+    ledger.downtime = normalizeDowntimeV2State(downtime, { now: Date.now() });
+  });
+  return { ok: true };
+}
+
+async function addDowntimeV2Card() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can add downtime cards.");
+    return { ok: false, message: "GM only." };
+  }
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    const nextCard = normalizeDowntimeV2Card(
+      {
+        id: `custom-${foundry.utils.randomID()}`,
+        type: "custom",
+        title: "New Custom Action",
+        prompt: "Describe the opportunity, limits, and what a good result means.",
+        ability: "int",
+        dc: 12,
+        rewardText: "GM-defined result"
+      },
+      downtime.cardLibrary.length
+    );
+    downtime.cardLibrary = [...downtime.cardLibrary, nextCard];
+    downtime.activeSession.availableCardIds = [
+      ...new Set([...(downtime.activeSession.availableCardIds ?? []), nextCard.id])
+    ];
+    ledger.downtime = normalizeDowntimeV2State(downtime, { now: Date.now() });
+  });
+  return { ok: true };
+}
+
+async function launchDowntimeV2Session(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can launch downtime.");
+    return { ok: false, message: "GM only." };
+  }
+  const draft = readDowntimeV2SessionDraftFromUi(element);
+  if (!draft) return { ok: false, message: "Downtime setup form was not found." };
+  if (
+    draft.activeSession.hours <= 0 ||
+    draft.activeSession.rosterActorIds.length <= 0 ||
+    draft.activeSession.availableCardIds.length <= 0
+  ) {
+    ui.notifications?.warn(
+      "Downtime needs hours, at least one assigned actor, and at least one action card before launch."
+    );
+    return { ok: false, message: "Downtime launch validation failed." };
+  }
+
+  const now = Date.now();
+  const sessionId = draft.activeSession.id || `dt-${foundry.utils.randomID()}`;
+  const launchedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  const launchedByUserId = String(game.user?.id ?? "").trim();
+  const rosterActors = draft.activeSession.rosterActorIds.map((actorId) => game.actors.get(actorId)).filter(Boolean);
+  const targets = getConnectedNonGmUsers().filter((user) =>
+    rosterActors.some((actor) => canUserManageDowntimeActor(user, actor))
+  );
+
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    downtime.cardLibrary = draft.cardLibrary;
+    downtime.activeSession = normalizeDowntimeV2Session(
+      {
+        ...draft.activeSession,
+        id: sessionId,
+        status: "launched",
+        launchedAt: now,
+        launchedBy,
+        launchedByUserId
+      },
+      draft.cardLibrary
+    );
+    ledger.downtime = normalizeDowntimeV2State(downtime, { now });
+  });
+
+  for (const target of targets) {
+    emitModuleSocket(
+      {
+        type: "players:openDowntimeSession",
+        userId: String(target?.id ?? "").trim(),
+        gmUserId: launchedByUserId,
+        sessionId,
+        actorIds: draft.activeSession.rosterActorIds,
+        cardIds: draft.activeSession.availableCardIds,
+        hours: draft.activeSession.hours,
+        launchedAt: now
+      },
+      { channel: SOCKET_CHANNEL }
+    );
+  }
+
+  if (targets.length <= 0) {
+    ui.notifications?.warn("Downtime session launched, but no eligible connected players were found.");
+  } else {
+    ui.notifications?.info(`Downtime session launched to ${targets.length} player${targets.length === 1 ? "" : "s"}.`);
+  }
+  return { ok: true, targetCount: targets.length };
+}
+
+function extractD20FromRoll(roll) {
+  const dice = Array.isArray(roll?.dice) ? roll.dice : [];
+  for (const die of dice) {
+    const results = Array.isArray(die?.results) ? die.results : [];
+    for (const result of results) {
+      const value = Number(result?.result ?? result?.value ?? NaN);
+      if (Number.isFinite(value) && value >= 1 && value <= 20) return Math.floor(value);
+    }
+  }
+  return 0;
+}
+
+async function submitDowntimeV2Action(element) {
+  const root = getDowntimeV2Root(element);
+  if (!root) return { ok: false, message: "Downtime panel was not found." };
+  const actorId = String(root.querySelector("select[name='downtimeV2ActorId']")?.value ?? "").trim();
+  const cardId = String(root.querySelector("select[name='downtimeV2CardId']")?.value ?? "").trim();
+  const note = String(root.querySelector("textarea[name='downtimeV2Note']")?.value ?? "").trim();
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const actor = game.actors.get(actorId);
+  const card = getDowntimeV2CardById(downtime, cardId);
+  if (!isDowntimeV2SessionLaunched(downtime) || !actor || !card || !canUserManageDowntimeActor(game.user, actor)) {
+    ui.notifications?.warn("That downtime submission is not available.");
+    return { ok: false, message: "Downtime submission unavailable." };
+  }
+  const ability = normalizeDowntimeV2Ability(card.ability);
+  const abilityMod = getActorAbilityMod(actor, ability);
+  const proficiencyBonus = getActorProficiencyBonus(actor);
+  const roll = await new Roll("1d20 + @abilityMod + @proficiencyBonus", { abilityMod, proficiencyBonus }).evaluate();
+  await roll.toMessage?.({
+    speaker: ChatMessage.getSpeaker?.({ actor }),
+    flavor: `${actor.name}: ${card.title} downtime check`,
+    rollMode: "blindroll"
+  });
+  const submission = {
+    id: `dt-sub-${foundry.utils.randomID()}`,
+    sessionId: downtime.activeSession.id,
+    actorId,
+    actorName: String(actor.name ?? "Actor"),
+    userId: String(game.user?.id ?? ""),
+    userName: String(game.user?.name ?? "Player"),
+    cardId: card.id,
+    cardType: card.type,
+    cardTitle: card.title,
+    note,
+    roll: {
+      formula: roll.formula,
+      d20: extractD20FromRoll(roll),
+      ability,
+      abilityMod,
+      proficiencyBonus,
+      total: Math.floor(Number(roll.total ?? 0) || 0)
+    },
+    submittedAt: Date.now()
+  };
+  submission.resultDraft = buildDowntimeV2ResultDraft(submission, card, { hours: downtime.activeSession.hours });
+  if (canAccessAllPlayerOps()) return applyDowntimeV2SubmissionForUser(game.user, submission);
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:downtimeV2-submit",
+    userId: game.user.id,
+    submission
+  });
+  ui.notifications?.info("Downtime roll submitted to the GM.");
+  return { ok: true };
+}
+
+async function applyDowntimeV2SubmissionForUser(user, rawSubmission = {}) {
+  if (!user) return { ok: false, summary: "Missing player." };
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const actor = game.actors.get(String(rawSubmission?.actorId ?? "").trim());
+  const card = getDowntimeV2CardById(downtime, rawSubmission?.cardId);
+  if (!isDowntimeV2SessionLaunched(downtime) || !actor || !card || !canUserManageDowntimeActor(user, actor)) {
+    return { ok: false, summary: "Downtime submission was rejected." };
+  }
+  const submission = {
+    ...rawSubmission,
+    id: String(rawSubmission?.id ?? "").trim() || `dt-sub-${foundry.utils.randomID()}`,
+    sessionId: downtime.activeSession.id,
+    actorId: actor.id,
+    actorName: String(actor.name ?? "Actor"),
+    userId: String(user.id ?? ""),
+    userName: String(user.name ?? "Player"),
+    cardId: card.id,
+    cardType: card.type,
+    cardTitle: card.title,
+    submittedAt: Math.max(0, Number(rawSubmission?.submittedAt ?? Date.now()) || Date.now())
+  };
+  submission.resultDraft =
+    rawSubmission?.resultDraft && typeof rawSubmission.resultDraft === "object"
+      ? rawSubmission.resultDraft
+      : buildDowntimeV2ResultDraft(submission, card, { hours: downtime.activeSession.hours });
+
+  let outcome = null;
+  await updateOperationsLedger((nextLedger) => {
+    const nextDowntime = ensureDowntimeState(nextLedger);
+    outcome = applyDowntimeV2Submission(nextDowntime, submission);
+    nextLedger.downtime = outcome.state;
+  });
+  if (outcome?.ok) {
+    ui.notifications?.info(`${String(user.name ?? "Player")} submitted downtime for ${actor.name}.`);
+    return { ok: true, summary: "Downtime submission received.", scope: REFRESH_SCOPE_KEYS.OPERATIONS };
+  }
+  return {
+    ok: false,
+    summary: outcome?.message ?? "Downtime submission failed.",
+    scope: REFRESH_SCOPE_KEYS.OPERATIONS
+  };
+}
+
+function readDowntimeV2DeliveryDraft(element) {
+  const root = element?.closest?.("[data-downtime-v2-submission]") ?? getDowntimeV2Root(element);
+  return {
+    summary: String(root?.querySelector?.("textarea[name='resolveDowntimeV2Summary']")?.value ?? "").trim(),
+    progress: Number(root?.querySelector?.("input[name='resolveDowntimeV2Progress']")?.value ?? 0),
+    costGp: Number(root?.querySelector?.("input[name='resolveDowntimeV2CostGp']")?.value ?? 0),
+    rewardText: String(root?.querySelector?.("textarea[name='resolveDowntimeV2RewardText']")?.value ?? "").trim(),
+    completionName: String(root?.querySelector?.("input[name='resolveDowntimeV2CompletionName']")?.value ?? "").trim()
+  };
+}
+
+function buildDowntimeV2CompletionItemData(result = {}, card = {}) {
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const draft = result.resultDraft ?? {};
+  const name = String(draft.completionName || card.completionName || card.title || "Downtime Result").trim();
+  const lines = [
+    `<p><strong>${escape(getDowntimeV2CardTypeLabel(card.type))} Downtime Complete</strong></p>`,
+    `<p>${escape(draft.summary || result.cardTitle || "Downtime completed.")}</p>`
+  ];
+  if (draft.rewardText) lines.push(`<p><strong>Reward:</strong> ${escape(draft.rewardText)}</p>`);
+  return {
+    name,
+    type: "feat",
+    system: {
+      description: {
+        value: lines.join("")
+      }
+    },
+    flags: {
+      [MODULE_ID]: {
+        downtimeV2Completion: {
+          resultId: String(result.id ?? ""),
+          cardId: String(card.id ?? ""),
+          cardType: normalizeDowntimeV2CardType(card.type),
+          completedAt: Date.now()
+        }
+      }
+    }
+  };
+}
+
+async function applyDowntimeV2DeliveredResultToActor(result = {}) {
+  const actor = game.actors.get(String(result?.actorId ?? "").trim());
+  if (!actor) return { ok: false, message: "Actor not found." };
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const card =
+    getDowntimeV2CardById(downtime, result.cardId) ??
+    normalizeDowntimeV2Card({
+      id: result.cardId,
+      type: result.cardType,
+      title: result.cardTitle
+    });
+  const currentProjects = getDowntimeV2ActorProjects(actor);
+  let applied = applyDowntimeV2ResultToActorProjects(currentProjects, result, card, { now: Date.now() });
+  let completionItemId = applied.project?.completionItemId ?? "";
+  if (applied.completed && !completionItemId) {
+    const created = await actor.createEmbeddedDocuments("Item", [buildDowntimeV2CompletionItemData(result, card)]);
+    completionItemId = String(created?.[0]?.id ?? "").trim();
+    applied = applyDowntimeV2ResultToActorProjects(currentProjects, result, card, {
+      now: Date.now(),
+      completionItemId
+    });
+  }
+  await actor.setFlag(MODULE_ID, "downtimeProjects", applied.projects);
+  return { ok: true, project: applied.project, completed: applied.completed, completionItemId };
+}
+
+async function deliverDowntimeV2Result(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can deliver downtime results.");
+    return { ok: false, message: "GM only." };
+  }
+  const submissionId = String(element?.dataset?.submissionId ?? "").trim();
+  if (!submissionId) return { ok: false, message: "Submission id is required." };
+  const deliveryDraft = readDowntimeV2DeliveryDraft(element);
+  let delivered = null;
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    delivered = deliverDowntimeV2Submission(downtime, submissionId, {
+      now: Date.now(),
+      deliveredBy: String(game.user?.name ?? "GM"),
+      resultDraft: deliveryDraft
+    });
+    ledger.downtime = delivered.state;
+  });
+  if (!delivered?.ok || !delivered.result) {
+    ui.notifications?.warn(delivered?.message ?? "Downtime result could not be delivered.");
+    return { ok: false, message: delivered?.message ?? "Delivery failed." };
+  }
+  await applyDowntimeV2DeliveredResultToActor(delivered.result);
+  ui.notifications?.info(`Delivered downtime result for ${delivered.result.actorName || "actor"}.`);
+  return { ok: true };
+}
+
+async function acknowledgeDowntimeV2ResultForUser(user, resultId = "") {
+  if (!user) return { ok: false, summary: "Missing player." };
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const result = downtime.deliveredResults.find((entry) => String(entry?.id ?? "") === String(resultId ?? ""));
+  const actor = game.actors.get(String(result?.actorId ?? "").trim());
+  if (!result || !actor || !canUserManageDowntimeActor(user, actor)) {
+    return { ok: false, summary: "Downtime result acknowledgement was rejected." };
+  }
+  let outcome = null;
+  await updateOperationsLedger((nextLedger) => {
+    const nextDowntime = ensureDowntimeState(nextLedger);
+    outcome = acknowledgeDowntimeV2Result(nextDowntime, resultId, {
+      now: Date.now(),
+      acknowledgedBy: String(user.name ?? "Player")
+    });
+    nextLedger.downtime = outcome.state;
+  });
+  return {
+    ok: outcome?.ok === true,
+    summary: outcome?.ok ? "Downtime result acknowledged." : (outcome?.message ?? "Acknowledgement failed."),
+    scope: REFRESH_SCOPE_KEYS.OPERATIONS
+  };
+}
+
+async function acknowledgeDowntimeV2ResultFromElement(element) {
+  const resultId = String(element?.dataset?.resultId ?? "").trim();
+  if (!resultId) return { ok: false, message: "Result id is required." };
+  if (canAccessAllPlayerOps()) return acknowledgeDowntimeV2ResultForUser(game.user, resultId);
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:downtimeV2-ack-result",
+    userId: game.user.id,
+    resultId
+  });
+  return { ok: true };
 }
 
 async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
@@ -53523,6 +54173,7 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler(
       logUiDebug,
       openOperationsLootClaimsTabForPlayer,
       openRestWatchUiForCurrentUser,
+      setPlayerHubTab,
       refreshOpenApps,
       schedulePendingSopNoteSync,
       syncMerchantBarterStatusForOpenDialogs,
@@ -53588,6 +54239,10 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler(
       ensureDowntimeState,
       normalizeDowntimeSubmission,
       applyDowntimeSubmissionForUser,
+      applyPlayerDowntimeV2SubmitRequestFeature,
+      applyDowntimeV2SubmissionForUser,
+      applyPlayerDowntimeV2AckResultFeature,
+      acknowledgeDowntimeV2ResultForUser,
       applyPlayerDowntimeClearRequestFeature,
       applyPlayerDowntimeQueueEditRequestFeature,
       canUserManageDowntimeActor,

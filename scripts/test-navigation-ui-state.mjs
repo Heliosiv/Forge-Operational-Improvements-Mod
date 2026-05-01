@@ -28,7 +28,9 @@ globalThis.game = {
 const accessState = { shared: false, gm: false };
 
 function normalizeMainTabId(value, fallback = "rest-watch") {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (normalized === "rest") return "rest-watch";
   if (normalized === "march") return "marching-order";
   if (normalized === "operations") return "operations";
@@ -88,10 +90,15 @@ assert.equal(uiState.getActiveGmQuickPanel(), "weather");
 uiState.setActiveGmQuickPanel("invalid");
 assert.equal(uiState.getActiveGmQuickPanel(), "none");
 
-assert.equal(uiState.getActiveGmOperationsTab(), "loot-sources");
+assert.equal(uiState.getActiveGmOperationsTab(), "cockpit");
+uiState.setActiveGmOperationsTab("environment");
+assert.equal(uiState.getActiveGmOperationsTab(), "environment");
 uiState.setActiveGmOperationsTab("loot-sources");
 assert.equal(uiState.getActiveGmOperationsTab(), "loot-sources");
+uiState.setActiveGmOperationsTab("invalid");
+assert.equal(uiState.getActiveGmOperationsTab(), "cockpit");
 assert.equal(uiState.normalizeGmOperationsTab("invalid", "loot-sources"), "loot-sources");
+assert.equal(uiState.normalizeGmOperationsTab("invalid"), "cockpit");
 
 assert.equal(uiState.getActiveOperationsPlanningTab(), "resources");
 uiState.setActiveOperationsPlanningTab("loot");

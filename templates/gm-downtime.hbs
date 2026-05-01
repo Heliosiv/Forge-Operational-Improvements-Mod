@@ -1,619 +1,223 @@
 <div class="po-window po-window-rest" data-tool="gm-downtime" role="region" aria-label="Party Operations GM Downtime">
   <header class="po-header">
-    <div class="po-header-main">
-      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
+    <div>
+      <h2>Downtime</h2>
       <div class="po-subtitle" aria-live="polite">GM Downtime - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
     </div>
-    <div class="po-controls">
-      <button type="button" class="po-btn po-btn-sm" data-action="gm-downtime-page-back">Back</button>
+    <div class="po-header-actions">
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-downtime-page-back">Back to Cockpit</button>
       <button type="button" class="po-icon-btn" data-action="gm-downtime-page-refresh" aria-label="Refresh">
-        <i class="fa-solid fa-rotate"></i>
+        <span aria-hidden="true">R</span>
       </button>
     </div>
   </header>
 
-  <div class="po-body">
-    <section class="po-content po-gm-shell" id="po-panel-gm-downtime-page">
+  <main class="po-main">
+    <section class="po-content po-gm-shell po-downtime-v2" id="po-panel-gm-downtime-page">
       {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isDowntime=true}}
 
-      <section class="po-gm-section po-gm-page-intro">
-        <div class="po-gm-page-copy">
-          <div class="po-gm-page-eyebrow">GM Workspace</div>
-          <div class="po-section-title">Downtime Sessions</div>
-          <div class="po-hint">Publish a small block of usable hours, let players spend those hours on travel or city activities, then resolve and close the session when the time is spent.</div>
-          <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status role="status" aria-live="polite" aria-atomic="true">{{uiActionStatusMessage}}</div>
+      <div class="po-gm-page-panel po-gm-page-panel-downtime">
+        <div class="po-op-role-row po-gm-page-section-heading">
+          <div>
+            <div class="po-section-title">Downtime Session</div>
+            <div class="po-op-summary">{{downtime.publication.submitHint}}</div>
+          </div>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-save-config">Save Setup</button>
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="downtime-v2-launch-session" {{#unless downtime.activeSession.canLaunch}}disabled{{/unless}}>{{downtime.publication.buttonLabel}}</button>
+          </div>
         </div>
+
+        <div class="po-op-summary po-downtime-publication-status {{#if downtime.publication.isPublished}}is-good{{else}}is-warn{{/if}}" role="status" aria-live="polite" aria-atomic="true">
+          <strong>Status:</strong> {{downtime.publication.statusLabel}} | <strong>Launched:</strong> {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}
+        </div>
+        {{#if uiActionStatusMessage}}
+        <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status>{{uiActionStatusMessage}}</div>
+        {{else}}
+        <div class="po-op-summary" data-page-action-status></div>
+        {{/if}}
+
         <div class="po-info-strip po-gm-page-stat-grid" role="list" aria-label="Downtime summary">
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Session Hours</span><strong>{{downtime.draftHoursGranted}}</strong></div>
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Published</span><strong>{{#if downtime.publication.isPublished}}{{downtime.publishedHoursGranted}}{{else}}-{{/if}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Session Hours</span><strong>{{downtime.activeSession.hours}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Roster</span><strong>{{downtime.activeSession.rosterCount}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Cards</span><strong>{{downtime.activeSession.availableCardCount}}</strong></div>
           <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Pending</span><strong>{{downtime.pendingCount}}</strong></div>
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Resolved</span><strong>{{downtime.resolvedCount}}</strong></div>
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Recent Logs</span><strong>{{downtime.logCount}}</strong></div>
-        </div>
-      </section>
-
-      <div id="po-gm-downtime" class="po-gm-section po-downtime-panel">
-        <div class="po-two-col">
-          <div class="po-col">
-            <div class="po-op-role-row">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">Session Setup</div>
-                <div class="po-op-role-status">GM</div>
-              </div>
-              <label class="po-resource-row">
-                <span>Available Hours</span>
-                <input type="number" min="1" max="24" step="1" class="po-input" value="{{downtime.draftHoursGranted}}" data-action="set-downtime-hours" />
-              </label>
-              <div class="po-op-summary po-downtime-publication-status {{#if downtime.publication.isPublished}}is-good{{else}}is-warn{{/if}}"><strong>Player Session:</strong> {{downtime.publication.statusLabel}}</div>
-              <div class="po-op-summary"><strong>Published:</strong> {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}</div>
-              {{#unless downtime.publication.isPublished}}
-              <div class="po-op-summary is-warn"><strong>Submission gate:</strong> players cannot submit until hours are published.</div>
-              {{/unless}}
-              <div class="po-hint">Players spend from this session until you republish or complete their entries. Outcomes and extra benefits stay GM-side until resolved.</div>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-downtime-hours" title="{{downtime.publication.buttonLabel}}" aria-label="{{downtime.publication.buttonLabel}}">{{downtime.publication.buttonLabel}}</button>
-              </div>
-              <label class="po-resource-row">
-                  <span>Activity Setting</span>
-                <select class="po-select" data-action="set-downtime-tuning" data-tuning="economy">
-                  {{#each downtime.tuning.economyOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                  <span>Risk</span>
-                <select class="po-select" data-action="set-downtime-tuning" data-tuning="risk">
-                  {{#each downtime.tuning.riskOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                  <span>Discovery</span>
-                <select class="po-select" data-action="set-downtime-tuning" data-tuning="discovery">
-                  {{#each downtime.tuning.discoveryOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-            </div>
-
-            <div class="po-op-role-row">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">Create Activity Entry</div>
-                <div class="po-op-role-status">Manual</div>
-              </div>
-              <div class="po-op-summary po-downtime-submit-readiness {{#if downtime.submit.canSubmit}}is-good{{else}}is-warn{{/if}}" role="status" aria-live="polite" aria-atomic="true"><strong>Ready to submit:</strong> {{#if downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</div>
-              {{#unless downtime.submit.canSubmit}}
-              <div class="po-op-summary is-warn"><strong>Blocked:</strong> {{downtime.submit.disabledReason}}</div>
-              {{/unless}}
-              {{#if downtime.submit.hasOverBudgetHours}}
-              <div class="po-op-summary is-warn"><strong>Planned hours exceed cap:</strong> over by {{downtime.submit.overBudgetHours}}h. Adjust hours or queue strategy.</div>
-              {{/if}}
-              <div class="po-op-summary"><strong>Selected action:</strong> {{#each downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{downtime.submit.hours}} hour(s)</div>
-              <div class="po-op-summary" aria-live="polite">Use this only when you want to seed an entry yourself; players will normally choose from their published session.</div>
-              <label class="po-resource-row">
-                <span>PC-Owned Actor</span>
-                <select name="downtimeActorId" class="po-select" data-action="refresh-downtime-submit-selection">
-                  {{#each downtime.submit.actorOptions}}
-                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <div class="po-downtime-status-strip po-downtime-planning-strip" aria-label="Selected actor downtime summary">
-                <div class="po-downtime-status-card">
-                  <span class="po-downtime-status-label">Active</span>
-                  <strong class="po-downtime-status-value">{{downtime.submit.activeHours}}h</strong>
-                </div>
-                <div class="po-downtime-status-card">
-                  <span class="po-downtime-status-label">Queued</span>
-                  <strong class="po-downtime-status-value">{{downtime.submit.queuedHours}}h</strong>
-                </div>
-                <div class="po-downtime-status-card">
-                  <span class="po-downtime-status-label">Planned</span>
-                  <strong class="po-downtime-status-value">{{downtime.submit.plannedHours}}h / {{downtime.submit.capHours}}h</strong>
-                </div>
-                <div class="po-downtime-status-card {{#if downtime.submit.hasOverBudgetHours}}is-blocked{{else}}is-ready{{/if}}">
-                  <span class="po-downtime-status-label">Remaining</span>
-                  <strong class="po-downtime-status-value">{{#if downtime.submit.hasOverBudgetHours}}-{{downtime.submit.overBudgetHours}}h{{else}}{{downtime.submit.remainingHours}}h{{/if}}</strong>
-                </div>
-              </div>
-              <label class="po-resource-row">
-                <span>Action</span>
-                <select name="downtimeActionKey" class="po-select" data-action="refresh-downtime-submit-selection">
-                  {{#each downtime.submit.actionOptions}}
-                  <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              {{#if downtime.submit.showSubtypeFields}}
-              <label class="po-resource-row">
-                <span>Subtype</span>
-                <select name="downtimeSubtypeKey" class="po-select" data-action="refresh-downtime-submit-selection">
-                  {{#each downtime.submit.subtypeOptions}}
-                  <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              {{#if downtime.submit.selectedSubtype.guidance}}
-              <div class="po-op-summary">{{downtime.submit.selectedSubtype.guidance}}</div>
-              {{/if}}
-              {{/if}}
-              <label class="po-resource-row">
-                <span>Hours</span>
-                <input name="downtimeHours" type="number" min="1" max="{{downtime.submit.hoursMax}}" step="1" class="po-input" value="{{downtime.submit.hours}}" />
-              </label>
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Note</span>
-                <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional context for your GM">{{downtime.submit.note}}</textarea>
-              </label>
-              <div class="po-op-summary"><strong>Area Settings:</strong> {{downtime.submit.areaSettingsLabel}}</div>
-              <div class="po-op-summary"><strong>Stored Effects:</strong> {{downtime.submit.activeRewardEffectsSummary}}</div>
-              {{#if downtime.submit.showBrowsingFields}}
-              <label class="po-resource-row">
-                <span>Browsing Ability</span>
-                <select name="downtimeBrowsingAbility" class="po-select" data-action="refresh-downtime-submit-selection">
-                  {{#each downtime.submit.browsingAbilityOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              {{/if}}
-              {{#if downtime.submit.showCraftingFields}}
-              <label class="po-resource-row">
-                <span>Craft Item</span>
-                <select name="downtimeCraftItemId" class="po-select" data-action="refresh-downtime-submit-selection">
-                  <option value="">Select craftable item</option>
-                  {{#each downtime.submit.craftingCategoryViews}}
-                  <optgroup label="{{label}}">
-                    {{#each items}}
-                    <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-                    {{/each}}
-                  </optgroup>
-                  {{/each}}
-                </select>
-              </label>
-              {{#unless downtime.submit.hasCraftingOptions}}
-              <div class="po-op-summary">No craftable items match this actor's tool proficiencies.</div>
-              {{/unless}}
-              {{#if downtime.submit.hasSelectedCraftable}}
-              <div class="po-op-summary">Crafting: {{downtime.submit.selectedCraftableName}} | Tool {{downtime.submit.selectedCraftableTool}} | Materials {{downtime.submit.selectedCraftableMaterialCost}} gp | Progress {{downtime.submit.selectedCraftableProgressRequired}}</div>
-              {{#if downtime.submit.hasCraftingProject}}
-              <div class="po-op-summary">Existing project progress: {{downtime.submit.craftingProjectProgressLabel}}</div>
-              {{/if}}
-              {{/if}}
-              <label class="po-resource-row">
-                <span>Materials</span>
-                <select name="downtimeCraftMaterialsOwned" class="po-select" data-action="refresh-downtime-submit-selection">
-                  {{#each downtime.submit.materialsOwnedOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              {{#if downtime.submit.showMaterialDropZone}}
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Materials On Hand</span>
-                <input type="hidden" name="downtimeCraftMaterialDrops" value="{{downtime.submit.materialDropsJson}}" />
-                <div class="po-loot-preview-dropzone" data-downtime-material-dropzone>Drop the material items you want the GM to review for this project.</div>
-                <div class="po-loot-preview-items-grid" data-downtime-material-drop-list>
-                  {{#if downtime.submit.hasMaterialDrops}}
-                  {{#each downtime.submit.materialDrops}}
-                  <div class="po-op-role-row">
-                    <div class="po-op-role-head">
-                      <div class="po-op-role-name"><img src="{{img}}" width="18" height="18" /> {{name}}</div>
-                      <div class="po-op-role-status">x{{quantity}}</div>
-                    </div>
-                    <div class="po-op-summary">{{#if uuid}}{{uuid}}{{else}}World Item / Snapshot{{/if}}</div>
-                    <div class="po-op-action-row">
-                      <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-material-drop" data-drop-id="{{id}}">Remove</button>
-                    </div>
-                  </div>
-                  {{/each}}
-                  {{else}}
-                  <div class="po-op-summary">No materials selected.</div>
-                  {{/if}}
-                </div>
-              </label>
-              <div class="po-hint">The GM decides how much of these materials count and any extra gp due when the result is collected.</div>
-              {{/if}}
-              {{/if}}
-              {{#if downtime.submit.showCraftingFields}}
-              <details class="po-panel-disclosure">
-                <summary class="po-panel-disclosure-summary">
-                  <span class="po-section-title">Crafting Catalog</span>
-                  <span class="po-op-summary">Expandable baseline catalog</span>
-                </summary>
-                <div class="po-panel-disclosure-body">
-                  {{#each downtime.submit.craftingCatalogCategoryViews}}
-                  <details class="po-panel-disclosure">
-                    <summary class="po-panel-disclosure-summary">
-                      <span class="po-section-title">{{label}}</span>
-                      <span class="po-op-summary">{{itemCount}} items</span>
-                    </summary>
-                    <div class="po-panel-disclosure-body">
-                      {{#each items}}
-                      <div class="po-op-summary">{{name}} | {{requiredToolProficiency}} | Cost {{materialCost}}/{{baseCost}} gp | Progress {{progressRequired}}</div>
-                      {{/each}}
-                    </div>
-                  </details>
-                  {{/each}}
-                </div>
-              </details>
-              {{/if}}
-              {{#if downtime.submit.showProfessionFields}}
-              <label class="po-resource-row">
-                <span>Profession</span>
-                <select name="downtimeProfessionId" class="po-select" data-action="refresh-downtime-submit-selection">
-                  <option value="">Select profession</option>
-                  {{#each downtime.submit.professionOptions}}
-                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}{{#if known}} [Known]{{/if}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              {{#unless downtime.submit.hasProfessionOptions}}
-              <div class="po-op-summary">No professions are available for this actor.</div>
-              {{/unless}}
-              {{#if downtime.submit.hasKnownProfessionNames}}
-              <div class="po-op-summary">Known professions: {{#each downtime.submit.knownProfessionNames}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
-              {{/if}}
-              {{/if}}
-              <div class="po-hint">Choose whether this becomes the actor's active entry or is queued behind the current one.</div>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action-replace" data-queue-mode="replace-current" {{#if downtime.submit.canSubmit}}title="Start this activity now and replace the current active entry" aria-label="Start this activity now and replace the current active entry"{{else}}title="{{downtime.submit.disabledReason}}" aria-label="{{downtime.submit.disabledReason}}" disabled{{/if}}>Start / Replace Current</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="submit-downtime-action" data-queue-mode="append" {{#if downtime.submit.canSubmit}}title="Queue this activity behind the current active entry" aria-label="Queue this activity behind the current active entry"{{else}}title="{{downtime.submit.disabledReason}}" aria-label="{{downtime.submit.disabledReason}}" disabled{{/if}}>Queue Next Activity</button>
-              </div>
-            </div>
-
-            <div class="po-op-role-row po-downtime-resolver">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">Pending Resolver</div>
-                <div class="po-op-role-status">{{downtime.pendingCount}} pending</div>
-              </div>
-              {{#if downtime.gmResolve.hasPending}}
-              <label class="po-resource-row">
-                <span>Pending Entry</span>
-                <select name="resolveDowntimeActorId" class="po-select" data-action="set-downtime-resolve-target">
-                  {{#each downtime.gmResolve.pendingOptions}}
-                  <option
-                    value="{{actorId}}"
-                    {{#if selected}}selected{{/if}}
-                    data-action-key="{{actionKey}}"
-                    data-base-summary="{{baseSummary}}"
-                    data-base-gp="{{baseGpAward}}"
-                    data-base-cost="{{baseGpCost}}"
-                    data-base-rumors="{{baseRumorCount}}"
-                    data-base-items="{{baseItemRewardsText}}"
-                    data-base-item-drops="{{baseItemRewardDropsJson}}"
-                    data-base-notes="{{baseNotes}}"
-                    data-base-contract-key="{{baseSocialContractKey}}"
-                    data-base-contract-notes="{{baseSocialContractNotes}}"
-                    data-base-hint="{{baseHint}}"
-                  >{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Outcome Summary</span>
-                <input type="text" name="resolveDowntimeSummary" class="po-input" value="{{downtime.gmResolve.summary}}" placeholder="Short player-facing result summary" />
-              </label>
-              <div class="po-op-summary"><strong>Selected:</strong> {{downtime.gmResolve.selectedActorName}} - {{downtime.gmResolve.selectedActionLabel}}</div>
-              {{#if downtime.gmResolve.hasSelectedActionDetails}}
-              {{#each downtime.gmResolve.selectedActionDetails}}
-              <div class="po-op-summary">{{this}}</div>
-              {{/each}}
-              {{/if}}
-              {{#if downtime.gmResolve.isBrowsing}}
-              <div class="po-op-summary">Browsing ability: {{downtime.gmResolve.browsingAbilityLabel}}</div>
-              {{/if}}
-              {{#if downtime.gmResolve.isCrafting}}
-              <div class="po-op-summary">Craft item: {{downtime.gmResolve.selectedCraftableName}}</div>
-              <div class="po-op-summary">Material plan: {{downtime.gmResolve.submittedMaterialsModeLabel}}</div>
-              {{/if}}
-              {{#if downtime.gmResolve.isProfession}}
-              <div class="po-op-summary">Profession: {{downtime.gmResolve.selectedProfessionName}}</div>
-              {{/if}}
-              {{#if downtime.gmResolve.hasSubmittedCheck}}
-              <div class="po-op-summary"><strong>Submitted Check:</strong> {{downtime.gmResolve.submittedCheckLabel}}</div>
-              {{/if}}
-              {{#if downtime.gmResolve.showSubmittedMaterialDrops}}
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Submitted Materials</span>
-                <div class="po-loot-preview-items-grid">
-                  {{#if downtime.gmResolve.hasSubmittedMaterialDrops}}
-                  {{#each downtime.gmResolve.submittedMaterialDrops}}
-                  <div class="po-op-role-row">
-                    <div class="po-op-role-head">
-                      <div class="po-op-role-name"><img src="{{img}}" width="18" height="18" /> {{name}}</div>
-                      <div class="po-op-role-status">x{{quantity}}</div>
-                    </div>
-                    <div class="po-op-summary">{{#if uuid}}{{uuid}}{{else}}World Item / Snapshot{{/if}}</div>
-                  </div>
-                  {{/each}}
-                  {{else}}
-                  <div class="po-op-summary">No material items were submitted with this crafting request.</div>
-                  {{/if}}
-                </div>
-              </label>
-              <div class="po-hint">Set the final collection cost based on how much of the submitted stock counts toward the project.</div>
-              {{/if}}
-              {{#if downtime.gmResolve.showGpAward}}
-              <label class="po-resource-row">
-                <span>Money Award (gp)</span>
-                <input type="number" min="0" step="1" name="resolveDowntimeGp" class="po-input" value="{{downtime.gmResolve.gpAward}}" />
-              </label>
-              {{/if}}
-              {{#if downtime.gmResolve.showGpCost}}
-              <label class="po-resource-row">
-                <span>Cost to Collect (gp)</span>
-                <input type="number" min="0" step="1" name="resolveDowntimeCost" class="po-input" value="{{downtime.gmResolve.gpCost}}" />
-              </label>
-              {{/if}}
-              {{#if downtime.gmResolve.showRumorCount}}
-              <label class="po-resource-row">
-                <span>Rumor / Lead Count</span>
-                <input type="number" min="0" step="1" name="resolveDowntimeRumors" class="po-input" value="{{downtime.gmResolve.rumorCount}}" />
-              </label>
-              {{/if}}
-              {{#if downtime.gmResolve.showSocialContract}}
-              <label class="po-resource-row">
-                <span>Social Contract Type</span>
-                <select name="resolveDowntimeContractKey" class="po-select">
-                  {{#each downtime.gmResolve.socialContractOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Social Contract Notes</span>
-                <textarea name="resolveDowntimeContractNotes" rows="2" class="po-input" placeholder="City, broker details, and usage limits">{{downtime.gmResolve.socialContractNotes}}</textarea>
-              </label>
-              {{/if}}
-              {{#if downtime.gmResolve.showItemRewards}}
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Item Rewards (one per line)</span>
-                <div class="po-loot-preview-dropzone" data-downtime-item-dropzone>Drag an Item here to add a reward line.</div>
-                <textarea name="resolveDowntimeItems" rows="3" class="po-input" data-downtime-item-dropzone placeholder="e.g., Potion of Healing">{{downtime.gmResolve.itemRewardsText}}</textarea>
-              </label>
-              {{/if}}
-              {{#if downtime.gmResolve.showItemRewardDrops}}
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Crafting Item Grants (Inventory on Collect)</span>
-                <input type="hidden" name="resolveDowntimeItemDrops" value="{{downtime.gmResolve.itemRewardDropsJson}}" />
-                <div class="po-loot-preview-dropzone" data-downtime-crafting-item-dropzone>Drag dropped items here when resolving a Crafting entry.</div>
-                <div class="po-loot-preview-items-grid" data-downtime-item-drop-list data-downtime-crafting-item-dropzone>
-                  {{#if downtime.gmResolve.hasItemRewardDrops}}
-                  {{#each downtime.gmResolve.itemRewardDrops}}
-                  <div class="po-op-role-row">
-                    <div class="po-op-role-head">
-                      <div class="po-op-role-name"><img src="{{img}}" width="18" height="18" /> {{name}}</div>
-                      <div class="po-op-role-status">x{{quantity}}</div>
-                    </div>
-                    <div class="po-op-summary">{{#if uuid}}{{uuid}}{{else}}World Item / Snapshot{{/if}}</div>
-                    <div class="po-op-action-row">
-                      <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-item-drop" data-drop-id="{{id}}">Remove</button>
-                    </div>
-                  </div>
-                  {{/each}}
-                  {{else}}
-                  <div class="po-op-summary">No direct item grants queued.</div>
-                  {{/if}}
-                </div>
-              </label>
-              {{/if}}
-              <label class="po-resource-row po-notes-row-lg">
-                <span>GM Notes (shown in result)</span>
-                <textarea name="resolveDowntimeNotes" rows="3" class="po-input" placeholder="Narrative notes, contacts, or conditions">{{downtime.gmResolve.gmNotes}}</textarea>
-              </label>
-              {{#if downtime.gmResolve.selectedIsPreResolved}}
-              <div class="po-op-summary is-good">{{downtime.gmResolve.selectedPreResolvedLabel}}</div>
-              {{/if}}
-              <div class="po-hint" data-downtime-resolve-hint>{{downtime.gmResolve.hint}}</div>
-              <div class="po-hint">Use <strong>Auto-Fill</strong> to populate fields from the activity baseline. Use <strong>Auto-Resolve</strong> to roll and stage a draft for review. Use <strong>Deliver to Player</strong> to finalize and push to the player's inbox. Use <strong>Resolve Next Automatically</strong> to do both in one step, or <strong>Resolve All Pending Automatically</strong> to clear the full queue with default outcomes.</div>
-              <div class="po-op-summary is-warn">Bulk actions immediately apply outcomes and can update multiple records at once.</div>
-              <div class="po-op-action-row po-downtime-resolver-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="prefill-downtime-resolution" title="Populate fields from the selected entry baseline" aria-label="Populate fields from the selected entry baseline">Auto-Fill Fields</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="pre-resolve-selected-downtime-entry" title="Roll and stage a draft result without delivering yet" aria-label="Roll and stage a draft result without delivering yet">Auto-Resolve (Roll &amp; Stage)</button>
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="resolve-selected-downtime-entry" title="Finalize and deliver the selected downtime result" aria-label="Finalize and deliver the selected downtime result">Deliver to Player</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="auto-resolve-and-deliver-downtime-entry" title="Resolve and deliver only the selected pending entry" aria-label="Resolve and deliver only the selected pending entry">Resolve Next Automatically</button>
-                <button type="button" class="po-btn po-btn-sm po-downtime-bulk-action" data-action="auto-resolve-all-downtime-entries" title="Resolve and deliver all pending downtime entries immediately" aria-label="Resolve and deliver all pending downtime entries immediately">Resolve All Pending Automatically</button>
-              </div>
-              {{else}}
-              <div class="po-op-summary">No pending downtime entries to resolve.</div>
-              {{/if}}
-            </div>
-
-            <div class="po-op-action-row po-downtime-maintenance-actions">
-              <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-downtime-results" title="Remove all resolved downtime logs" aria-label="Remove all resolved downtime logs">Clear Resolved Logs</button>
-            </div>
-          </div>
-
-          <div class="po-col">
-            <div class="po-op-role-row">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">Submitted Entries</div>
-                <div class="po-op-role-status">{{downtime.pendingCount}} pending</div>
-              </div>
-              <label class="po-resource-row">
-                <span>Sort Entries</span>
-                <select class="po-select" data-action="set-downtime-entry-sort" aria-label="Sort submitted downtime entries" title="Sort submitted downtime entries">
-                  {{#each downtime.entriesSortOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-
-              {{#if downtime.hasEntries}}
-              {{#each downtime.entries}}
-              <div class="po-op-role-row">
-                <div class="po-op-role-head">
-                  <div class="po-op-role-name">{{actorName}}</div>
-                  <div class="po-op-role-status {{#if pending}}is-warn{{else}}is-ready{{/if}}">{{statusLabel}}</div>
-                </div>
-                <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
-                {{#if hasQueuedEntries}}
-                <details class="po-panel-disclosure po-downtime-queue-disclosure" open>
-                  <summary class="po-panel-disclosure-summary">
-                    <span class="po-section-title">Queued Plan</span>
-                    <span class="po-op-summary">{{queueSummaryLabel}}</span>
-                  </summary>
-                  <div class="po-panel-disclosure-body">
-                    <div class="po-op-summary po-downtime-queue-timeline">{{projectedTimelineLabel}}</div>
-                    <div class="po-op-summary po-downtime-queue-budget {{#if hasQueueBudgetWarning}}is-warn{{else}}is-good{{/if}}">{{queueBudgetLabel}}</div>
-                    <div class="po-hint">Drag queued rows to reorder, or use Up/Down for precise positioning.</div>
-                    <div class="po-op-action-row po-downtime-queue-head-actions">
-                      <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-downtime-queue" data-actor-id="{{actorId}}" data-queue-operation="clear-all" title="Remove all queued actions for {{actorName}}" aria-label="Remove all queued actions for {{actorName}}">Clear Queue</button>
-                    </div>
-                    {{#each queuedItems}}
-                    <div class="po-downtime-queue-item-row" draggable="true" data-downtime-queue-item data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}">
-                      <div class="po-op-summary">
-                        {{#if @first}}<span class="po-downtime-queue-badge is-next">Next</span>{{else}}<span class="po-downtime-queue-badge">Later</span>{{/if}}
-                        {{label}}
-                      </div>
-                      {{#if hasNote}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
-                      <div class="po-op-action-row po-downtime-queue-actions">
-                        <button type="button" class="po-btn po-btn-sm" data-action="promote-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="promote" title="Move this queued entry into the active slot" aria-label="Move this queued entry into the active slot">Promote Now</button>
-                        <button type="button" class="po-btn po-btn-sm" data-action="move-up-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="move-up" {{#if @first}}title="Already first in queue" aria-label="Already first in queue" disabled{{else}}title="Move this queued entry up" aria-label="Move this queued entry up"{{/if}}>Up</button>
-                        <button type="button" class="po-btn po-btn-sm" data-action="move-down-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="move-down" {{#if @last}}title="Already last in queue" aria-label="Already last in queue" disabled{{else}}title="Move this queued entry down" aria-label="Move this queued entry down"{{/if}}>Down</button>
-                        <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="remove" title="Remove this queued entry" aria-label="Remove this queued entry">Remove</button>
-                      </div>
-                    </div>
-                    {{/each}}
-                  </div>
-                </details>
-                {{/if}}
-                {{#if hasActionDetails}}
-                {{#each actionDetails}}
-                <div class="po-op-summary">{{this}}</div>
-                {{/each}}
-                {{/if}}
-                {{#if hasNote}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
-                {{#if hasSubmittedCheck}}<div class="po-op-summary"><strong>Submitted Check:</strong> {{submittedCheckLabel}}</div>{{/if}}
-                <div class="po-op-summary">Updated: {{updatedAtLabel}} by {{updatedBy}}</div>
-                {{#if hasPreResolved}}
-                <div class="po-op-summary is-good">Pre-Resolved Draft: {{preResolvedAtLabel}} by {{preResolvedBy}}</div>
-                {{/if}}
-                {{#if hasResult}}
-                <div class="po-op-summary">Result: {{resultSummary}}</div>
-                {{#if resultTierLabel}}<div class="po-op-summary">Tier: {{resultTierLabel}}</div>{{/if}}
-                <div class="po-op-summary">Roll {{rollTotal}} - GP +{{gpAward}} / -{{gpCost}} (Net {{gpDeltaLabel}}) - Progress {{progress}}</div>
-                {{#if hasExpectedQuality}}<div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>{{/if}}
-                {{#if hasSuggestedTags}}<div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
-                {{#if hasPerformanceLabel}}<div class="po-op-summary">Performance: {{performanceLabel}}</div>{{/if}}
-                {{#if hasCraftingStatus}}<div class="po-op-summary">{{craftingStatus}}</div>{{/if}}
-                {{#if hasRumorCount}}<div class="po-op-summary">Rumors/Leads: {{rumorCount}}</div>{{/if}}
-                {{#if hasItemRewards}}
-                <div class="po-op-summary">Item Rewards:</div>
-                {{#each itemRewards}}
-                <div class="po-op-summary">{{this}}</div>
-                {{/each}}
-                {{/if}}
-                {{#if hasItemRewardDrops}}
-                <div class="po-op-summary">Crafted Item Grants:</div>
-                {{#each itemRewardDrops}}
-                <div class="po-op-summary">{{name}} x{{quantity}}</div>
-                {{/each}}
-                {{/if}}
-                {{#if hasSocialContract}}<div class="po-op-summary">Connection: {{socialContractLabel}}</div>{{/if}}
-                {{#if hasSocialContract}}<div class="po-op-summary">{{socialContractSummary}}</div>{{/if}}
-                {{#if hasSocialContract}}<div class="po-op-summary">Limitations: {{socialContractLimitations}}</div>{{/if}}
-                {{#if hasSocialContractNotes}}<div class="po-op-summary">Connection Notes: {{socialContractNotes}}</div>{{/if}}
-                {{#if hasGmNotes}}<div class="po-op-summary">GM Notes: {{gmNotes}}</div>{{/if}}
-                {{#if hasComplication}}<div class="po-op-summary is-warn">Complication: {{complication}}</div>{{/if}}
-                {{#if hasClaimableRewards}}<div class="po-op-summary">Claimable: {{rewardSummary}}</div>{{/if}}
-                {{#if hasResultDetails}}
-                {{#each resultDetails}}
-                <div class="po-op-summary">{{this}}</div>
-                {{/each}}
-                {{/if}}
-                {{#if resolvedAtLabel}}<div class="po-op-summary">Resolved: {{resolvedAtLabel}} by {{resolvedBy}}</div>{{/if}}
-                {{#if isCollected}}
-                <div class="po-op-summary is-good">Collected: {{collectedAtLabel}} by {{collectedBy}}</div>
-                {{else}}
-                {{#if canCollect}}
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="collect-downtime-result" data-actor-id="{{actorId}}" title="Apply result rewards to {{actorName}}" aria-label="Apply result rewards to {{actorName}}">Collect for {{actorName}}</button>
-                {{/if}}
-                {{/if}}
-                {{#unless pending}}
-                <button type="button" class="po-btn po-btn-sm" data-action="edit-downtime-result" data-actor-id="{{actorId}}" title="Edit the resolved result for {{actorName}}" aria-label="Edit the resolved result for {{actorName}}">Edit Result</button>
-                {{/unless}}
-                {{/if}}
-                {{#if canClear}}
-                <button type="button" class="po-btn po-btn-sm" data-action="clear-downtime-entry" data-actor-id="{{actorId}}" title="Clear this downtime entry" aria-label="Clear this downtime entry">Clear Entry</button>
-                {{/if}}
-              </div>
-              {{/each}}
-              {{else}}
-              <div class="po-op-summary">No downtime entries submitted yet.</div>
-              {{/if}}
-            </div>
-          </div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Delivered</span><strong>{{downtime.resolvedCount}}</strong></div>
         </div>
 
-        <details class="po-panel-disclosure" open>
-          <summary class="po-panel-disclosure-summary">
-            <span class="po-section-title">Resolved Logs</span>
-            <span class="po-op-summary">Most recent outcomes</span>
-          </summary>
-          <div class="po-panel-disclosure-body">
-            <label class="po-resource-row">
-              <span>Sort Logs</span>
-              <select class="po-select" data-action="set-downtime-log-sort" aria-label="Sort resolved downtime logs" title="Sort resolved downtime logs">
-                {{#each downtime.logsSortOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
+        <section class="po-op-role-row po-downtime-session-editor">
+          <div>
+            <h3>Current Session</h3>
+            <label class="po-field">
+              <span>Session Name</span>
+              <input type="text" name="downtimeV2SessionTitle" class="po-input" value="{{downtime.activeSession.title}}" />
             </label>
-            {{#if downtime.hasLogs}}
-            {{#each downtime.logs}}
-            <div class="po-op-role-row" data-log-id="{{logId}}">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">{{actorName}} - {{actionLabel}}</div>
-                <div class="po-op-role-status">{{hours}} hour(s)</div>
-              </div>
-              <div class="po-op-summary">{{summary}}</div>
-              {{#if resultTierLabel}}<div class="po-op-summary">Tier: {{resultTierLabel}}</div>{{/if}}
-              {{#if hasExpectedQuality}}<div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>{{/if}}
-              {{#if hasSuggestedTags}}<div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
-                {{#if hasRewardTags}}<div class="po-op-summary">Reward Tags: {{#each rewardTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
-                {{#if hasRewardEffects}}
-                <div class="po-op-summary">Reward Effects:{{#if rewardEffects.discountPercent}} Discount {{rewardEffects.discountPercent}}%{{/if}}{{#if rewardEffects.materialsCreditGp}} | Materials Credit {{rewardEffects.materialsCreditGp}} gp{{/if}}{{#if rewardEffects.heatDelta}} | Heat +{{rewardEffects.heatDelta}}{{/if}}{{#if rewardEffects.contactTier}} | Contact {{rewardEffects.contactTier}}{{/if}}{{#if rewardEffects.reputationDelta}} | Reputation {{rewardEffects.reputationDelta}}{{/if}}</div>
-                {{/if}}
-              {{#if hasPerformanceLabel}}<div class="po-op-summary">Performance: {{performanceLabel}}</div>{{/if}}
-              {{#if hasCraftingStatus}}<div class="po-op-summary">{{craftingStatus}}</div>{{/if}}
-              {{#if hasDetails}}
-              {{#each details}}
-              <div class="po-op-summary">{{this}}</div>
+            <label class="po-field">
+              <span>Hours</span>
+              <input type="number" min="1" max="24" step="1" name="downtimeV2Hours" class="po-input" value="{{downtime.activeSession.hours}}" />
+            </label>
+          </div>
+          <div>
+            <h3>Assigned Actors</h3>
+            {{#if downtime.hasActors}}
+            <div class="po-checkbox-grid">
+              {{#each downtime.actorOptions}}
+              <label class="po-check-row">
+                <input type="checkbox" name="downtimeV2RosterActorIds" value="{{id}}" {{#if selected}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
+                <span>{{name}}</span>
+                {{#if hasProjects}}<small>{{projectCount}} active project(s)</small>{{/if}}
+              </label>
               {{/each}}
-              {{/if}}
-              <div class="po-op-summary">GP +{{gpAward}} / -{{gpCost}} (Net {{gpDeltaLabel}})</div>
-              {{#if hasRumorCount}}<div class="po-op-summary">Rumors/Leads: {{rumorCount}}</div>{{/if}}
-              {{#if hasItemRewards}}<div class="po-op-summary">Item Rewards: {{#each itemRewards}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</div>{{/if}}
-              {{#if hasItemRewardDrops}}<div class="po-op-summary">Crafted Item Grants: {{#each itemRewardDrops}}{{name}} x{{quantity}}{{#unless @last}}; {{/unless}}{{/each}}</div>{{/if}}
-              {{#if hasSocialContract}}<div class="po-op-summary">Connection: {{socialContractLabel}}</div>{{/if}}
-              {{#if hasSocialContract}}<div class="po-op-summary">{{socialContractSummary}}</div>{{/if}}
-              {{#if hasSocialContract}}<div class="po-op-summary">Limitations: {{socialContractLimitations}}</div>{{/if}}
-              {{#if hasSocialContractNotes}}<div class="po-op-summary">Connection Notes: {{socialContractNotes}}</div>{{/if}}
-              {{#if hasGmNotes}}<div class="po-op-summary">GM Notes: {{gmNotes}}</div>{{/if}}
-              {{#if hasComplication}}<div class="po-op-summary is-warn">Complication: {{complication}}</div>{{/if}}
-              {{#if hasClaimableRewards}}<div class="po-op-summary">Claimable: {{rewardSummary}}</div>{{/if}}
-              <div class="po-op-summary">Resolved: {{resolvedAtLabel}} by {{resolvedBy}}</div>
-              {{#if isCollected}}
-              <div class="po-op-summary is-good">Collected: {{collectedAtLabel}} by {{collectedBy}}</div>
-              {{/if}}
-              <div class="po-op-action-row po-downtime-log-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="unarchive-downtime-log" data-log-id="{{logId}}" title="Move this log back to the editable entries list" aria-label="Move this log back to the editable entries list">Unarchive for Edit</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="post-downtime-log" data-log-id="{{logId}}" title="Post this result to player-facing log output" aria-label="Post this result to player-facing log output">Post Outcome</button>
-                <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-downtime-log" data-log-id="{{logId}}" title="Permanently remove this resolved log" aria-label="Permanently remove this resolved log">Clear Log</button>
-              </div>
             </div>
-            {{/each}}
             {{else}}
-            <div class="po-op-summary">No downtime logs yet.</div>
+            <div class="po-empty">No eligible actors found.</div>
             {{/if}}
           </div>
-        </details>
+        </section>
+
+        <section class="po-downtime-card-library">
+          <div class="po-op-role-row po-gm-page-section-heading">
+            <div>
+              <h3>Reusable Action Cards</h3>
+              <div class="po-op-summary">Select cards into the current session. Learn and Craft create persistent projects by default.</div>
+            </div>
+            <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-add-card">Add Card</button>
+          </div>
+
+          {{#if downtime.hasCards}}
+          <div class="po-list po-downtime-card-list">
+            {{#each downtime.cardLibrary}}
+            <article class="po-list-row po-downtime-card-row" data-downtime-v2-card-row data-card-id="{{id}}">
+              <label class="po-check-row">
+                <input type="checkbox" name="downtimeV2AvailableCardIds" value="{{id}}" {{#if selected}}checked{{/if}} />
+                <strong>Use in session</strong>
+              </label>
+              <div class="po-grid po-grid-3">
+                <label class="po-field">
+                  <span>Title</span>
+                  <input type="text" name="downtimeV2CardTitle" class="po-input" value="{{title}}" />
+                </label>
+                <label class="po-field">
+                  <span>Type</span>
+                  <select name="downtimeV2CardType" class="po-select">
+                    {{#each typeOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <label class="po-field">
+                  <span>Roll Ability</span>
+                  <select name="downtimeV2CardAbility" class="po-select">
+                    {{#each abilityOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <label class="po-field">
+                  <span>DC</span>
+                  <input type="number" min="5" max="30" step="1" name="downtimeV2CardDc" class="po-input" value="{{dc}}" />
+                </label>
+                <label class="po-field">
+                  <span>Progress Target</span>
+                  <input type="number" min="0" max="999" step="1" name="downtimeV2CardProgressTarget" class="po-input" value="{{progressTarget}}" />
+                </label>
+                <label class="po-field">
+                  <span>Cost GP</span>
+                  <input type="number" min="0" max="999" step="1" name="downtimeV2CardCostGp" class="po-input" value="{{costGp}}" />
+                </label>
+              </div>
+              <label class="po-check-row">
+                <input type="checkbox" name="downtimeV2CardCreatesProject" {{#if createsProject}}checked{{/if}} />
+                <span>{{projectModeLabel}}</span>
+              </label>
+              <label class="po-field">
+                <span>Prompt</span>
+                <textarea name="downtimeV2CardPrompt" rows="2" class="po-input">{{prompt}}</textarea>
+              </label>
+              <label class="po-field">
+                <span>Reward Text</span>
+                <textarea name="downtimeV2CardRewardText" rows="2" class="po-input">{{rewardText}}</textarea>
+              </label>
+              <label class="po-field">
+                <span>Completion Item / Feature Name</span>
+                <input type="text" name="downtimeV2CardCompletionName" class="po-input" value="{{completionName}}" />
+              </label>
+            </article>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="po-empty">No action cards configured.</div>
+          {{/if}}
+        </section>
+
+        <section class="po-downtime-submissions">
+          <h3>Player Submissions</h3>
+          {{#if downtime.hasSubmissions}}
+          <div class="po-list">
+            {{#each downtime.pendingSubmissions}}
+            <article class="po-list-row" data-downtime-v2-submission data-submission-id="{{id}}">
+              <div class="po-op-role-row">
+                <div>
+                  <strong>{{actorName}}</strong>
+                  <div class="po-op-summary">{{cardTitle}} | {{resultDraft.tierLabel}} | Roll {{roll.total}}</div>
+                  {{#if note}}<div class="po-op-summary">Player note: {{note}}</div>{{/if}}
+                </div>
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="downtime-v2-deliver-result" data-submission-id="{{id}}">Deliver Result</button>
+              </div>
+              <label class="po-field">
+                <span>GM Summary</span>
+                <textarea name="resolveDowntimeV2Summary" rows="2" class="po-input">{{resultDraft.summary}}</textarea>
+              </label>
+              <div class="po-grid po-grid-3">
+                <label class="po-field">
+                  <span>Progress</span>
+                  <input type="number" min="0" max="999" step="1" name="resolveDowntimeV2Progress" class="po-input" value="{{resultDraft.progress}}" />
+                </label>
+                <label class="po-field">
+                  <span>Cost GP</span>
+                  <input type="number" min="0" max="999" step="1" name="resolveDowntimeV2CostGp" class="po-input" value="{{resultDraft.costGp}}" />
+                </label>
+                <label class="po-field">
+                  <span>Completion Name</span>
+                  <input type="text" name="resolveDowntimeV2CompletionName" class="po-input" value="{{resultDraft.completionName}}" />
+                </label>
+              </div>
+              <label class="po-field">
+                <span>Reward</span>
+                <textarea name="resolveDowntimeV2RewardText" rows="2" class="po-input">{{resultDraft.rewardText}}</textarea>
+              </label>
+            </article>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="po-empty">No pending downtime submissions.</div>
+          {{/if}}
+        </section>
+
+        <section class="po-downtime-delivered">
+          <h3>Delivered Results</h3>
+          {{#if downtime.hasDeliveredResults}}
+          <div class="po-list">
+            {{#each downtime.deliveredResults}}
+            <article class="po-list-row">
+              <strong>{{actorName}} - {{cardTitle}}</strong>
+              <div class="po-op-summary">{{resultDraft.summary}}</div>
+              <div class="po-op-summary">Progress +{{resultDraft.progress}} | Delivered {{deliveredBy}} | Acknowledged {{acknowledgedBy}}</div>
+            </article>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="po-empty">No delivered downtime results yet.</div>
+          {{/if}}
+        </section>
+
+        {{#if downtime.hasLegacyArchive}}
+        <section class="po-downtime-legacy-archive">
+          <h3>Legacy Archive</h3>
+          <div class="po-op-summary">Old downtime data was archived into the v2 ledger for read-only reference.</div>
+        </section>
+        {{/if}}
       </div>
     </section>
-  </div>
+  </main>
 </div>

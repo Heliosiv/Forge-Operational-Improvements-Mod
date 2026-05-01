@@ -1,182 +1,111 @@
 import assert from "node:assert/strict";
-import { readLegacyRuntimeSource } from "./test-utils/legacy-runtime-source.mjs";
 import { readFileSync } from "node:fs";
 
-const moduleSource = readLegacyRuntimeSource(["gather-resources", "downtime-operations-actions"]);
+const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+const socketRoutes = readFileSync(new URL("./core/socket-gm-requester-routes.js", import.meta.url), "utf8");
+const socketHandlers = readFileSync(new URL("./core/socket-route-handlers.js", import.meta.url), "utf8");
 const gmDowntimeTemplate = readFileSync(new URL("../templates/gm-downtime.hbs", import.meta.url), "utf8");
-const gmShellStyles = readFileSync(new URL("../styles/po-gm-shell.css", import.meta.url), "utf8");
-const restWatchTemplate = readFileSync(new URL("../templates/rest-watch.hbs", import.meta.url), "utf8");
 const playerDowntimeTemplate = readFileSync(
   new URL("../templates/partials/rest-watch-player/simple-downtime.hbs", import.meta.url),
   "utf8"
 );
 
-assert.match(
+function assertMatch(source, pattern, message) {
+  assert.match(source, pattern, message);
+}
+
+function assertNoMatch(source, pattern, message) {
+  assert.doesNotMatch(source, pattern, message);
+}
+
+assertMatch(
   moduleSource,
-  /function normalizeDowntimeSubmission\(raw = \{\}, downtimeState = \{\}, options = \{\}\) \{[\s\S]*const rawActionData =[\s\S]*raw\?\.actionData[\s\S]*normalizePhase1ActionData\(\s*actionDef\.key,\s*\{[\s\S]*\.\.\.rawActionData,[\s\S]*\.\.\.raw,[\s\S]*areaSettings[\s\S]*\},\s*\{/,
-  "Downtime submission normalization should preserve nested actionData when entries are re-normalized."
+  /downtime:\s*buildDefaultDowntimeV2State\(0\)/,
+  "Operations ledger defaults should initialize downtime schema v2."
 );
-
-assert.match(
+assertMatch(
   moduleSource,
-  /async function promptLocalDowntimeSubmissionCheck\(submission = \{\}, actor = null\) \{[\s\S]*Hidden roll:[\s\S]*Roll and Submit[\s\S]*new Roll\("1d20 \+ @abilityMod \+ @proficiencyBonus"/,
-  "Player downtime submissions should prompt for a hidden local check roll."
+  /function ensureDowntimeState\(ledger\) \{[\s\S]*normalizeDowntimeV2State\(ledger\.downtime/,
+  "ensureDowntimeState should normalize downtime through the v2 schema."
 );
-
-assert.match(
+assertMatch(
   moduleSource,
-  /async function generateDowntimeResult\(entry, downtimeState\) \{[\s\S]*const submittedCheck = normalizeDowntimeSubmittedCheck\(entry\?\.submittedCheck\);[\s\S]*submittedCheck\?\.d20/,
-  "GM downtime pre-resolution should reuse a submitted player check when one exists."
+  /async function launchDowntimeV2Session\(element\)[\s\S]*players:openDowntimeSession[\s\S]*canUserManageDowntimeActor/,
+  "Launch should target connected players who manage assigned roster actors."
 );
-
-assert.match(
+assertMatch(
   moduleSource,
-  /function buildGatherRequestContext\(resourcesState = null, options = \{\}\) \{[\s\S]*const riskTags = getRiskTags\(source\);[\s\S]*modifierSummary,[\s\S]*riskTags,[\s\S]*riskLevelLabel:[\s\S]*matchingPresetLabel,/,
-  "Gather request context should expose normalized card fields for modifier summary, risk tags, and preset matching."
+  /async function submitDowntimeV2Action\(element\)[\s\S]*new Roll\("1d20 \+ @abilityMod \+ @proficiencyBonus"/,
+  "Player downtime v2 submissions should roll before submitting structured drafts."
 );
-
-assert.match(
+assertMatch(
   moduleSource,
-  /function buildGatherDefaultsContext\(resourcesState = null\) \{[\s\S]*const weatherOptions = getGatherWeatherOptions\(resourcesState\)[\s\S]*const presets = buildGatherPresetContext\(config\)[\s\S]*summary:[\s\S]*weatherOptions,[\s\S]*presets,/,
-  "Gather defaults context should group quick presets and hidden DC default controls for upcoming approvals."
+  /async function deliverDowntimeV2Result\(element\)[\s\S]*deliverDowntimeV2Submission[\s\S]*applyDowntimeV2DeliveredResultToActor/,
+  "GM delivery should persist the result and apply actor project writes."
 );
-
-assert.match(
+assertMatch(
   moduleSource,
-  /async function runGatherResourceCheck\(\) \{[\s\S]*if \(!game\.user\?\.isGM\) \{[\s\S]*Only the GM can assign gather checks\.[\s\S]*GM must assign gather checks\.[\s\S]*return promptGatherResourceDialog\(\{[\s\S]*showDialog: true,[\s\S]*applyToLedger: true,[\s\S]*rollMode: isMonksTokenBarActive\(\) \? "prefer-monks" : "native"/,
-  "GM gather calls should open the manual assignment dialog instead of broadcasting player request prompts."
+  /actor\.setFlag\(MODULE_ID, "downtimeProjects", applied\.projects\)/,
+  "Completed or advanced downtime projects should be saved to actor flags."
 );
-
-assert.match(
+assertMatch(
   moduleSource,
-  /async function promptPlayerGatherRequestDialog\(options = \{\}\) \{[\s\S]*const promptedByUserId = String\(options\?\.promptedByUserId \?\? ""\)\.trim\(\);[\s\S]*!isActiveGmUserId\(promptedByUserId\)[\s\S]*GM must initiate gather requests\./,
-  "Player gather request dialogs should require a broadcast prompt from an active GM."
+  /actor\.createEmbeddedDocuments\("Item", \[buildDowntimeV2CompletionItemData\(result, card\)\]\)/,
+  "Completed Learn/Craft projects should create a visible actor item or feature."
 );
 
-assert.match(
-  moduleSource,
-  /function getGatherSelectableActorsForUser\(user = game\.user\) \{[\s\S]*const hasSharedOpsAccess = canAccessAllPlayerOps\(user\);[\s\S]*!hasSharedOpsAccess && !canUserManageDowntimeActor\(user, actor\)[\s\S]*function canUserRequestGatherForActor\(user, actor\) \{[\s\S]*canAccessAllPlayerOps\(user\) \|\| canUserManageDowntimeActor\(user, actor\)[\s\S]*async function applyPlayerGatherRequest\(message, requesterRef = null\) \{[\s\S]*!canUserRequestGatherForActor\(requester, actor\)/,
-  "Gather calls should let shared player-ops users choose party actors and have the GM accept those requests."
-);
-
-assert.match(
-  moduleSource,
-  /Gather During Travel only marks your intent\.[\s\S]*reducing pace records a party travel slowdown[\s\S]*falling behind can trigger the configured Constitution save\./,
-  "Player gather prompt should explain what the during-travel option affects."
-);
-
-assert.match(
+assertMatch(gmDowntimeTemplate, /class="[^"]*po-downtime-v2/, "GM downtime page should render the v2 surface.");
+assertMatch(gmDowntimeTemplate, /data-action="downtime-v2-launch-session"/, "GM page should expose one launch action.");
+assertMatch(gmDowntimeTemplate, /name="downtimeV2RosterActorIds"/, "GM page should assign a roster.");
+assertMatch(gmDowntimeTemplate, /data-downtime-v2-card-row/, "GM page should expose reusable action cards.");
+assertMatch(
   gmDowntimeTemplate,
-  /\{\{#if downtime\.submit\.showCraftingFields\}\}[\s\S]*Crafting Catalog[\s\S]*\{\{\/if\}\}/,
-  "GM downtime template should only show the crafting catalog while crafting is selected."
+  /data-action="downtime-v2-deliver-result"/,
+  "GM page should deliver reviewed v2 results."
 );
-
-assert.match(
+assertNoMatch(
   gmDowntimeTemplate,
-  /data-page-action-status role="status" aria-live="polite" aria-atomic="true"/,
-  "GM downtime page status banner should expose atomic polite status semantics for assistive tech."
+  /data-action="auto-resolve-all-downtime-entries"/,
+  "Old auto-resolver UI should not remain runnable."
 );
-
-assert.match(
+assertNoMatch(
   gmDowntimeTemplate,
-  /po-downtime-publication-status \{\{#if downtime\.publication\.isPublished\}\}is-good\{\{else\}\}is-warn\{\{\/if\}\}/,
-  "GM downtime publication status callout should reflect published vs blocked states."
+  /name="downtimeActionKey"/,
+  "Old Phase 1 action selector should not remain in the GM page."
 );
 
-assert.match(
-  gmDowntimeTemplate,
-  /Sort Entries<\/span>[\s\S]*data-action="set-downtime-entry-sort" aria-label="Sort submitted downtime entries" title="Sort submitted downtime entries"/,
-  "Submitted entries sort control should include explicit label and title affordances."
-);
-
-assert.match(
-  gmDowntimeTemplate,
-  /Drag queued rows to reorder, or use Up\/Down for precise positioning\./,
-  "Queued plan section should include a clear reorder hint for drag-and-button interactions."
-);
-
-assert.match(
-  gmDowntimeTemplate,
-  /Bulk actions immediately apply outcomes and can update multiple records at once\./,
-  "Resolver controls should warn that bulk actions affect multiple records."
-);
-
-assert.match(
-  gmDowntimeTemplate,
-  /class="po-op-action-row po-downtime-resolver-actions"/,
-  "Resolver controls should expose a dedicated resolver action group wrapper."
-);
-
-assert.match(
-  gmDowntimeTemplate,
-  /class="po-btn po-btn-sm po-downtime-bulk-action"[\s\S]*data-action="auto-resolve-all-downtime-entries"/,
-  "Resolver action row should mark all-pending auto-resolve as a dedicated bulk action."
-);
-
-assert.match(
-  gmDowntimeTemplate,
-  /class="po-op-action-row po-downtime-maintenance-actions"[\s\S]*data-action="clear-downtime-results"/,
-  "Resolved log maintenance controls should be grouped in a dedicated maintenance action row."
-);
-
-assert.match(
-  gmDowntimeTemplate,
-  /data-action="clear-downtime-log" data-log-id="\{\{logId\}\}" title="Permanently remove this resolved log" aria-label="Permanently remove this resolved log"/,
-  "Resolved log clear action should include explicit destructive-action affordances."
-);
-
-assert.match(
-  gmShellStyles,
-  /\.po-window\[data-tool="gm-downtime"\] :is\(\.po-btn, \.po-select, \.po-input, \.po-icon-btn\):focus-visible/,
-  "GM downtime styles should include a focus-visible treatment for keyboard navigation."
-);
-
-assert.doesNotMatch(
-  restWatchTemplate,
-  /data-page="downtime"/,
-  "Operations tab strip should not expose a downtime page button."
-);
-
-assert.doesNotMatch(
-  restWatchTemplate,
-  /\{\{#if operationsPageDowntime\}\}/,
-  "Rest watch operations template should not include an embedded downtime section."
-);
-
-assert.match(
-  restWatchTemplate,
-  /Assign gatherers manually[\s\S]*Assign Gather[\s\S]*Check[\s\S]*Use Monk's TokenBar[\s\S]*Gather History/,
-  "Gather panel should prioritize the manual GM assignment flow before history."
-);
-
-assert.match(
-  restWatchTemplate,
-  /\{\{#if @root\.isGM\}\}[\s\S]*data-action="gather-resource-check"[\s\S]*\{\{\/if\}\}/,
-  "Assign Gather buttons should only render for the GM."
-);
-
-assert.doesNotMatch(
-  restWatchTemplate,
-  /Call Gather[\s\S]*Player Requests|Call Gather prompts players/,
-  "Operations resources summary should not render the removed Call Gather player-request panel."
-);
-
-assert.match(
-  restWatchTemplate,
-  /\{\{#each operations\.resources\.gatherRequests\.rows\}\}[\s\S]*\{\{resourceTypeLabel\}\}[\s\S]*\{\{gatherModeLabel\}\}[\s\S]*\{\{travelModeLabel\}\}[\s\S]*\{\{environmentLabel\}\}[\s\S]*\{\{modifierSummary\}\}/,
-  "Pending request cards should render normalized intent and setup summary labels."
-);
-
-assert.doesNotMatch(
-  restWatchTemplate,
-  /Quick Resolution Defaults|Advanced Review|Apply Daily Upkeep|data-resource="weatherMod:\{\{value\}\}"/,
-  "GM resource workspace should not expose quick defaults, advanced review, manual upkeep, or weather default controls."
-);
-
-assert.match(
+assertMatch(
   playerDowntimeTemplate,
-  /\{\{#if downtime\.submit\.showCraftingFields\}\}[\s\S]*Crafting Catalog[\s\S]*\{\{\/if\}\}/,
-  "Player downtime partial should only show the crafting catalog while crafting is selected."
+  /data-action="submit-downtime-v2"/,
+  "Player downtime panel should submit through the v2 action."
+);
+assertMatch(playerDowntimeTemplate, /name="downtimeV2ActorId"/, "Player panel should choose assigned actors.");
+assertMatch(playerDowntimeTemplate, /name="downtimeV2CardId"/, "Player panel should choose GM-selected action cards.");
+assertMatch(
+  playerDowntimeTemplate,
+  /data-action="ack-downtime-v2-result"/,
+  "Player panel should acknowledge delivered results."
+);
+assertNoMatch(
+  playerDowntimeTemplate,
+  /name="downtimeActionKey"/,
+  "Old Phase 1 action selector should not remain in the player panel."
+);
+
+assertMatch(
+  socketRoutes,
+  /"ops:downtimeV2-submit": applyPlayerDowntimeV2SubmitRequest/,
+  "Socket routes should include v2 submission."
+);
+assertMatch(
+  socketRoutes,
+  /"ops:downtimeV2-ack-result": applyPlayerDowntimeV2AckResult/,
+  "Socket routes should include v2 result acknowledgement."
+);
+assertMatch(
+  socketHandlers,
+  /players:openDowntimeSession[\s\S]*setPlayerHubTab\?\.\("downtime"\)/,
+  "Player socket route should open the downtime hub tab."
 );
 
 process.stdout.write("downtime submission ui validation passed\n");

@@ -227,6 +227,10 @@ export function buildDowntimeSocketRouteDeps({
   normalizeDowntimeSubmission,
   sanitizeSocketIdentifier,
   applyDowntimeSubmissionForUser,
+  applyPlayerDowntimeV2SubmitRequestFeature,
+  applyDowntimeV2SubmissionForUser,
+  applyPlayerDowntimeV2AckResultFeature,
+  acknowledgeDowntimeV2ResultForUser,
   applyPlayerDowntimeClearRequestFeature,
   applyPlayerDowntimeQueueEditRequestFeature,
   game,
@@ -246,6 +250,16 @@ export function buildDowntimeSocketRouteDeps({
         normalizeDowntimeSubmission,
         sanitizeSocketIdentifier,
         applyDowntimeSubmissionForUser
+      }),
+    applyPlayerDowntimeV2SubmitRequest: (message, requesterRef) =>
+      applyPlayerDowntimeV2SubmitRequestFeature(message, requesterRef, {
+        resolveRequester,
+        applyDowntimeV2SubmissionForUser
+      }),
+    applyPlayerDowntimeV2AckResult: (message, requesterRef) =>
+      applyPlayerDowntimeV2AckResultFeature(message, requesterRef, {
+        resolveRequester,
+        acknowledgeDowntimeV2ResultForUser
       }),
     applyPlayerDowntimeClearRequest: (message, requesterRef) =>
       applyPlayerDowntimeClearRequestFeature(message, requesterRef, {

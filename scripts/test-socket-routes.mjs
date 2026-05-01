@@ -61,6 +61,22 @@ await new Promise((resolve) => setTimeout(resolve, 100));
 assert.deepEqual(refreshes, [{ scopes: ["operations"] }]);
 delete globalThis.ui;
 
+const openedDowntime = [];
+await routePartyOperationsSocketMessage(
+  { type: "players:openDowntimeSession", userId: "player-1", sessionId: "session-1" },
+  {
+    game: {
+      user: { id: "player-1", isGM: false }
+    },
+    setPlayerHubTab: (tab) => openedDowntime.push(["tab", tab]),
+    openRestWatchUiForCurrentUser: (options) => openedDowntime.push(["open", options])
+  }
+);
+assert.deepEqual(openedDowntime, [
+  ["tab", "downtime"],
+  ["open", { force: true, hubTab: "downtime" }]
+]);
+
 const actionNotifications = [];
 const actionRefreshes = [];
 globalThis.ui = {
