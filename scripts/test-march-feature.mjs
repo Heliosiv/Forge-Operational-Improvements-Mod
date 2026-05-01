@@ -8,6 +8,7 @@ import {
   applyMarchRequest,
   setupMarchingDragAndDrop
 } from "./features/march-feature.js";
+import { resolveMarchActorImage } from "./features/march-actor-images.js";
 
 class FakeClassList {
   constructor() {
@@ -71,6 +72,48 @@ class FakeElement {
       await listener(event);
     }
   }
+}
+
+{
+  const actor = {
+    img: "portraits/maja.webp",
+    prototypeToken: { texture: { src: "icons/svg/mystery-man.svg" } },
+    getActiveTokens: () => []
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor),
+    "portraits/maja.webp",
+    "march actor images should prefer actor portrait over generic prototype token art"
+  );
+}
+
+{
+  const actor = {
+    img: "portraits/maja.webp",
+    prototypeToken: { texture: { src: "tokens/prototype.webp" } },
+    getActiveTokens: () => [{ document: { texture: { src: "tokens/scene-token.webp" } } }]
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor),
+    "tokens/scene-token.webp",
+    "march actor images should prefer active scene token art when it exists"
+  );
+}
+
+{
+  const actor = {
+    img: "icons/svg/mystery-man.svg",
+    prototypeToken: { texture: { src: "tokens/prototype.webp" } },
+    getActiveTokens: () => []
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor),
+    "tokens/prototype.webp",
+    "march actor images should still use non-default prototype token art when portrait is generic"
+  );
 }
 
 {

@@ -19,6 +19,7 @@ import { createLootPreviewDraftStorage } from "./features/loot-preview-draft-sto
 import { createNoteDraftCache } from "./features/note-draft-cache.js";
 import { createReputationDraftStorage } from "./features/reputation-draft-storage.js";
 import { createWeatherPresetHelpers } from "./features/weather-preset-helpers.js";
+import { resolveMarchActorImage } from "./features/march-actor-images.js";
 import {
   analyzeGmScreenWeatherTerrainImageData,
   buildGmScreenWeatherPreset,
@@ -52137,7 +52138,8 @@ function buildMarchSpacingGridContext(state, formationBoard) {
 }
 
 function getActorTokenImage(actor) {
-  return normalizeFoundryAssetImagePath(actor?.prototypeToken?.texture?.src || actor?.img, {
+  return resolveMarchActorImage(actor, {
+    normalizeImagePath: normalizeFoundryAssetImagePath,
     fallback: "icons/svg/mystery-man.svg"
   });
 }
