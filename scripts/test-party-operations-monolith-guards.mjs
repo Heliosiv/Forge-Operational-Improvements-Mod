@@ -210,6 +210,56 @@ assert.match(
 );
 
 assert.match(
+  source,
+  /const UPKEEP_EVENING_END_MINUTES\s*=\s*18\s*\*\s*60;/,
+  "Automatic resource upkeep should use the 18:00 Simple Calendar end-of-day boundary."
+);
+
+{
+  const fn = getFunctionSource("handleAutomaticOperationalUpkeepTick");
+  assert.match(
+    fn,
+    /hasPendingGatherRequests\(ledger\.resources\)[\s\S]*AUTO_UPKEEP_PROMPT_STATES\.AWAITING_GATHER/,
+    "Automatic resource upkeep should still pause when gather requests are unresolved."
+  );
+  assert.match(
+    fn,
+    /return applyOperationalUpkeep\(\{\s*automatic:\s*true,\s*bypassGatherPrompt:\s*true\s*\}\)/,
+    "Automatic resource upkeep should deduct resources when the 18:00 boundary is due."
+  );
+  assert.doesNotMatch(
+    fn,
+    /AUTO_UPKEEP_PROMPT_STATES\.DECISION/,
+    "Automatic resource upkeep should not pause for a gather-decision prompt before deducting resources."
+  );
+}
+
+{
+  const fn = getFunctionSource("notifyGmsOfOperationalUpkeepShortage");
+  assert.match(fn, /ChatMessage\.getWhisperRecipients\("GM"\)/, "Resource shortages should notify GMs directly.");
+  assert.match(fn, /Daily Upkeep Shortage/, "Resource shortage notifications should be clearly labeled.");
+  assert.match(
+    fn,
+    /Assign starvation,\s*dehydration,\s*darkness pressure/,
+    "Resource shortage notifications should tell the GM to assign the relevant consequence."
+  );
+}
+
+{
+  const fn = getFunctionSource("declineGatherRequestAction");
+  assert.match(
+    fn,
+    /applyOperationalUpkeep\(\{\s*automatic:\s*true,\s*bypassGatherPrompt:\s*true\s*\}\)/,
+    "Declining the last pending gather request should resume automatic evening resource upkeep."
+  );
+  assert.doesNotMatch(
+    fn,
+    /upsertAutomaticUpkeepPromptMessage\(AUTO_UPKEEP_PROMPT_STATES\.DECISION/,
+    "Declining the last pending gather request should not reintroduce the old GM decision pause."
+  );
+}
+
+assert.match(
   restWatchTemplate,
   /class="po-gm-cockpit-table"/,
   "GM cockpit should render as a compact row table instead of the old card grid."

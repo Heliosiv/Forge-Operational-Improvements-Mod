@@ -1574,7 +1574,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-weather-toggle-auto",
   "gm-weather-roll"
 ]);
-const UPKEEP_DUSK_MINUTES = 20 * 60;
+const UPKEEP_EVENING_END_MINUTES = 18 * 60;
 const REST_WATCH_MAX_ENTRIES = 5;
 const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
 const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
@@ -2398,13 +2398,6 @@ function getAutoUpkeepPromptData(resourcesState) {
     dayKey: String(resourcesState?.gather?.autoUpkeepPrompt?.dayKey ?? "").trim(),
     lastResolvedAt: Math.max(0, Number(resourcesState?.gather?.autoUpkeepPrompt?.lastResolvedAt ?? 0) || 0)
   };
-}
-
-function hasGatherAttemptsForDay(resourcesState, dayKey) {
-  const targetDayKey = String(dayKey ?? "").trim();
-  if (!targetDayKey) return false;
-  const history = Array.isArray(resourcesState?.gather?.history) ? resourcesState.gather.history : [];
-  return history.some((entry) => String(entry?.dayKey ?? "").trim() === targetDayKey);
 }
 
 function hasPendingGatherRequests(resourcesState) {
@@ -24621,7 +24614,7 @@ function isLootItemLikelyMajor(entry = {}) {
 
 function getUpkeepDueCount(timestamp = getCurrentWorldTimestamp()) {
   return getCalendarDueCountBridge(timestamp, {
-    boundaryMinutes: UPKEEP_DUSK_MINUTES,
+    boundaryMinutes: UPKEEP_EVENING_END_MINUTES,
     gameRef: game,
     globalRef: globalThis
   });
@@ -24633,7 +24626,7 @@ function getNextUpkeepDueKey(timestamp = getCurrentWorldTimestamp()) {
 
 function getUpkeepDaysFromCalendar(lastAppliedTimestamp, currentTimestamp = getCurrentWorldTimestamp()) {
   return getElapsedCalendarDaysBridge(lastAppliedTimestamp, currentTimestamp, {
-    boundaryMinutes: UPKEEP_DUSK_MINUTES,
+    boundaryMinutes: UPKEEP_EVENING_END_MINUTES,
     gameRef: game,
     globalRef: globalThis
   });
@@ -42402,7 +42395,8 @@ async function declineGatherRequestAction(element) {
     ensureOperationalResourceConfig(resources);
     const promptState = getAutoUpkeepPromptState(resources);
     if (promptState === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER && !hasPendingGatherRequests(resources)) {
-      await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.DECISION, resources);
+      await clearAutomaticUpkeepPromptState("Gather request removed. Applying evening upkeep.");
+      await applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
     }
   }
   if (removed) ui.notifications?.info("Gather request removed.");
@@ -47704,11 +47698,15 @@ async function handleAutomaticOperationalUpkeepTick() {
     const upkeepDays = getUpkeepDaysFromCalendar(ledger.resources.upkeepLastAppliedTs, currentTimestamp);
     if (upkeepDays <= 0) return null;
 
-    const dayKey = getGatherDayKey(currentTimestamp);
     const prompt = getAutoUpkeepPromptData(ledger.resources);
-    if (prompt.state !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
+    if (prompt.state === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER) {
       await upsertAutomaticUpkeepPromptMessage(prompt.state, ledger.resources);
       return { prompted: true, state: prompt.state };
+    }
+    if (prompt.state !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
+      await clearAutomaticUpkeepPromptState(
+        "Evening upkeep now applies automatically when no gather requests are pending."
+      );
     }
 
     if (hasPendingGatherRequests(ledger.resources)) {
@@ -47716,14 +47714,7 @@ async function handleAutomaticOperationalUpkeepTick() {
       return { prompted: true, state: AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER };
     }
 
-    const pendingFood = getGatherPendingPoolAmount(ledger.resources, "food");
-    const pendingWater = getGatherPendingPoolAmount(ledger.resources, "water");
-    if (hasGatherAttemptsForDay(ledger.resources, dayKey) || pendingFood > 0 || pendingWater > 0) {
-      return applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
-    }
-
-    await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.DECISION, ledger.resources);
-    return { prompted: true, state: AUTO_UPKEEP_PROMPT_STATES.DECISION };
+    return applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
   } finally {
     automaticUpkeepTickInFlight = false;
   }
@@ -47756,6 +47747,41 @@ async function handleAutomaticUpkeepChatAction(action, message) {
     await clearAutomaticUpkeepPromptState("GM chose to skip gather opportunity and apply upkeep now.");
     await applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
   }
+}
+
+async function notifyGmsOfOperationalUpkeepShortage({
+  summary = "",
+  shortages = [],
+  itemSummary = "",
+  pendingAllocationSummary = ""
+} = {}) {
+  const shortageLines = Array.isArray(shortages)
+    ? shortages.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  if (!shortageLines.length) return null;
+
+  const whisper = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
+  const details = [
+    `<p>${poEscapeHtml(String(summary || "Daily upkeep could not be fully paid from the configured targets."))}</p>`,
+    `<p><strong>Missing:</strong> ${poEscapeHtml(shortageLines.join(", "))}</p>`
+  ];
+  if (String(itemSummary ?? "").trim()) {
+    details.push(`<p><strong>Actor Item Depletion:</strong> ${poEscapeHtml(String(itemSummary))}</p>`);
+  }
+  if (String(pendingAllocationSummary ?? "").trim()) {
+    details.push(
+      `<p><strong>Post-Upkeep Gather Allocation:</strong> ${poEscapeHtml(String(pendingAllocationSummary))}</p>`
+    );
+  }
+  details.push(
+    "<p>Assign starvation, dehydration, darkness pressure, or another relevant consequence, then update the resource targets.</p>"
+  );
+
+  return ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    whisper,
+    content: `<div class="po-chat-card po-chat-card-gather"><p><strong>Daily Upkeep Shortage</strong></p>${details.join("")}</div>`
+  });
 }
 
 async function applyOperationalUpkeep(options = {}) {
@@ -47793,7 +47819,7 @@ async function applyOperationalUpkeep(options = {}) {
   const upkeepDays = getUpkeepDaysFromCalendar(before.resources?.upkeepLastAppliedTs, currentTimestamp);
   if (upkeepDays <= 0) {
     if (!isAutomatic && !silent)
-      ui.notifications?.info("No upkeep is due yet (next deduction occurs at 20:00 world time).");
+      ui.notifications?.info("No upkeep is due yet (next deduction occurs at 18:00 world time).");
     return { applied: false, upkeepDays: 0, summary: "No upkeep due yet." };
   }
 
@@ -47992,6 +48018,14 @@ async function applyOperationalUpkeep(options = {}) {
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
       content: `<p><strong>Daily Upkeep</strong></p><p>${summary}</p>${pendingAllocationSummary ? `<p><strong>Post-Upkeep Gather Allocation:</strong> ${pendingAllocationSummary}</p>` : ""}${itemSummary ? `<p><strong>Actor Item Depletion:</strong> ${itemSummary}</p>` : ""}<p>${riskLine}</p>`
+    });
+  }
+  if (!suppressChat && shortages.length > 0) {
+    await notifyGmsOfOperationalUpkeepShortage({
+      summary,
+      shortages,
+      itemSummary,
+      pendingAllocationSummary
     });
   }
   if (getAutoUpkeepPromptState(before.resources) !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
