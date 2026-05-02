@@ -7,19 +7,28 @@ const NEAR_FULLSCREEN_WINDOW_PROFILE = Object.freeze({
   maxHeightRatio: 0.9
 });
 
+const MAIN_OPERATIONS_WINDOW_PROFILE = Object.freeze({
+  width: 1560,
+  height: 900,
+  minWidth: 980,
+  minHeight: 600,
+  maxWidthRatio: 0.96,
+  maxHeightRatio: 0.9
+});
+
 export const APP_WINDOW_SIZE_PROFILES = Object.freeze({
   default: NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "rest-watch": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "operations-shell": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "rest-watch": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "operations-shell": MAIN_OPERATIONS_WINDOW_PROFILE,
   "rest-watch-player": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "marching-order": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-factions": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-weather": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-downtime": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-merchants": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-audio": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-loot": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-loot-claims-board": NEAR_FULLSCREEN_WINDOW_PROFILE
+  "marching-order": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "gm-factions": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "gm-weather": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "gm-downtime": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "gm-merchants": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "gm-audio": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "gm-loot": MAIN_OPERATIONS_WINDOW_PROFILE,
+  "gm-loot-claims-board": MAIN_OPERATIONS_WINDOW_PROFILE
 });
 
 export const APP_WINDOW_PROFILE_BY_ID = Object.freeze({

@@ -8,7 +8,8 @@ function normalizeWindowStateLike(state) {
   const top = Number(state.top);
   const width = Number(state.width);
   const height = Number(state.height);
-  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height))
+    return null;
   if (width < 120 || height < 120) return null;
   return { left, top, width, height };
 }
@@ -18,10 +19,12 @@ function areWindowStatesEquivalent(leftState, rightState, options = {}) {
   const right = normalizeWindowStateLike(rightState);
   if (!left || !right) return false;
   const tolerance = Math.max(0.5, Number(options.tolerance ?? 1.25));
-  return Math.abs(left.left - right.left) <= tolerance
-    && Math.abs(left.top - right.top) <= tolerance
-    && Math.abs(left.width - right.width) <= tolerance
-    && Math.abs(left.height - right.height) <= tolerance;
+  return (
+    Math.abs(left.left - right.left) <= tolerance &&
+    Math.abs(left.top - right.top) <= tolerance &&
+    Math.abs(left.width - right.width) <= tolerance &&
+    Math.abs(left.height - right.height) <= tolerance
+  );
 }
 
 function mergeObject(target, source) {
@@ -89,9 +92,9 @@ function mergeObject(target, source) {
     top: 690
   });
   assert.deepEqual(responsivePosition, {
-    width: 880,
+    width: 980,
     height: 630,
-    left: 112,
+    left: 12,
     top: 62
   });
 
@@ -102,29 +105,37 @@ function mergeObject(target, source) {
   assert.deepEqual(responsiveOptions, {
     classes: ["sheet"],
     position: {
-      width: 880,
+      width: 980,
       height: 630,
-      left: 112,
+      left: 12,
       top: 30
     }
   });
 
-  manager.queuePersistRememberedWindowState("operations-shell", {
-    left: 50,
-    top: 60,
-    width: 880,
-    height: 620
-  }, { delayMs: 75 });
+  manager.queuePersistRememberedWindowState(
+    "operations-shell",
+    {
+      left: 50,
+      top: 60,
+      width: 880,
+      height: 620
+    },
+    { delayMs: 75 }
+  );
   assert.equal(scheduledTimers.length, 1);
   assert.equal(scheduledTimers[0].delay, 75);
   assert.equal(pendingPersistTimers.size, 1);
 
-  manager.queuePersistRememberedWindowState("operations-shell", {
-    left: 70,
-    top: 80,
-    width: 870,
-    height: 610
-  }, { delayMs: 90 });
+  manager.queuePersistRememberedWindowState(
+    "operations-shell",
+    {
+      left: 70,
+      top: 80,
+      width: 870,
+      height: 610
+    },
+    { delayMs: 90 }
+  );
   assert.equal(scheduledTimers.length, 2);
   assert.deepEqual(clearedTimers, [scheduledTimers[0]]);
 
@@ -141,12 +152,16 @@ function mergeObject(target, source) {
   });
   assert.equal(pendingPersistTimers.size, 0);
 
-  manager.queuePersistRememberedWindowState("operations-shell", {
-    left: 70.5,
-    top: 80.25,
-    width: 870.5,
-    height: 610.5
-  }, { delayMs: 90 });
+  manager.queuePersistRememberedWindowState(
+    "operations-shell",
+    {
+      left: 70.5,
+      top: 80.25,
+      width: 870.5,
+      height: 610.5
+    },
+    { delayMs: 90 }
+  );
   assert.equal(scheduledTimers.length, 2);
 
   class FakeApp {

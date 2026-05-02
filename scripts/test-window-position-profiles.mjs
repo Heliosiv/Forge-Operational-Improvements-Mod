@@ -18,6 +18,15 @@ assert.deepEqual(APP_WINDOW_SIZE_PROFILES.default, {
   maxWidthRatio: 0.94,
   maxHeightRatio: 0.9
 });
-assert.equal(APP_WINDOW_SIZE_PROFILES["gm-loot"], APP_WINDOW_SIZE_PROFILES.default);
+assert.deepEqual(APP_WINDOW_SIZE_PROFILES["operations-shell"], {
+  width: 1560,
+  height: 900,
+  minWidth: 980,
+  minHeight: 600,
+  maxWidthRatio: 0.96,
+  maxHeightRatio: 0.9
+});
+assert.equal(APP_WINDOW_SIZE_PROFILES["gm-loot"], APP_WINDOW_SIZE_PROFILES["operations-shell"]);
+assert.equal(APP_WINDOW_SIZE_PROFILES["rest-watch-player"], APP_WINDOW_SIZE_PROFILES.default);
 
 process.stdout.write("window position profiles validation passed\n");

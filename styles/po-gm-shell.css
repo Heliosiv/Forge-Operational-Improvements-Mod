@@ -1642,3 +1642,122 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* =========================================================
+   GM Compact Workspace Navigation
+   ========================================================= */
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-weather"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--po-gm-shell-border, var(--po-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--po-bg-alt) 86%, var(--po-surface) 14%);
+  background-image: none;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 26%, transparent);
+  backdrop-filter: none;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-weather"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+  .po-tab,
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0;
+  min-height: 30px;
+  padding: 3px 10px;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-weather"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+  .po-gm-tab-title,
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-title {
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: 0;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-factions"],
+    .po-window[data-tool="gm-weather"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  )
+  .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+  .po-gm-tab-sub,
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-sub {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .party-operations
+    :is(
+      .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+      .po-window[data-tool="global-modifiers"],
+      .po-window[data-tool="gm-factions"],
+      .po-window[data-tool="gm-weather"],
+      .po-window[data-tool="gm-downtime"],
+      .po-window[data-tool="gm-merchants"],
+      .po-window[data-tool="gm-audio"],
+      .po-window[data-tool="gm-loot"]
+    )
+    .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
+    .po-tab,
+  .party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
+    flex: 1 1 calc(50% - 6px) !important;
+  }
+}
