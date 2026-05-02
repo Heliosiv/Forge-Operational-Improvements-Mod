@@ -20,9 +20,16 @@ export function createPartyOperationsSettingsHub({
   ensureLauncherUi,
   notifyUiInfoThrottled,
   notifyUiWarnThrottled,
-  canAccessAllPlayerOps
+  canAccessAllPlayerOps,
+  normalizeSettingsHubReturnTarget,
+  getDefaultSettingsHubReturnTarget,
+  openSettingsHubReturnTarget
 } = {}) {
   let settingsHubAppInstance = null;
+  const normalizeReturnTarget = (target) =>
+    typeof normalizeSettingsHubReturnTarget === "function"
+      ? normalizeSettingsHubReturnTarget(target)
+      : (target ?? { type: "main", mainTab: "rest-watch" });
 
   class PartyOperationsSettingsHub extends HandlebarsApplicationMixin(ApplicationV2) {
     static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
@@ -45,28 +52,37 @@ export function createPartyOperationsSettingsHub({
       super(options);
       settingsHubAppInstance = this;
       this._saveStatus = { message: "", tone: "", busy: false };
+      this._returnTarget = normalizeReturnTarget(options.returnTarget ?? getDefaultSettingsHubReturnTarget?.());
     }
 
     async _prepareContext() {
       const advancedEnabled = areAdvancedSettingsEnabled();
       const playerHubMode = normalizePlayerHubMode(game.settings.get(moduleId, settings.PLAYER_HUB_MODE));
-      const lootScarcity = String(game.settings.get(moduleId, settings.LOOT_SCARCITY) ?? lootScarcityLevels.NORMAL).trim().toLowerCase();
+      const lootScarcity = String(game.settings.get(moduleId, settings.LOOT_SCARCITY) ?? lootScarcityLevels.NORMAL)
+        .trim()
+        .toLowerCase();
       const hordeUncommonPlusChance = String(
-        game.settings.get(moduleId, settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE) ?? lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"
-      ).trim().toLowerCase();
-      const economyPriceScale = Math.max(25, Math.min(300, Math.round(Number(
-        game.settings.get(moduleId, settings.ECONOMY_PRICE_MULTIPLIER) ?? 100
-      ) || 100)));
+        game.settings.get(moduleId, settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE) ??
+          lootHordeUncommonPlusChanceModes.BOOSTED ??
+          "boosted"
+      )
+        .trim()
+        .toLowerCase();
+      const economyPriceScale = Math.max(
+        25,
+        Math.min(300, Math.round(Number(game.settings.get(moduleId, settings.ECONOMY_PRICE_MULTIPLIER) ?? 100) || 100))
+      );
       const inventoryHookMode = normalizeInventoryHookMode(game.settings.get(moduleId, settings.INVENTORY_HOOK_MODE));
       const launcherPlacement = normalizeLauncherPlacement(game.settings.get(moduleId, settings.LAUNCHER_PLACEMENT));
-      const journalVisibilityMode = String(
-        game.settings.get(moduleId, settings.JOURNAL_ENTRY_VISIBILITY) ?? "public"
-      ).trim().toLowerCase();
-      const journalVisibilityLabel = journalVisibilityMode === "gm-private"
-        ? "GM Only"
-        : journalVisibilityMode === "redacted"
-          ? "Redacted"
-          : "Public";
+      const journalVisibilityMode = String(game.settings.get(moduleId, settings.JOURNAL_ENTRY_VISIBILITY) ?? "public")
+        .trim()
+        .toLowerCase();
+      const journalVisibilityLabel =
+        journalVisibilityMode === "gm-private"
+          ? "GM Only"
+          : journalVisibilityMode === "redacted"
+            ? "Redacted"
+            : "Public";
       return {
         saveStatusMessage: String(this._saveStatus?.message ?? ""),
         saveStatusWarn: this._saveStatus?.tone === "warn",
@@ -86,10 +102,13 @@ export function createPartyOperationsSettingsHub({
         lootScarcityAbundant: lootScarcity === lootScarcityLevels.ABUNDANT,
         lootScarcityNormal: lootScarcity === lootScarcityLevels.NORMAL,
         lootScarcityScarce: lootScarcity === lootScarcityLevels.SCARCE,
-        hordeUncommonPlusChanceStandard: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.STANDARD ?? "standard"),
-        hordeUncommonPlusChanceBoosted: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"),
+        hordeUncommonPlusChanceStandard:
+          hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.STANDARD ?? "standard"),
+        hordeUncommonPlusChanceBoosted:
+          hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"),
         hordeUncommonPlusChanceHigh: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.HIGH ?? "high"),
-        hordeUncommonPlusChanceGuaranteed: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed"),
+        hordeUncommonPlusChanceGuaranteed:
+          hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed"),
         economyPriceScale,
         journalVisibilityLabel,
         journalVisibilityIsGmPrivate: journalVisibilityMode === "gm-private",
@@ -108,8 +127,18 @@ export function createPartyOperationsSettingsHub({
       this.#syncSaveStatusUi(root);
 
       const form = root.querySelector("form");
+      const returnButton = root.querySelector("[data-action='return-from-settings-hub']");
       const openSettingsButton = root.querySelector("[data-action='open-foundry-settings']");
       const saveSettingsButton = root.querySelector("[data-action='save-settings-hub']");
+
+      if (returnButton instanceof HTMLElement && returnButton.dataset.poBoundClick !== "1") {
+        returnButton.dataset.poBoundClick = "1";
+        returnButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void this.#returnToPreviousScreen();
+        });
+      }
 
       if (openSettingsButton instanceof HTMLElement && openSettingsButton.dataset.poBoundClick !== "1") {
         openSettingsButton.dataset.poBoundClick = "1";
@@ -140,7 +169,9 @@ export function createPartyOperationsSettingsHub({
     #toBool(value) {
       if (typeof value === "boolean") return value;
       if (typeof value === "number") return value !== 0;
-      const text = String(value ?? "").trim().toLowerCase();
+      const text = String(value ?? "")
+        .trim()
+        .toLowerCase();
       return text === "true" || text === "1" || text === "on" || text === "yes";
     }
 
@@ -153,9 +184,12 @@ export function createPartyOperationsSettingsHub({
     }
 
     #syncSaveStatusUi(root = null) {
-      const resolvedRoot = root instanceof HTMLElement
-        ? root
-        : (this.element instanceof HTMLElement ? this.element : (this.element?.[0] ?? null));
+      const resolvedRoot =
+        root instanceof HTMLElement
+          ? root
+          : this.element instanceof HTMLElement
+            ? this.element
+            : (this.element?.[0] ?? null);
       if (!(resolvedRoot instanceof HTMLElement)) return;
 
       const saveButton = resolvedRoot.querySelector("[data-action='save-settings-hub']");
@@ -208,21 +242,36 @@ export function createPartyOperationsSettingsHub({
           [settings.ADVANCED_SETTINGS_ENABLED, this.#toBool(data.advancedEnabled)],
           [settings.LAUNCHER_PLACEMENT, normalizeLauncherPlacement(data.launcherPlacement)],
           [settings.FLOATING_LAUNCHER_LOCKED, this.#toBool(data.launcherLocked)],
-          [settings.LOOT_SCARCITY, (() => {
-            const value = String(data.lootScarcity ?? lootScarcityLevels.NORMAL).trim().toLowerCase();
-            if (value === lootScarcityLevels.ABUNDANT || value === lootScarcityLevels.SCARCE) return value;
-            return lootScarcityLevels.NORMAL;
-          })()],
-          [settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE, (() => {
-            const value = String(data.lootHordeUncommonPlusChance ?? lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted").trim().toLowerCase();
-            if (value === (lootHordeUncommonPlusChanceModes.STANDARD ?? "standard")) return value;
-            if (value === (lootHordeUncommonPlusChanceModes.HIGH ?? "high")) return value;
-            if (value === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed")) return value;
-            return lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted";
-          })()],
-          [settings.ECONOMY_PRICE_MULTIPLIER, (() => {
-            return Math.max(25, Math.min(300, Math.round(Number(data.economyPriceScale) || 100)));
-          })()],
+          [
+            settings.LOOT_SCARCITY,
+            (() => {
+              const value = String(data.lootScarcity ?? lootScarcityLevels.NORMAL)
+                .trim()
+                .toLowerCase();
+              if (value === lootScarcityLevels.ABUNDANT || value === lootScarcityLevels.SCARCE) return value;
+              return lootScarcityLevels.NORMAL;
+            })()
+          ],
+          [
+            settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE,
+            (() => {
+              const value = String(
+                data.lootHordeUncommonPlusChance ?? lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"
+              )
+                .trim()
+                .toLowerCase();
+              if (value === (lootHordeUncommonPlusChanceModes.STANDARD ?? "standard")) return value;
+              if (value === (lootHordeUncommonPlusChanceModes.HIGH ?? "high")) return value;
+              if (value === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed")) return value;
+              return lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted";
+            })()
+          ],
+          [
+            settings.ECONOMY_PRICE_MULTIPLIER,
+            (() => {
+              return Math.max(25, Math.min(300, Math.round(Number(data.economyPriceScale) || 100)));
+            })()
+          ],
           [settings.INVENTORY_HOOK_MODE, normalizeInventoryHookMode(data.inventoryHookMode)]
         ];
 
@@ -234,10 +283,13 @@ export function createPartyOperationsSettingsHub({
         ensureLauncherUi();
         const advancedAfter = areAdvancedSettingsEnabled();
         if (advancedBefore !== advancedAfter) {
-          notifyUiInfoThrottled("Advanced settings visibility changed. Re-open Configure Settings to refresh the list.", {
-            key: "advanced-settings-refresh-tip",
-            ttlMs: 2000
-          });
+          notifyUiInfoThrottled(
+            "Advanced settings visibility changed. Re-open Configure Settings to refresh the list.",
+            {
+              key: "advanced-settings-refresh-tip",
+              ttlMs: 2000
+            }
+          );
         }
         notifyUiInfoThrottled("Party Operations settings saved.", { key: "settings-hub-saved", ttlMs: 700 });
         this.#setSaveStatus("Settings saved.", "good", false);
@@ -245,11 +297,22 @@ export function createPartyOperationsSettingsHub({
         this.bringToFront?.();
       } catch (error) {
         this.#setSaveStatus("Unable to save settings.", "warn", false);
-        notifyUiWarnThrottled(`Party Operations settings save failed: ${error instanceof Error ? error.message : String(error ?? "Unknown error")}`, {
-          key: "settings-hub-save-failed",
-          ttlMs: 1500
-        });
+        notifyUiWarnThrottled(
+          `Party Operations settings save failed: ${error instanceof Error ? error.message : String(error ?? "Unknown error")}`,
+          {
+            key: "settings-hub-save-failed",
+            ttlMs: 1500
+          }
+        );
         throw error;
+      }
+    }
+
+    async #returnToPreviousScreen() {
+      const target = this._returnTarget;
+      await this.close();
+      if (typeof openSettingsHubReturnTarget === "function") {
+        openSettingsHubReturnTarget(target);
       }
     }
 
@@ -265,6 +328,7 @@ export function createPartyOperationsSettingsHub({
       return null;
     }
     const app = settingsHubAppInstance ?? new PartyOperationsSettingsHub();
+    app._returnTarget = normalizeReturnTarget(renderOptions?.returnTarget ?? getDefaultSettingsHubReturnTarget?.());
     app.render(renderOptions);
     return app;
   }

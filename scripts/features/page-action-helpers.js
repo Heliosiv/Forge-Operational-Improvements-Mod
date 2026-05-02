@@ -80,7 +80,11 @@ export function createPageActionHelpers(app, { perfTracker = createModulePerfTra
     if (panelKey === normalizePanelKey(currentPanelKey)) return;
     app.persistWindowPosition?.({ immediate: true });
     await app.close?.();
-    if (typeof openPanelByKey === "function") openPanelByKey(panelKey, { force: true });
+    const renderOptions = { force: true };
+    if (panelKey === "settings") {
+      renderOptions.returnTarget = { type: "gm-panel", panel: normalizePanelKey(currentPanelKey) };
+    }
+    if (typeof openPanelByKey === "function") openPanelByKey(panelKey, renderOptions);
   };
 
   return Object.freeze({

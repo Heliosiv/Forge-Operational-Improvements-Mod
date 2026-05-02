@@ -52,6 +52,8 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   const gmPanelNavPartial = readFileSync("templates/partials/gm-panel-nav.hbs", "utf8");
   const weatherUiSource = readFileSync("scripts/features/weather-ui.js", "utf8");
   const pageActionHelpersSource = readFileSync("scripts/features/page-action-helpers.js", "utf8");
+  const settingsHubSource = readFileSync("scripts/core/settings-hub.js", "utf8");
+  const settingsHubTemplate = readFileSync("templates/settings-hub.hbs", "utf8");
   const partyOperationsSource = readFileSync("scripts/party-operations.js", "utf8");
 
   assert.ok(gmPanelNavPartial.includes('role="tablist"'), "GM workspace nav should expose tablist semantics.");
@@ -67,8 +69,20 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   );
   assert.match(
     pageActionHelpersSource,
-    /await app\.close\?\.\(\);[\s\S]*openPanelByKey\(panelKey,\s*\{\s*force:\s*true\s*\}\)/,
+    /await app\.close\?\.\(\);[\s\S]*returnTarget = \{ type: "gm-panel", panel: normalizePanelKey\(currentPanelKey\) \};[\s\S]*openPanelByKey\(panelKey,\s*renderOptions\)/,
     "GM panel tab switching should close the current sibling page before opening another panel."
+  );
+  assert.ok(
+    settingsHubTemplate.includes('data-action="return-from-settings-hub"'),
+    "Settings hub should expose a Back action."
+  );
+  assert.ok(
+    settingsHubSource.includes("openSettingsHubReturnTarget(target)"),
+    "Settings hub Back action should delegate to the supplied return handler."
+  );
+  assert.ok(
+    partyOperationsSource.includes("buildSettingsHubReturnTargetForRestWatchApp(this)"),
+    "Settings hub opens from the main shell should capture the current screen as a return target."
   );
   assert.ok(!gmPanelNavPartial.includes("po-gm-nav-more"), "GM workspace nav should not hide panels behind More.");
   assert.ok(!gmPanelNavPartial.includes("<details"), "GM workspace nav should keep panels as direct buttons.");

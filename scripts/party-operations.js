@@ -2768,7 +2768,10 @@ const { PartyOperationsSettingsHub, openPartyOperationsSettingsHub } = createPar
   ensureLauncherUi,
   notifyUiInfoThrottled,
   notifyUiWarnThrottled,
-  canAccessAllPlayerOps
+  canAccessAllPlayerOps,
+  normalizeSettingsHubReturnTarget,
+  getDefaultSettingsHubReturnTarget,
+  openSettingsHubReturnTarget
 });
 const { registerPartyOpsSettings, hasRegisteredPartyOpsSettingsNamespace, ensurePartyOpsSettingsRegistered } =
   createPartyOperationsSettingsBootstrap({
@@ -8283,7 +8286,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
               ui.notifications?.warn("GM permissions are required to open Party Operations settings.");
               return;
             }
-            openPartyOperationsSettingsHub({ force: true });
+            openPartyOperationsSettingsHub({
+              force: true,
+              returnTarget: buildSettingsHubReturnTargetForRestWatchApp(this)
+            });
           },
           assign: async () => {
             await assignSlotByPicker(element, { source: "pc" });
@@ -8374,7 +8380,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
               .trim()
               .toLowerCase();
             if (panelKey) {
-              openGmPanelByKey(panelKey, { force: true });
+              const renderOptions = { force: true };
+              if (panelKey === "settings")
+                renderOptions.returnTarget = buildSettingsHubReturnTargetForRestWatchApp(this);
+              openGmPanelByKey(panelKey, renderOptions);
               return;
             }
             setActiveGmPanelTab(element?.dataset?.tab);
@@ -9770,6 +9779,77 @@ function openGmLootPage(renderOptions = { force: true }) {
     : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
   app.render(renderOptions);
   return app;
+}
+
+const SETTINGS_HUB_GM_PANEL_RETURN_KEYS = new Set([
+  "cockpit",
+  "weather",
+  "downtime",
+  "merchants",
+  "loot",
+  "audio",
+  "faction"
+]);
+const SETTINGS_HUB_GM_OPERATION_RETURN_TABS = new Set(["cockpit", "environment", "loot-sources"]);
+
+function normalizeSettingsHubReturnTarget(target = null) {
+  const type = String(target?.type ?? "")
+    .trim()
+    .toLowerCase();
+  if (type === "gm-panel") {
+    const panel = String(target?.panel ?? "")
+      .trim()
+      .toLowerCase();
+    if (SETTINGS_HUB_GM_PANEL_RETURN_KEYS.has(panel)) return { type: "gm-panel", panel };
+  }
+  if (type === "gm-operations-tab") {
+    const tab = normalizeGmOperationsTab(target?.tab, "cockpit");
+    return {
+      type: "gm-operations-tab",
+      tab: SETTINGS_HUB_GM_OPERATION_RETURN_TABS.has(tab) ? tab : "cockpit"
+    };
+  }
+  const mainTab = normalizeMainTabId(target?.mainTab, getActiveRestMainTab());
+  return { type: "main", mainTab };
+}
+
+function getDefaultSettingsHubReturnTarget() {
+  const mainTab = normalizeMainTabId(getActiveRestMainTab(), "rest-watch");
+  if (mainTab === "gm") {
+    const tab = normalizeGmOperationsTab(getActiveGmOperationsTab(), "cockpit");
+    return {
+      type: "gm-operations-tab",
+      tab: SETTINGS_HUB_GM_OPERATION_RETURN_TABS.has(tab) ? tab : "cockpit"
+    };
+  }
+  return { type: "main", mainTab };
+}
+
+function buildSettingsHubReturnTargetForRestWatchApp(app = null) {
+  const mainTab = normalizeMainTabId(app?._activePanel ?? getActiveRestMainTab(), "rest-watch");
+  if (mainTab === "gm") {
+    const tab = normalizeGmOperationsTab(app?._gmOperationsTab ?? getActiveGmOperationsTab(), "cockpit");
+    return {
+      type: "gm-operations-tab",
+      tab: SETTINGS_HUB_GM_OPERATION_RETURN_TABS.has(tab) ? tab : "cockpit"
+    };
+  }
+  return { type: "main", mainTab };
+}
+
+function openSettingsHubReturnTarget(target = null) {
+  const normalized = normalizeSettingsHubReturnTarget(target ?? getDefaultSettingsHubReturnTarget());
+  if (normalized.type === "gm-panel") {
+    openGmPanelByKey(normalized.panel, { force: true, suppressHistory: true });
+    return;
+  }
+  if (normalized.type === "gm-operations-tab") {
+    setActiveRestMainTab("gm");
+    setActiveGmOperationsTab(normalized.tab);
+    openMainTab("gm", { force: true, suppressHistory: true });
+    return;
+  }
+  openMainTab(normalized.mainTab, { force: true, suppressHistory: true });
 }
 
 function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
