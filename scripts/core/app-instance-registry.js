@@ -5,7 +5,7 @@ export const PARTY_OPS_APP_INSTANCE_KEYS = Object.freeze({
   REST_WATCH_PLAYER: "restWatchPlayer",
   GLOBAL_MODIFIER_SUMMARY: "globalModifierSummary",
   GM_FACTIONS_PAGE: "gmFactionsPage",
-  GM_ENVIRONMENT_PAGE: "gmEnvironmentPage",
+  GM_WEATHER_PAGE: "gmWeatherPage",
   GM_DOWNTIME_PAGE: "gmDowntimePage",
   GM_MERCHANTS_PAGE: "gmMerchantsPage",
   GM_AUDIO_PAGE: "gmAudioPage",
@@ -19,16 +19,14 @@ export const PARTY_OPS_REFRESH_INSTANCE_KEYS = Object.freeze([
   PARTY_OPS_APP_INSTANCE_KEYS.MARCHING_ORDER,
   PARTY_OPS_APP_INSTANCE_KEYS.REST_WATCH_PLAYER,
   PARTY_OPS_APP_INSTANCE_KEYS.GM_FACTIONS_PAGE,
-  PARTY_OPS_APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE,
+  PARTY_OPS_APP_INSTANCE_KEYS.GM_WEATHER_PAGE,
   PARTY_OPS_APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE,
   PARTY_OPS_APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE,
   PARTY_OPS_APP_INSTANCE_KEYS.GM_LOOT_PAGE,
   PARTY_OPS_APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD
 ]);
 
-const appInstances = new Map(
-  Object.values(PARTY_OPS_APP_INSTANCE_KEYS).map((key) => [key, null])
-);
+const appInstances = new Map(Object.values(PARTY_OPS_APP_INSTANCE_KEYS).map((key) => [key, null]));
 
 export function getPartyOpsAppInstance(key) {
   return appInstances.get(key) ?? null;
@@ -51,7 +49,5 @@ export function clearPartyOpsAppInstance(key, instance = null) {
 }
 
 export function getPartyOpsAppInstances(keys = Object.values(PARTY_OPS_APP_INSTANCE_KEYS)) {
-  return keys
-    .map((key) => getPartyOpsAppInstance(key))
-    .filter(Boolean);
+  return keys.map((key) => getPartyOpsAppInstance(key)).filter(Boolean);
 }

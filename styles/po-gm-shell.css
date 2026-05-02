@@ -1,7 +1,7 @@
 /* =========================================================
    GM Standalone Layout Hotfix
    ========================================================= */
-.party-operations :is(.po-window[data-tool="gm-environment"], .po-window[data-tool="gm-downtime"]) {
+.party-operations :is(.po-window[data-tool="gm-weather"], .po-window[data-tool="gm-downtime"]) {
   --po-layout-max: clamp(920px, 88vw, 1260px);
 }
 
@@ -17,7 +17,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-audio"],
     .po-window[data-tool="gm-merchants"],
@@ -34,7 +34,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-audio"],
     .po-window[data-tool="gm-merchants"],
@@ -48,19 +48,10 @@
   white-space: nowrap;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-grid.is-operations-layout {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-grid.is-operations-layout > #po-gm-environment {
-  grid-column: 1 / -1;
-}
-
 @media (max-width: 1360px) {
   .party-operations
     :is(
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-loot"]
@@ -73,7 +64,7 @@
 @media (max-width: 960px) {
   .party-operations
     :is(
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-loot"]
@@ -81,20 +72,12 @@
     .po-tabs.po-gm-panel-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .party-operations .po-window[data-tool="gm-environment"] .po-grid.is-operations-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .party-operations .po-window[data-tool="gm-environment"] .po-grid.is-operations-layout > #po-gm-environment {
-    grid-column: auto;
-  }
 }
 
 @media (max-width: 560px) {
   .party-operations
     :is(
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-loot"]
@@ -110,7 +93,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-loot"],
@@ -123,7 +106,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-loot"],
@@ -137,7 +120,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-loot"],
@@ -151,7 +134,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-loot"],
@@ -165,7 +148,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-loot"],
@@ -326,7 +309,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -345,7 +328,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -361,7 +344,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -397,7 +380,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -423,7 +406,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -441,7 +424,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -462,7 +445,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -477,7 +460,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -502,7 +485,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -520,7 +503,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -556,7 +539,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -573,7 +556,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -589,7 +572,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -605,7 +588,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -619,7 +602,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -637,7 +620,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -655,7 +638,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -670,7 +653,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -687,7 +670,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -709,14 +692,14 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
     .po-window[data-tool="gm-loot"]
   )
   .po-gm-page-stat
-  :is(span, .po-env-metric-label) {
+  :is(span, .po-weather-metric-label) {
   font-size: 0.68rem;
   line-height: 1.2;
   letter-spacing: 0.06em;
@@ -729,14 +712,14 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
     .po-window[data-tool="gm-loot"]
   )
   .po-gm-page-stat
-  :is(strong, .po-env-metric-value) {
+  :is(strong, .po-weather-metric-value) {
   font-size: 0.98rem;
   line-height: 1.25;
   color: var(--po-text-strong);
@@ -949,7 +932,7 @@
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -960,7 +943,7 @@
     .po-loot-sidebar-card,
     .po-loot-warning-card,
     .po-loot-roll-card,
-    .po-env-summary-item,
+    .po-weather-summary-item,
     .po-merchant-city-catalog-item,
     .po-merchant-location-assigned-item,
     .po-gm-workspace-card,
@@ -991,7 +974,7 @@
   gap: 10px;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-hero .po-pill {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-hero .po-pill {
   width: fit-content;
 }
 
@@ -1066,7 +1049,7 @@
   .party-operations
     :is(
       .po-window[data-tool="global-modifiers"],
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-audio"],
@@ -1082,7 +1065,7 @@
   .party-operations
     :is(
       .po-window[data-tool="global-modifiers"],
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-audio"],
@@ -1096,7 +1079,7 @@
   .party-operations
     :is(
       .po-window[data-tool="global-modifiers"],
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-audio"],
@@ -1117,7 +1100,7 @@
   .party-operations
     :is(
       .po-window[data-tool="global-modifiers"],
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-audio"],
@@ -1133,7 +1116,7 @@
   .party-operations
     :is(
       .po-window[data-tool="global-modifiers"],
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-audio"],
@@ -1147,7 +1130,7 @@
   .party-operations
     :is(
       .po-window[data-tool="global-modifiers"],
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-audio"],
@@ -1166,7 +1149,7 @@
   :is(
     .po-window[data-tool="gm-factions"],
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -1398,7 +1381,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -1418,7 +1401,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -1437,7 +1420,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -1452,7 +1435,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -1478,7 +1461,7 @@
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
     .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
@@ -1586,7 +1569,7 @@
       .po-window[data-tool="rest-watch"][data-main-tab="gm"],
       .po-window[data-tool="operations-shell"][data-main-tab="gm"],
       .po-window[data-tool="gm-factions"],
-      .po-window[data-tool="gm-environment"],
+      .po-window[data-tool="gm-weather"],
       .po-window[data-tool="gm-downtime"],
       .po-window[data-tool="gm-merchants"],
       .po-window[data-tool="gm-audio"],

@@ -81,7 +81,6 @@ import {
   const upkeepActions = [];
   const timeActions = [];
   const perfEvents = [];
-  const environmentMoves = new Map();
 
   const modules = buildPartyOpsRuntimeHookModules({
     moduleId: "party-operations",
@@ -117,8 +116,9 @@ import {
       pendingSyncReasons.push(reason);
     },
     applyAutoInventoryToUnlinkedToken() {},
-    environmentMoveOriginByToken: environmentMoves,
-    maybePromptEnvironmentMovementCheck() {},
+    onMarchTokenMoved(tokenDoc) {
+      pendingSyncReasons.push(`march:${tokenDoc?.id ?? ""}`);
+    },
     hasInventoryDelta() {
       return true;
     },
@@ -249,9 +249,9 @@ import {
     }
   ]);
 
-  const tokenPreUpdateHandler = modules.find((module) => module.id === "tokens").registrations[1][1];
-  tokenPreUpdateHandler({ id: "token-1", x: 3, y: 9 }, { x: 5 }, {});
-  assert.deepEqual(environmentMoves.get("token-1"), { x: 3, y: 9 });
+  const tokenUpdateHandler = modules.find((module) => module.id === "tokens").registrations[1][1];
+  await tokenUpdateHandler({ id: "token-1", x: 3, y: 9 }, { x: 5 }, {});
+  assert.ok(pendingSyncReasons.includes("march:token-1"));
 
   const lootRecentRollsModule = modules.find((module) => module.id === "loot-recent-rolls-cache");
   assert.equal(lootRecentRollsModule.registrations[0][0], "canvasReady");

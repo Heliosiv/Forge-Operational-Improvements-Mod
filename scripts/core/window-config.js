@@ -38,7 +38,7 @@ export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
   "marching-order-app",
   "rest-watch-player-app",
   "party-operations-gm-factions-page",
-  "party-operations-gm-environment-page",
+  "party-operations-gm-weather-page",
   "party-operations-gm-downtime-page",
   "party-operations-gm-merchants-page",
   "party-operations-gm-audio-page",
@@ -53,15 +53,12 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
     "party-operations-rest-watch-shared-note",
     "rest-watch-player-app"
   ]),
-  [REFRESH_SCOPE_KEYS.MARCH]: Object.freeze([
-    "marching-order-app",
-    "rest-watch-player-app"
-  ]),
+  [REFRESH_SCOPE_KEYS.MARCH]: Object.freeze(["marching-order-app", "rest-watch-player-app"]),
   [REFRESH_SCOPE_KEYS.OPERATIONS]: Object.freeze([
     "operations-shell-app",
     "rest-watch-player-app",
     "party-operations-gm-factions-page",
-    "party-operations-gm-environment-page",
+    "party-operations-gm-weather-page",
     "party-operations-gm-downtime-page",
     "party-operations-gm-merchants-page",
     "party-operations-gm-audio-page",
@@ -74,9 +71,7 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
     "party-operations-gm-loot-page",
     "party-operations-gm-loot-claims-board"
   ]),
-  [REFRESH_SCOPE_KEYS.INJURY]: Object.freeze([
-    "rest-watch-app"
-  ]),
+  [REFRESH_SCOPE_KEYS.INJURY]: Object.freeze(["rest-watch-app"]),
   [REFRESH_SCOPE_KEYS.SETTINGS]: PARTY_OPS_REFRESHABLE_WINDOW_IDS
 });
 
@@ -86,7 +81,7 @@ export const PO_TEMPLATE_MAP = Object.freeze({
   "rest-watch-player": "modules/party-operations/templates/rest-watch-player.hbs",
   "marching-order": "modules/party-operations/templates/marching-order.hbs",
   "gm-factions": "modules/party-operations/templates/gm-factions.hbs",
-  "gm-environment": "modules/party-operations/templates/gm-environment.hbs",
+  "gm-weather": "modules/party-operations/templates/gm-weather.hbs",
   "gm-downtime": "modules/party-operations/templates/gm-downtime.hbs",
   "gm-merchants": "modules/party-operations/templates/gm-merchants.hbs",
   "gm-audio": "modules/party-operations/templates/gm-audio.hbs",

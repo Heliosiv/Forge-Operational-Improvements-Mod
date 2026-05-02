@@ -1,17 +1,17 @@
 # Party Operations
 
-Party Operations is a Foundry VTT module for running the table-facing logistics around travel, rest, party planning, loot, downtime, merchants, environment pressure, and shared GM audio from one workspace.
+Party Operations is a Foundry VTT module for running the table-facing logistics around travel, rest, party planning, loot, downtime, weather logging, merchants, and shared GM audio from one workspace.
 
 ## Current Build
 
-The current repository manifest version is `2.2.23`.
+The current repository manifest version is `2.2.24`.
 
 ## What This Module Covers
 
 - Rest Watch planning with slot assignments, notes, visibility controls, snapshots, and player-facing sync.
 - Marching Order planning for party travel and formation management.
 - Operations pages for planning, reputation, base pressure, merchants, downtime, recovery, loot, and party health modifiers.
-- GM quick tools for environment, downtime, merchants, audio, loot, factions, global modifiers, and session automation.
+- GM quick tools for weather, downtime, merchants, audio, loot, factions, global modifiers, and session automation.
 - Shared launcher support for scene controls, floating canvas access, and sidebar access.
 - A built item compendium pack used by the loot and operations flows.
 
@@ -27,7 +27,7 @@ Install or update from the GitHub release manifest above. In Foundry or Forge, u
 1. Open `Rest Watch` as GM.
 2. Use `Fill from Active Party`, adjust visibility, and save a snapshot.
 3. Open `Operations` and assign roles, SOPs, and resource baselines.
-4. Use the GM quick actions to open Environment, Downtime, Merchants, Audio, or Loot when needed.
+4. Use the GM quick actions to open Weather, Downtime, Merchants, Audio, or Loot when needed.
 5. If you want player-facing access, configure the launcher and Player Hub options in the Settings Hub.
 
 ## GM Audio Workspace

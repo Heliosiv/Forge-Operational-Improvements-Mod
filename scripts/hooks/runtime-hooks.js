@@ -58,8 +58,6 @@ export function buildPartyOpsRuntimeHookModules({
   handleAutomaticUpkeepChatAction,
   schedulePendingSopNoteSync,
   applyAutoInventoryToUnlinkedToken,
-  environmentMoveOriginByToken,
-  maybePromptEnvironmentMovementCheck,
   onMarchTokenMoved,
   onMarchSceneEntry,
   onMarchCombatRound,
@@ -96,8 +94,6 @@ export function buildPartyOpsRuntimeHookModules({
     }),
     buildTokenHookModule({
       applyAutoInventoryToUnlinkedToken,
-      environmentMoveOriginByToken,
-      maybePromptEnvironmentMovementCheck,
       onMarchTokenMoved
     }),
     buildCombatHookModule({

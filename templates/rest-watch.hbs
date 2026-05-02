@@ -941,14 +941,14 @@
 
         {{#if @root.showGmPageTab}}
         {{#if operationsPageGm}}
-        <section id="po-gm-workspace" class="po-content po-gm-shell po-gm-workspace-shell po-gm-cockpit">
+          <section id="po-gm-workspace" class="po-content po-gm-shell po-gm-workspace-shell po-gm-cockpit">
           {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isCockpit=true}}
 
           <section class="po-gm-section po-gm-page-intro po-gm-cockpit-hero">
             <div class="po-gm-page-copy">
               <div class="po-gm-page-eyebrow">GM Cockpit</div>
               <div class="po-section-title">Live Session</div>
-              <div class="po-hint">Run the next table action from here, then open the focused page only when you need deeper setup.</div>
+              <div class="po-hint">Run the next table action from here. Open a focused page only when setup or history matters.</div>
             </div>
             <div class="po-gm-page-stat-grid po-gm-cockpit-stat-grid" role="list" aria-label="GM cockpit summary">
               {{#each gmCockpit.topStats}}
@@ -986,26 +986,26 @@
               </div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.gather.primaryAction}}" {{#if gmCockpit.gather.primaryDisabled}}disabled{{/if}}>{{gmCockpit.gather.primaryLabel}}</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="operations-page" data-page="planning">Manage</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="operations-page" data-page="planning">Open</button>
               </div>
             </article>
 
             <article class="po-gm-section po-gm-cockpit-card">
               <div class="po-gm-cockpit-card-head">
                 <div>
-                  <div class="po-section-title">Weather / Environment</div>
-                  <div class="po-op-summary">{{gmCockpit.environment.presetLabel}} - {{gmCockpit.environment.actionLabel}}</div>
+                  <div class="po-section-title">Weather</div>
+                  <div class="po-op-summary">{{gmCockpit.weather.summaryLabel}}</div>
                 </div>
-                <span class="po-pill">{{gmCockpit.environment.statusLabel}}</span>
+                <span class="po-pill">{{gmCockpit.weather.statusLabel}}</span>
               </div>
               <div class="po-gm-cockpit-metrics">
-                <span>{{gmCockpit.environment.weatherLabel}}</span>
-                <span>Visibility {{gmCockpit.environment.weatherModifier}}</span>
-                <span>Darkness {{gmCockpit.environment.weatherDarkness}}</span>
+                <span>{{gmCockpit.weather.weatherLabel}}</span>
+                <span>Visibility {{gmCockpit.weather.weatherModifier}}</span>
+                <span>Darkness {{gmCockpit.weather.weatherDarkness}}</span>
               </div>
               <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.environment.primaryAction}}" {{#if gmCockpit.environment.primaryDisabled}}disabled{{/if}}>{{gmCockpit.environment.primaryLabel}}</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="environment">Manage</button>
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.weather.primaryAction}}" {{#if gmCockpit.weather.primaryDisabled}}disabled{{/if}}>{{gmCockpit.weather.primaryLabel}}</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="weather">Open</button>
               </div>
             </article>
 
@@ -1023,7 +1023,6 @@
               </div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-panel-tab" data-panel="downtime" {{#if gmCockpit.downtime.primaryDisabled}}disabled{{/if}}>{{gmCockpit.downtime.buttonLabel}}</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="downtime">Manage</button>
               </div>
             </article>
 
@@ -1043,7 +1042,7 @@
               <div class="po-op-summary">Next: {{gmCockpit.merchants.featuredName}}</div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm is-primary" data-action="merchant-make-available-now" data-merchant-id="{{gmCockpit.merchants.featuredId}}" data-available="{{gmCockpit.merchants.primaryAvailableValue}}" {{#if gmCockpit.merchants.primaryDisabled}}disabled{{/if}}>{{gmCockpit.merchants.primaryLabel}}</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="merchants">Manage</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="merchants">Open</button>
               </div>
             </article>
 
@@ -1062,7 +1061,7 @@
               </div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.loot.primaryAction}}">{{gmCockpit.loot.primaryLabel}}</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="loot">Manage</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="loot">Open</button>
               </div>
             </article>
 
@@ -1081,7 +1080,7 @@
               </div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm is-primary" data-action="play-audio-scene-preset" data-preset-id="{{gmCockpit.audio.primaryPresetId}}" {{#if gmCockpit.audio.primaryPresetDisabled}}disabled{{/if}}>{{gmCockpit.audio.primaryPresetLabel}}</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="audio">Manage</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="audio">Open</button>
               </div>
             </article>
           </div>

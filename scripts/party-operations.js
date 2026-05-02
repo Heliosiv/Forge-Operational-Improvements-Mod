@@ -1,5 +1,5 @@
 import { createGmFactionsPageApp } from "./features/factions-ui.js";
-import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
+import { createGmWeatherPageApp } from "./features/weather-ui.js";
 import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
@@ -14,11 +14,10 @@ import { createAudioLibraryUiFilterActions } from "./features/audio-library-ui-f
 import { createAudioLibraryUiSelectionActions } from "./features/audio-library-ui-selection-actions.js";
 import { createSyncEffectsSessionState } from "./features/sync-effects-session-state.js";
 import { createDowntimeUiDraftStorage } from "./features/downtime-ui-draft-storage.js";
-import { createGmQuickWeatherDraftStorage } from "./features/gm-quick-weather-draft.js";
 import { createLootPreviewDraftStorage } from "./features/loot-preview-draft-storage.js";
 import { createNoteDraftCache } from "./features/note-draft-cache.js";
 import { createReputationDraftStorage } from "./features/reputation-draft-storage.js";
-import { createWeatherPresetHelpers } from "./features/weather-preset-helpers.js";
+import { createWeatherVisibilityHelpers } from "./features/weather-visibility-helpers.js";
 import { resolveMarchActorImage } from "./features/march-actor-images.js";
 import {
   analyzeGmScreenWeatherTerrainImageData,
@@ -1550,58 +1549,25 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "publish-loot-claims",
   "play-audio-scene-preset",
   "clear-loot-claims",
-  "set-environment-preset",
-  "set-environment-dc",
-  "set-environment-note",
-  "set-environment-successive",
-  "select-environment-config-preset",
-  "create-environment-preset",
-  "duplicate-environment-preset",
-  "restore-environment-preset-defaults",
-  "delete-environment-preset",
-  "set-environment-preset-field",
-  "add-environment-preset-effect-change",
-  "remove-environment-preset-effect-change",
-  "set-environment-preset-effect-change",
-  "select-environment-config-action",
-  "create-environment-action",
-  "delete-environment-action",
-  "set-environment-action-field",
-  "reset-environment-successive-defaults",
-  "toggle-environment-actor",
-  "add-environment-log",
-  "edit-environment-log",
-  "remove-environment-log",
-  "request-environment-checks",
   "gm-quick-add-faction",
-  "gm-quick-open-environment",
   "gm-quick-open-downtime",
   "gm-quick-set-staged-field",
   "gm-quick-submit-faction",
-  "gm-quick-log-weather",
   "gm-quick-session-autopilot",
   "gm-quick-undo-autopilot",
-  "gm-quick-submit-weather",
-  "gm-quick-weather-select",
-  "gm-quick-weather-set",
-  "gm-quick-weather-save-preset",
-  "gm-quick-weather-delete-preset",
-  "gm-calendar-weather-set-climate",
-  "gm-calendar-weather-set-terrain",
-  "gm-calendar-weather-clear-terrain",
-  "gm-calendar-weather-set-terrain-image",
-  "gm-calendar-weather-browse-terrain-image",
-  "gm-calendar-weather-preview-terrain-image",
-  "gm-calendar-weather-import-terrain-image",
-  "gm-calendar-weather-toggle-auto-climate",
-  "gm-calendar-weather-apply-suggested-climate",
-  "gm-calendar-weather-toggle-auto",
-  "gm-calendar-weather-roll"
+  "gm-weather-set-climate",
+  "gm-weather-set-terrain",
+  "gm-weather-clear-terrain",
+  "gm-weather-set-terrain-image",
+  "gm-weather-browse-terrain-image",
+  "gm-weather-preview-terrain-image",
+  "gm-weather-import-terrain-image",
+  "gm-weather-toggle-auto-climate",
+  "gm-weather-apply-suggested-climate",
+  "gm-weather-toggle-auto",
+  "gm-weather-roll"
 ]);
 const UPKEEP_DUSK_MINUTES = 20 * 60;
-const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
-const environmentMovePromptByActor = new Map();
-const environmentMoveOriginByToken = new Map();
 const REST_WATCH_MAX_ENTRIES = 5;
 const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
 const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
@@ -5584,10 +5550,6 @@ const {
   storage: globalThis.sessionStorage
 });
 
-let getGmQuickWeatherDraftStorageKey = () => `po-gm-quick-weather-draft-${game.user?.id ?? "anon"}`;
-let getGmQuickWeatherDraft = () => null;
-let setGmQuickWeatherDraft = () => {};
-
 let getLootPreviewDraftStorageKey = () => `po-loot-preview-draft-${game.user?.id ?? "anon"}`;
 
 function getLootPreviewResultStorageKey() {
@@ -6563,12 +6525,6 @@ function setLootPreviewResult(result = null) {
   sessionStorage.setItem(getLootPreviewResultStorageKey(), JSON.stringify(result));
 }
 
-({ getGmQuickWeatherDraft, getGmQuickWeatherDraftStorageKey, setGmQuickWeatherDraft } =
-  createGmQuickWeatherDraftStorage({
-    storage: sessionStorage,
-    gameRef: game
-  }));
-
 function buildMarchSectionUi(sectionId) {
   const collapsed = isMarchSectionCollapsed(sectionId);
   return {
@@ -7045,19 +7001,6 @@ function buildOperationsContextFallback() {
     currentVisibilityModifier: "0",
     currentDarkness: "0.00"
   };
-  let fallbackWeatherSceneSnapshot = {
-    label: "-",
-    darkness: "0.00",
-    visibilityModifier: "0"
-  };
-  let fallbackWeatherOptions = [];
-  let fallbackWeatherDraft = {
-    selectedKey: "",
-    darkness: 0,
-    visibilityModifier: 0,
-    note: "",
-    presetName: ""
-  };
   let fallbackWeatherCalendar = {
     climate: "Temperate",
     configuredClimate: "Temperate",
@@ -7100,15 +7043,6 @@ function buildOperationsContextFallback() {
       currentVisibilityModifier: Number(currentWeather?.visibilityModifier ?? 0),
       currentDarkness: Number(currentWeather?.darkness ?? 0)
     };
-    const weatherSceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-    fallbackWeatherSceneSnapshot = {
-      label: String(weatherSceneSnapshot?.label ?? "-") || "-",
-      darkness: Number.isFinite(Number(weatherSceneSnapshot?.darkness)) ? Number(weatherSceneSnapshot.darkness) : 0,
-      visibilityModifier: Number.isFinite(Number(weatherSceneSnapshot?.visibilityModifier))
-        ? Number(weatherSceneSnapshot.visibilityModifier)
-        : 0
-    };
-    const weatherQuickOptions = buildWeatherSelectionCatalog(weatherState, weatherSceneSnapshot);
     const calendarWeather = buildCalendarWeatherContext(weatherState);
     fallbackWeatherCalendar = {
       ...calendarWeather,
@@ -7121,32 +7055,6 @@ function buildOperationsContextFallback() {
           ? new Date(Number(calendarWeather.terrainImportedAt)).toLocaleString()
           : "Never"
     };
-    const storedWeatherDraft = getGmQuickWeatherDraft();
-    const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
-    const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
-    const selectedWeatherOption =
-      weatherQuickOptions.find((entry) => entry.key === selectedWeatherKey) ?? fallbackWeatherOption;
-    fallbackWeatherDraft = {
-      selectedKey: String(selectedWeatherOption?.key ?? ""),
-      darkness: Number.isFinite(Number(storedWeatherDraft?.darkness))
-        ? Math.max(0, Math.min(1, Number(storedWeatherDraft.darkness)))
-        : Math.max(0, Math.min(1, Number(selectedWeatherOption?.darkness ?? weatherSceneSnapshot?.darkness ?? 0))),
-      visibilityModifier: Number.isFinite(Number(storedWeatherDraft?.visibilityModifier))
-        ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
-        : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
-      note: String(storedWeatherDraft?.note ?? ""),
-      presetName: String(storedWeatherDraft?.presetName ?? "")
-    };
-    fallbackWeatherOptions = weatherQuickOptions.map((option) => ({
-      key: option.key,
-      label: option.label,
-      weatherId: option.weatherId,
-      isBuiltIn: Boolean(option.isBuiltIn),
-      visibilityModifier: Number(option.visibilityModifier ?? 0),
-      visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
-      effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
-      selected: option.key === fallbackWeatherDraft.selectedKey
-    }));
   } catch (_error) {}
   let fallbackLootSources;
   try {
@@ -7625,20 +7533,8 @@ function buildOperationsContextFallback() {
       ]
     },
     weather: fallbackWeather,
-    gmQuickTools: {
-      activePanel: gmQuickPanel,
-      showFactionPanel: gmQuickPanel === "faction",
-      showModifierPanel: false,
-      showWeatherPanel: gmQuickPanel === "weather",
-      modifierModeOptions: fallbackModifierModeOptions,
-      stagedModifierQueue: [],
-      hasStagedModifierQueue: false,
-      hasModifierAddLog: false,
-      modifierAddLog: [],
-      weatherSceneSnapshot: fallbackWeatherSceneSnapshot,
-      weatherOptions: fallbackWeatherOptions,
-      weatherDraft: fallbackWeatherDraft,
-      weatherCalendar: fallbackWeatherCalendar
+    weatherTools: {
+      calendar: fallbackWeatherCalendar
     },
     lootSources: fallbackLootSources,
     lootClaims: fallbackLootClaims,
@@ -8699,39 +8595,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "collect-downtime-result": async () => {
             await collectDowntimeResult(element);
           },
-          "set-environment-preset": async () => {
-            await setOperationalEnvironmentPreset(element);
-          },
-          "set-environment-dc": async () => {
-            await setOperationalEnvironmentDc(element);
-          },
-          "set-environment-note": async () => {
-            await setOperationalEnvironmentNote(element);
-          },
-          "set-environment-successive": async () => {
-            await setOperationalEnvironmentSuccessive(element);
-          },
-          "reset-environment-successive-defaults": async () => {
-            await resetOperationalEnvironmentSuccessiveDefaults();
-          },
-          "toggle-environment-actor": async () => {
-            await toggleOperationalEnvironmentActor(element);
-          },
-          "add-environment-log": async () => {
-            await addOperationalEnvironmentLog();
-          },
-          "edit-environment-log": async () => {
-            await editOperationalEnvironmentLog(element);
-          },
-          "remove-environment-log": async () => {
-            await removeOperationalEnvironmentLog(element);
-          },
-          "request-environment-checks": async () => {
-            await requestOperationalEnvironmentChecks();
-          },
-          "show-environment-brief": async () => {
-            await showOperationalEnvironmentBrief();
-          },
           "apply-upkeep": async () => {
             await applyOperationalUpkeep();
           },
@@ -9068,9 +8931,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await gmQuickAddFaction();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-quick-open-environment": async () => {
-            openGmEnvironmentPage({ force: true });
-          },
           "gm-quick-open-downtime": async () => {
             openGmDowntimePage({ force: true });
           },
@@ -9085,7 +8945,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           },
           "gm-quick-cancel-panel": async () => {
             setActiveGmQuickPanel("none");
-            setGmQuickWeatherDraft(null);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "gm-quick-submit-faction": async () => {
@@ -9097,70 +8956,48 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "gm-quick-undo-autopilot": async () => {
             await undoLastSessionAutopilot();
           },
-          "gm-quick-log-weather": async () => {
-            await gmQuickLogCurrentWeather();
+          "gm-weather-set-climate": async () => {
+            await gmWeatherSetClimate(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-quick-submit-weather": async () => {
-            await gmQuickSubmitWeather(element);
-          },
-          "gm-quick-weather-select": async () => {
-            await gmQuickSelectWeatherPreset(element);
+          "gm-weather-set-terrain": async () => {
+            await gmWeatherSetTerrain(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-quick-weather-set": async () => {
-            gmQuickUpdateWeatherDraftField(element);
-          },
-          "gm-calendar-weather-set-climate": async () => {
-            await gmCalendarWeatherSetClimate(element);
+          "gm-weather-clear-terrain": async () => {
+            await gmWeatherClearTerrain();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-set-terrain": async () => {
-            await gmCalendarWeatherSetTerrain(element);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          },
-          "gm-calendar-weather-clear-terrain": async () => {
-            await gmCalendarWeatherClearTerrain();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          },
-          "gm-calendar-weather-set-terrain-image": async () => {
-            await gmCalendarWeatherSetTerrainImage(element);
+          "gm-weather-set-terrain-image": async () => {
+            await gmWeatherSetTerrainImage(element);
             if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-browse-terrain-image": async () => {
-            await gmCalendarWeatherBrowseTerrainImage();
+          "gm-weather-browse-terrain-image": async () => {
+            await gmWeatherBrowseTerrainImage();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-preview-terrain-image": async () => {
-            await gmCalendarWeatherPreviewTerrainImage();
+          "gm-weather-preview-terrain-image": async () => {
+            await gmWeatherPreviewTerrainImage();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-import-terrain-image": async () => {
-            await gmCalendarWeatherImportTerrainImage();
+          "gm-weather-import-terrain-image": async () => {
+            await gmWeatherImportTerrainImage();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-toggle-auto-climate": async () => {
-            await gmCalendarWeatherToggleAutoClimate(element);
+          "gm-weather-toggle-auto-climate": async () => {
+            await gmWeatherToggleAutoClimate(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-apply-suggested-climate": async () => {
-            await gmCalendarWeatherApplySuggestedClimate();
+          "gm-weather-apply-suggested-climate": async () => {
+            await gmWeatherApplySuggestedClimate();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-toggle-auto": async () => {
-            await gmCalendarWeatherToggleAuto(element);
+          "gm-weather-toggle-auto": async () => {
+            await gmWeatherToggleAuto(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
-          "gm-calendar-weather-roll": async () => {
-            await gmCalendarWeatherRoll();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          },
-          "gm-quick-weather-save-preset": async () => {
-            await gmQuickSaveWeatherPreset(element);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          },
-          "gm-quick-weather-delete-preset": async () => {
-            await gmQuickDeleteWeatherPreset(element);
+          "gm-weather-roll": async () => {
+            await gmWeatherRoll();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "set-injury-config": async () => {
@@ -9359,7 +9196,6 @@ function buildGmCockpitContext(operations = {}, options = {}) {
   const gatherRequests = resources?.gatherRequests ?? {};
   const gatherDelivery = resources?.gatherDelivery ?? {};
   const downtime = operations?.downtime ?? {};
-  const environment = operations?.environment ?? {};
   const weather = operations?.weather ?? {};
   const merchants = operations?.merchants ?? {};
   const lootSources = operations?.lootSources ?? {};
@@ -9386,12 +9222,11 @@ function buildGmCockpitContext(operations = {}, options = {}) {
     addWarning(`${downtimePending} downtime entr${downtimePending === 1 ? "y" : "ies"} pending.`);
   if (!downtimePublished) addWarning("Downtime session is not open to players.");
 
-  const environmentPresetLabel = String(environment?.preset?.label ?? "None").trim() || "None";
-  const environmentCanRequestChecks = Boolean(environment?.canRequestChecks);
+  const weatherCalendar = operations?.weatherTools?.calendar ?? {};
+  const weatherCalendarSummary = [weatherCalendar?.climate, weatherCalendar?.season].filter(Boolean).join(" ");
   const weatherLabel = String(weather?.currentLabel ?? "Not logged").trim() || "Not logged";
   const weatherModifier = formatSignedModifier(Number(weather?.currentVisibilityModifier ?? 0)) || "0";
   const weatherDarkness = Number(weather?.currentDarkness ?? 0);
-  if (environmentPresetLabel === "None") addWarning("No active environment preset.");
 
   const merchantDashboard = merchants?.gm?.availabilityDashboard ?? {};
   const merchantDefinitions = Array.isArray(merchants?.gm?.definitions) ? merchants.gm.definitions : [];
@@ -9461,12 +9296,7 @@ function buildGmCockpitContext(operations = {}, options = {}) {
   const hostileCount = count(reputation?.hostileCount);
   if (hostileCount > 0) addWarning(`${hostileCount} hostile faction${hostileCount === 1 ? "" : "s"} tracked.`);
 
-  const attentionCount =
-    gatherPending +
-    downtimePending +
-    lootOpenRunCount +
-    merchantStaleCount +
-    (environmentPresetLabel === "None" ? 1 : 0);
+  const attentionCount = gatherPending + downtimePending + lootOpenRunCount + merchantStaleCount;
 
   return {
     generatedAtLabel: String(options?.generatedAtLabel ?? new Date().toLocaleString()),
@@ -9492,17 +9322,15 @@ function buildGmCockpitContext(operations = {}, options = {}) {
       statusLabel: gatherPending > 0 ? `${gatherPending} pending` : "Ready",
       summaryLabel: `Food ${gatherFood} | Water ${gatherWater}`
     },
-    environment: {
-      presetLabel: environmentPresetLabel,
-      actionLabel: String(environment?.actionLabel ?? "No action").trim() || "No action",
-      targetCount: count(environment?.targetCount),
+    weather: {
+      summaryLabel: String(weatherCalendarSummary || "Weather generator").trim(),
       weatherLabel,
       weatherModifier,
       weatherDarkness: Number.isFinite(weatherDarkness) ? weatherDarkness.toFixed(2) : "0.00",
-      primaryAction: environmentCanRequestChecks ? "request-environment-checks" : "add-environment-log",
-      primaryLabel: environmentCanRequestChecks ? "Push Checks" : "Log Setup",
+      primaryAction: "gm-weather-roll",
+      primaryLabel: "Roll Weather",
       primaryDisabled: false,
-      statusLabel: environmentCanRequestChecks ? "Checks ready" : "No check target"
+      statusLabel: weatherLabel === "Not logged" ? "Not logged" : "Logged"
     },
     downtime: {
       pendingCount: downtimePending,
@@ -9548,29 +9376,17 @@ function buildGmCockpitContext(operations = {}, options = {}) {
   };
 }
 
-function buildGmEnvironmentPageContext() {
+function buildGmWeatherPageContext() {
   const operations = getStandaloneOpsContext();
-  const environment = operations?.environment ?? {};
   const weather = operations?.weather ?? {
     currentLabel: "Not logged",
     currentVisibilityModifier: 0,
-    currentDarkness: 0
+    currentDarkness: 0,
+    logs: [],
+    hasLogs: false
   };
-  const gmQuickTools = operations?.gmQuickTools ?? {
-    weatherSceneSnapshot: {
-      label: "-",
-      darkness: 0,
-      visibilityModifier: 0
-    },
-    weatherOptions: [],
-    weatherDraft: {
-      selectedKey: "",
-      darkness: 0,
-      visibilityModifier: 0,
-      note: "",
-      presetName: ""
-    },
-    weatherCalendar: {
+  const weatherTools = operations?.weatherTools ?? {
+    calendar: {
       climate: "Temperate",
       configuredClimate: "Temperate",
       climateOptions: getGmScreenWeatherClimateOptions("Temperate"),
@@ -9605,20 +9421,12 @@ function buildGmEnvironmentPageContext() {
       hasTerrainImageAnalysis: false
     }
   };
-  const logs = Array.isArray(environment.logs) ? environment.logs : [];
-  const checkResults = Array.isArray(environment.checkResults) ? environment.checkResults : [];
   return {
     moduleVersion: getCurrentModuleVersion(),
     generatedAtLabel: new Date().toLocaleString(),
     generatedBy: String(game.user?.name ?? "GM"),
-    environment,
     weather,
-    gmQuickTools,
-    logs,
-    checkResults,
-    hasLogs: logs.length > 0,
-    hasCheckResults: checkResults.length > 0,
-    hasWeatherOptions: Array.isArray(gmQuickTools?.weatherOptions) && gmQuickTools.weatherOptions.length > 0
+    weatherTools
   };
 }
 
@@ -9830,15 +9638,15 @@ function openGmFactionsPage(renderOptions = { force: true }) {
   return app;
 }
 
-function openGmEnvironmentPage(renderOptions = { force: true }) {
+function openGmWeatherPage(renderOptions = { force: true }) {
   if (!canAccessGmPage()) {
-    ui.notifications?.warn("GM permissions are required to view environment controls.");
+    ui.notifications?.warn("GM permissions are required to view weather controls.");
     return null;
   }
-  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_WEATHER_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
-    : new GmEnvironmentPageApp(getResponsiveWindowOptions("gm-environment"));
+    : new GmWeatherPageApp(getResponsiveWindowOptions("gm-weather"));
   app.render(renderOptions);
   return app;
 }
@@ -9918,8 +9726,8 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   } else if (key === "faction") {
     setActiveGmQuickPanel("none");
     app = openGmFactionsPage({ ...renderOptions, suppressHistory });
-  } else if (key === "environment") {
-    app = openGmEnvironmentPage({ ...renderOptions, suppressHistory });
+  } else if (key === "weather") {
+    app = openGmWeatherPage({ ...renderOptions, suppressHistory });
   } else if (key === "downtime") {
     app = openGmDowntimePage({ ...renderOptions, suppressHistory });
   } else if (key === "merchants") {
@@ -10308,58 +10116,25 @@ export const GmFactionsPageApp = createGmFactionsPageApp({
   openGmPanelByKey
 });
 
-export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
+export const GmWeatherPageApp = createGmWeatherPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE, instance);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_WEATHER_PAGE, instance);
   },
-  buildContext: buildGmEnvironmentPageContext,
+  buildContext: buildGmWeatherPageContext,
   openMainTab,
-  setOperationalEnvironmentSyncNonParty,
-  setOperationalEnvironmentPreset,
-  setOperationalEnvironmentDc,
-  setOperationalEnvironmentSuccessive,
-  setOperationalEnvironmentNote,
-  selectOperationalEnvironmentConfigurePreset,
-  createOperationalEnvironmentPreset,
-  duplicateOperationalEnvironmentPreset,
-  restoreOperationalEnvironmentPresetDefaults,
-  deleteOperationalEnvironmentPreset,
-  setOperationalEnvironmentPresetField,
-  addOperationalEnvironmentPresetEffectChange,
-  removeOperationalEnvironmentPresetEffectChange,
-  setOperationalEnvironmentPresetEffectChange,
-  selectOperationalEnvironmentConfigureAction,
-  createOperationalEnvironmentAction,
-  deleteOperationalEnvironmentAction,
-  setOperationalEnvironmentActionField,
-  toggleOperationalEnvironmentActor,
-  resetOperationalEnvironmentSuccessiveDefaults,
-  addOperationalEnvironmentLog,
-  editOperationalEnvironmentLog,
-  removeOperationalEnvironmentLog,
-  clearOperationalEnvironmentEffects,
-  requestOperationalEnvironmentChecks,
-  showOperationalEnvironmentBrief,
-  gmQuickLogCurrentWeather,
-  gmQuickSaveWeatherPreset,
-  gmQuickDeleteWeatherPreset,
-  gmQuickSubmitWeather,
-  gmQuickSelectWeatherPreset,
-  gmQuickUpdateWeatherDraftField,
-  gmCalendarWeatherSetClimate,
-  gmCalendarWeatherToggleAutoClimate,
-  gmCalendarWeatherApplySuggestedClimate,
-  gmCalendarWeatherSetTerrain,
-  gmCalendarWeatherClearTerrain,
-  gmCalendarWeatherSetTerrainImage,
-  gmCalendarWeatherBrowseTerrainImage,
-  gmCalendarWeatherPreviewTerrainImage,
-  gmCalendarWeatherImportTerrainImage,
-  gmCalendarWeatherToggleAuto,
-  gmCalendarWeatherRoll,
-  loadWeatherLogToQuickPanel,
+  gmWeatherSetClimate,
+  gmWeatherToggleAutoClimate,
+  gmWeatherApplySuggestedClimate,
+  gmWeatherSetTerrain,
+  gmWeatherClearTerrain,
+  gmWeatherSetTerrainImage,
+  gmWeatherBrowseTerrainImage,
+  gmWeatherPreviewTerrainImage,
+  gmWeatherImportTerrainImage,
+  gmWeatherToggleAuto,
+  gmWeatherRoll,
   removeWeatherLogById,
   openJournalEntryFromElement,
   openGmPanelByKey
@@ -24609,7 +24384,6 @@ function buildDefaultOperationsLedger() {
     weather: {
       current: null,
       logs: [],
-      customPresets: [],
       calendarClimate: "Temperate",
       calendarClimateAutoApply: false,
       calendarTerrainCounts: {},
@@ -25546,8 +25320,6 @@ function buildOperationsContext() {
       detailsText
     };
   });
-  const weatherSceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const weatherQuickOptions = buildWeatherSelectionCatalog(weatherState, weatherSceneSnapshot);
   const calendarWeather = buildCalendarWeatherContext(weatherState);
   const weatherCalendar = {
     ...calendarWeather,
@@ -25559,22 +25331,6 @@ function buildOperationsContext() {
       Number(calendarWeather.terrainImportedAt ?? 0) > 0
         ? new Date(Number(calendarWeather.terrainImportedAt)).toLocaleString()
         : "Never"
-  };
-  const storedWeatherDraft = getGmQuickWeatherDraft();
-  const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
-  const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
-  const selectedWeatherOption =
-    weatherQuickOptions.find((entry) => entry.key === selectedWeatherKey) ?? fallbackWeatherOption;
-  const weatherQuickDraft = {
-    selectedKey: String(selectedWeatherOption?.key ?? ""),
-    darkness: Number.isFinite(Number(storedWeatherDraft?.darkness))
-      ? Math.max(0, Math.min(1, Number(storedWeatherDraft.darkness)))
-      : Math.max(0, Math.min(1, Number(selectedWeatherOption?.darkness ?? weatherSceneSnapshot.darkness ?? 0))),
-    visibilityModifier: Number.isFinite(Number(storedWeatherDraft?.visibilityModifier))
-      ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
-      : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
-    note: String(storedWeatherDraft?.note ?? ""),
-    presetName: String(storedWeatherDraft?.presetName ?? "")
   };
   const globalLogs = (environmentState.logs ?? [])
     .map((entry) => {
@@ -26017,29 +25773,8 @@ function buildOperationsContext() {
       logs: weatherLogs,
       hasLogs: weatherLogs.length > 0
     },
-    gmQuickTools: {
-      activePanel: gmQuickPanel,
-      showFactionPanel: gmQuickPanel === "faction",
-      showModifierPanel: false,
-      showWeatherPanel: gmQuickPanel === "weather",
-      modifierModeOptions: partyModifierModeOptions,
-      stagedModifierQueue,
-      hasStagedModifierQueue: stagedModifierQueue.length > 0,
-      modifierAddLog,
-      hasModifierAddLog: modifierAddLog.length > 0,
-      weatherSceneSnapshot,
-      weatherOptions: weatherQuickOptions.map((option) => ({
-        key: option.key,
-        label: option.label,
-        weatherId: option.weatherId,
-        isBuiltIn: Boolean(option.isBuiltIn),
-        visibilityModifier: Number(option.visibilityModifier ?? 0),
-        visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
-        effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
-        selected: option.key === weatherQuickDraft.selectedKey
-      })),
-      weatherDraft: weatherQuickDraft,
-      weatherCalendar
+    weatherTools: {
+      calendar: weatherCalendar
     },
     downtime,
     operationsJournal,
@@ -35863,22 +35598,7 @@ function buildReconContext(reconState = {}) {
   };
 }
 
-const {
-  WEATHER_PRESET_DEFINITIONS,
-  buildWeatherSelectionCatalog,
-  computeWeatherVisibilityModifier,
-  describeWeatherDaeChanges,
-  getBuiltInWeatherPresets,
-  getWeatherEffectSummary,
-  getWeatherPresetCatalog,
-  normalizeWeatherDaeChange,
-  normalizeWeatherPreset,
-  resolveWeatherFxEffectIdForPreset
-} = createWeatherPresetHelpers({
-  constRef: CONST,
-  randomIdFn: () => foundry.utils.randomID(),
-  getConfigWeatherEffects: () => CONFIG.weatherEffects ?? {}
-});
+const { computeWeatherVisibilityModifier, getWeatherEffectSummary } = createWeatherVisibilityHelpers();
 
 function normalizeWeatherSnapshot(entry = {}, defaults = {}) {
   const id = String(entry?.id ?? defaults?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID();
@@ -35940,7 +35660,7 @@ function normalizeWeatherSnapshot(entry = {}, defaults = {}) {
 
 function ensureWeatherState(ledger) {
   if (!ledger.weather || typeof ledger.weather !== "object") {
-    ledger.weather = { current: null, logs: [], customPresets: [] };
+    ledger.weather = { current: null, logs: [] };
   }
   ledger.weather.calendarClimate = normalizeGmScreenWeatherClimate(ledger.weather.calendarClimate ?? "Temperate");
   ledger.weather.calendarClimateAutoApply = ledger.weather.calendarClimateAutoApply === true;
@@ -35972,14 +35692,7 @@ function ensureWeatherState(ledger) {
   ledger.weather.calendarLastRolledAt = Number.isFinite(Number(ledger.weather.calendarLastRolledAt))
     ? Number(ledger.weather.calendarLastRolledAt)
     : 0;
-  if (!Array.isArray(ledger.weather.customPresets)) ledger.weather.customPresets = [];
-  ledger.weather.customPresets = ledger.weather.customPresets
-    .map((entry) => normalizeWeatherPreset(entry, { isBuiltIn: false }))
-    .filter((entry, index, arr) => {
-      const id = String(entry.id ?? "").trim();
-      if (!id || entry.isBuiltIn) return false;
-      return arr.findIndex((candidate) => String(candidate.id ?? "").trim() === id) === index;
-    });
+  delete ledger.weather.customPresets;
   if (!Array.isArray(ledger.weather.logs)) ledger.weather.logs = [];
   ledger.weather.logs = ledger.weather.logs
     .map((entry) => normalizeWeatherSnapshot(entry))
@@ -36008,37 +35721,6 @@ function resolveSceneWeatherId(scene = game.scenes?.current) {
     if (value) return value;
   }
   return "";
-}
-
-async function setSceneWeatherId(scene, weatherId = "") {
-  if (!scene || typeof scene.update !== "function") return false;
-  const nextWeatherId = String(weatherId ?? "").trim();
-  const updatePaths = ["weather", "environment.weather", "environment.weatherId", "environment.weatherType"];
-  for (const path of updatePaths) {
-    try {
-      await scene.update({ [path]: nextWeatherId });
-    } catch (_error) {
-      continue;
-    }
-    const resolved = resolveSceneWeatherId(scene);
-    if (!resolved && !nextWeatherId) return true;
-    if (resolved === nextWeatherId) return true;
-  }
-  return false;
-}
-
-async function applyWeatherSceneFxForPreset(preset = {}) {
-  if (!canAccessAllPlayerOps()) return;
-  const scene = game.scenes?.current;
-  if (!scene) return;
-  const presetKey = String(preset?.key ?? preset?.weatherId ?? "")
-    .trim()
-    .toLowerCase();
-  const effectId = resolveWeatherFxEffectIdForPreset(preset);
-  const nextWeatherId = presetKey.includes("clear") || !effectId ? "" : effectId;
-  const currentWeatherId = resolveSceneWeatherId(scene);
-  if (nextWeatherId === currentWeatherId) return;
-  await setSceneWeatherId(scene, nextWeatherId);
 }
 
 function resolveCurrentSceneWeatherSnapshot() {
@@ -41543,42 +41225,6 @@ async function finalizeEnvironmentCheckResult(actor, tokenDoc, assignment, rollC
   };
 }
 
-async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
-  if (!canAccessAllPlayerOps() || !actor || !assignment?.preset?.movementCheck) return;
-  if (getEnvironmentCheckTriggerMeta(assignment.preset).isManual) return;
-  const rollContext = await collectEnvironmentCheckRoll(actor, assignment);
-  if (rollContext.unavailable) return;
-  await finalizeEnvironmentCheckResult(actor, tokenDoc, assignment, rollContext, movementContext);
-}
-
-async function maybePromptEnvironmentMovementCheck(tokenDoc, changed, options = {}) {
-  if (!canAccessAllPlayerOps()) return;
-  if (options?.poEnvironmentClamp) return;
-  if (!changed || (changed.x === undefined && changed.y === undefined)) return;
-  const actor = tokenDoc?.actor;
-  if (!actor) return;
-
-  const assignment = getActorEnvironmentAssignment(actor.id);
-  if (!assignment?.preset?.movementCheck) return;
-
-  const now = Date.now();
-  const last = Number(environmentMovePromptByActor.get(actor.id) ?? 0);
-  if (now - last < ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS) return;
-  environmentMovePromptByActor.set(actor.id, now);
-
-  const origin = environmentMoveOriginByToken.get(tokenDoc.id) ?? {
-    x: Number(tokenDoc.x ?? 0),
-    y: Number(tokenDoc.y ?? 0)
-  };
-  environmentMoveOriginByToken.delete(tokenDoc.id);
-  const destination = {
-    x: Number(changed.x ?? tokenDoc.x ?? 0),
-    y: Number(changed.y ?? tokenDoc.y ?? 0)
-  };
-
-  await promptEnvironmentMovementCheck(tokenDoc, actor, assignment, { origin, destination });
-}
-
 function triggerGatherResourceButtonAnimation(element) {
   const button = element?.closest?.("[data-action='gather-resource-check']");
   if (!(button instanceof HTMLElement)) return;
@@ -46453,26 +46099,6 @@ function getDaeModifierCategoryOptions() {
   ];
 }
 
-function buildWeatherDraftFromPreset(preset, sceneSnapshot, previousDraft = {}) {
-  return {
-    selectedKey: String(preset?.key ?? ""),
-    darkness: Number.isFinite(Number(previousDraft?.darkness))
-      ? Math.max(0, Math.min(1, Number(previousDraft.darkness)))
-      : Math.max(0, Math.min(1, Number(preset?.darkness ?? sceneSnapshot?.darkness ?? 0))),
-    visibilityModifier: Number.isFinite(Number(previousDraft?.visibilityModifier))
-      ? Math.max(-5, Math.min(5, Math.floor(Number(previousDraft.visibilityModifier))))
-      : Math.max(-5, Math.min(5, Math.floor(Number(preset?.visibilityModifier ?? 0) || 0))),
-    note: String(previousDraft?.note ?? preset?.note ?? sceneSnapshot?.note ?? ""),
-    presetName: String(previousDraft?.presetName ?? preset?.label ?? "")
-  };
-}
-
-function getWeatherPresetByKey(weatherState, sceneSnapshot, key) {
-  const options = buildWeatherSelectionCatalog(weatherState, sceneSnapshot);
-  const selectedKey = String(key ?? "").trim();
-  return options.find((entry) => entry.key === selectedKey) ?? options[0] ?? null;
-}
-
 function buildCalendarWeatherContext(weatherState = null) {
   const timestamp = getCurrentWorldTimestamp();
   const api = getSimpleCalendarApi();
@@ -46655,12 +46281,6 @@ async function persistCalendarWeatherRollMetadata(snapshotId, metadata = {}) {
     for (const log of weather.logs) {
       if (String(log?.id ?? "") === id) log.calendarEntryId = calendarEntryId;
     }
-    const environment = ensureEnvironmentState(ledger);
-    for (const log of environment.logs) {
-      if (String(log?.id ?? "") === id && String(log?.logType ?? "") === "weather") {
-        log.calendarEntryId = calendarEntryId;
-      }
-    }
   });
 }
 
@@ -46673,12 +46293,6 @@ async function persistWeatherJournalEntryId(snapshotId, journalEntryId) {
     if (weather.current && String(weather.current.id ?? "") === id) weather.current.journalEntryId = archiveId;
     for (const log of weather.logs) {
       if (String(log?.id ?? "") === id) log.journalEntryId = archiveId;
-    }
-    const environment = ensureEnvironmentState(ledger);
-    for (const log of environment.logs) {
-      if (String(log?.id ?? "") === id && String(log?.logType ?? "") === "weather") {
-        log.journalEntryId = archiveId;
-      }
     }
   });
 }
@@ -46848,7 +46462,7 @@ async function createCalendarTerrainImportJournalEntry(analysis = {}, { imagePat
   });
 }
 
-async function gmCalendarWeatherSetClimate(element) {
+async function gmWeatherSetClimate(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update calendar weather.");
     return;
@@ -46861,7 +46475,7 @@ async function gmCalendarWeatherSetClimate(element) {
   });
 }
 
-async function gmCalendarWeatherToggleAutoClimate(element) {
+async function gmWeatherToggleAutoClimate(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update calendar weather.");
     return;
@@ -46880,7 +46494,7 @@ async function gmCalendarWeatherToggleAutoClimate(element) {
   ui.notifications?.info(`Terrain climate automation ${enabled ? "enabled" : "disabled"}.`);
 }
 
-async function gmCalendarWeatherApplySuggestedClimate() {
+async function gmWeatherApplySuggestedClimate() {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update calendar weather.");
     return false;
@@ -46903,7 +46517,7 @@ async function gmCalendarWeatherApplySuggestedClimate() {
   return false;
 }
 
-async function gmCalendarWeatherSetTerrain(element) {
+async function gmWeatherSetTerrain(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update calendar weather.");
     return;
@@ -46923,7 +46537,7 @@ async function gmCalendarWeatherSetTerrain(element) {
   });
 }
 
-async function gmCalendarWeatherClearTerrain() {
+async function gmWeatherClearTerrain() {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update calendar weather.");
     return;
@@ -46939,7 +46553,7 @@ async function gmCalendarWeatherClearTerrain() {
   });
 }
 
-async function gmCalendarWeatherSetTerrainImage(element) {
+async function gmWeatherSetTerrainImage(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update calendar weather.");
     return;
@@ -46947,7 +46561,7 @@ async function gmCalendarWeatherSetTerrainImage(element) {
   await setCalendarTerrainImagePath(element?.value ?? "");
 }
 
-async function gmCalendarWeatherBrowseTerrainImage() {
+async function gmWeatherBrowseTerrainImage() {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can browse terrain images.");
     return false;
@@ -46969,7 +46583,7 @@ async function gmCalendarWeatherBrowseTerrainImage() {
   });
 }
 
-async function gmCalendarWeatherPreviewTerrainImage() {
+async function gmWeatherPreviewTerrainImage() {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can preview terrain images.");
     return false;
@@ -46999,7 +46613,7 @@ async function gmCalendarWeatherPreviewTerrainImage() {
   }
 }
 
-async function gmCalendarWeatherImportTerrainImage() {
+async function gmWeatherImportTerrainImage() {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can import terrain images.");
     return false;
@@ -47041,7 +46655,7 @@ async function gmCalendarWeatherImportTerrainImage() {
   }
 }
 
-async function gmCalendarWeatherToggleAuto(element) {
+async function gmWeatherToggleAuto(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update calendar weather.");
     return;
@@ -47054,30 +46668,21 @@ async function gmCalendarWeatherToggleAuto(element) {
   ui.notifications?.info(`Calendar weather auto-roll ${enabled ? "enabled" : "disabled"}.`);
 }
 
-async function gmCalendarWeatherRoll() {
+async function gmWeatherRoll() {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can roll calendar weather.");
     return;
   }
   const ledger = getOperationsLedger();
   const weatherState = ensureWeatherState(ledger);
-  const { calendar, preset, snapshot } = buildCalendarWeatherSnapshot(weatherState);
-  await commitWeatherSnapshot(snapshot, { preset, sourceLabel: "Calendar Weather Roll" });
+  const { calendar, snapshot } = buildCalendarWeatherSnapshot(weatherState);
+  await commitWeatherSnapshot(snapshot, { sourceLabel: "Calendar Weather Roll" });
   const calendarNote = await createWeatherCalendarNote(snapshot, getCurrentWorldTimestamp());
   await persistCalendarWeatherRollMetadata(snapshot.id, {
     dayKey: calendar.dayKey,
     rolledAt: snapshot.loggedAt,
     calendarEntryId: calendarNote.id
   });
-  setGmQuickWeatherDraft(
-    buildWeatherDraftFromPreset(preset, resolveCurrentSceneWeatherSnapshot(), {
-      selectedKey: String(preset.key ?? ""),
-      darkness: Number(preset.darkness ?? 0),
-      visibilityModifier: Number(preset.visibilityModifier ?? 0),
-      note: String(snapshot.note ?? ""),
-      presetName: String(preset.label ?? "")
-    })
-  );
 }
 
 let calendarWeatherTickInFlight = false;
@@ -47090,10 +46695,10 @@ async function handleAutomaticCalendarWeatherTick() {
     const weatherState = ensureWeatherState(ledger);
     if (weatherState.calendarAutoApply !== true) return null;
 
-    const { calendar, preset, snapshot } = buildCalendarWeatherSnapshot(weatherState);
+    const { calendar, snapshot } = buildCalendarWeatherSnapshot(weatherState);
     if (!calendar.dayKey || calendar.dayKey === weatherState.calendarLastDayKey) return null;
 
-    await commitWeatherSnapshot(snapshot, { preset, silent: true, sourceLabel: "Automatic Calendar Weather" });
+    await commitWeatherSnapshot(snapshot, { silent: true, sourceLabel: "Automatic Calendar Weather" });
     const calendarNote = await createWeatherCalendarNote(snapshot, getCurrentWorldTimestamp());
     await persistCalendarWeatherRollMetadata(snapshot.id, {
       dayKey: calendar.dayKey,
@@ -47106,152 +46711,16 @@ async function handleAutomaticCalendarWeatherTick() {
   }
 }
 
-async function gmQuickLogCurrentWeather() {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can log weather.");
-    return;
-  }
-  const ledger = getOperationsLedger();
-  const weatherState = ensureWeatherState(ledger);
-  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const defaultPreset =
-    getWeatherPresetByKey(weatherState, sceneSnapshot, "clear") ??
-    buildWeatherSelectionCatalog(weatherState, sceneSnapshot)[0] ??
-    null;
-  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(defaultPreset, sceneSnapshot));
-  const current = getActiveGmQuickPanel();
-  setActiveGmQuickPanel(current === "weather" ? "none" : "weather");
-}
-
-async function gmQuickSelectWeatherPreset(element) {
-  const selectedKey = String(element?.value ?? "").trim();
-  const ledger = getOperationsLedger();
-  const weatherState = ensureWeatherState(ledger);
-  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, selectedKey);
-  if (!selectedPreset) return;
-  const draft = buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot, { selectedKey });
-  setGmQuickWeatherDraft(draft);
-
-  const rawDarkness = Number(draft?.darkness ?? selectedPreset?.darkness ?? sceneSnapshot?.darkness ?? 0);
-  const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
-  const rawVisibility = Number(draft?.visibilityModifier ?? selectedPreset?.visibilityModifier ?? 0);
-  const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
-  const label = String(selectedPreset?.label ?? "Weather").trim() || "Weather";
-  const snapshot = {
-    id: foundry.utils.randomID(),
-    label,
-    weatherId: String(selectedPreset?.weatherId ?? selectedPreset?.key ?? "").trim(),
-    darkness,
-    visibilityModifier,
-    note: String(draft?.note ?? selectedPreset?.note ?? "").trim() || `Weather preset selected: ${label}`,
-    loggedAt: Date.now(),
-    loggedBy: String(game.user?.name ?? "GM")
-  };
-  await updateOperationsLedger((innerLedger) => {
-    const weather = ensureWeatherState(innerLedger);
-    weather.current = snapshot;
-  });
-  await applyWeatherSceneFxForPreset(selectedPreset);
-}
-
-function gmQuickUpdateWeatherDraftField(element) {
-  const field = String(element?.dataset?.field ?? "").trim();
-  if (!field) return;
-  const draft = getGmQuickWeatherDraft() ?? {};
-  if (field === "darkness") {
-    const value = Number(element?.value ?? 0);
-    draft.darkness = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
-  } else if (field === "visibilityModifier") {
-    const value = Number(element?.value ?? 0);
-    draft.visibilityModifier = Number.isFinite(value) ? Math.max(-5, Math.min(5, Math.floor(value))) : 0;
-  } else if (field === "note") {
-    draft.note = String(element?.value ?? "");
-  } else if (field === "presetName") {
-    draft.presetName = String(element?.value ?? "");
-  }
-  setGmQuickWeatherDraft(draft);
-}
-
-async function gmQuickSaveWeatherPreset(element) {
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const draft = getGmQuickWeatherDraft() ?? {};
-  const presetName = String(
-    root?.querySelector("input[name='quickWeatherPresetName']")?.value ?? draft.presetName ?? ""
-  ).trim();
-  if (!presetName) {
-    ui.notifications?.warn("Custom preset name is required.");
-    return;
-  }
-  const presetId = `custom-${foundry.utils.randomID()}`;
-  await updateOperationsLedger((ledger) => {
-    const weather = ensureWeatherState(ledger);
-    weather.customPresets.push(
-      normalizeWeatherPreset({
-        id: presetId,
-        label: presetName,
-        visibilityModifier: Number(draft.visibilityModifier ?? 0),
-        darkness: Number(draft.darkness ?? 0),
-        note: String(draft.note ?? ""),
-        isBuiltIn: false
-      })
-    );
-  });
-  setGmQuickWeatherDraft({
-    ...draft,
-    selectedKey: presetId,
-    presetName
-  });
-  ui.notifications?.info(`Saved custom weather preset: ${presetName}.`);
-}
-
-async function gmQuickDeleteWeatherPreset(element) {
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const selectedKey = String(
-    root?.querySelector("select[name='quickWeatherProfile']")?.value ?? getGmQuickWeatherDraft()?.selectedKey ?? ""
-  ).trim();
-  if (!selectedKey.startsWith("custom-")) {
-    ui.notifications?.warn("Only custom presets can be removed.");
-    return;
-  }
-  await updateOperationsLedger((ledger) => {
-    const weather = ensureWeatherState(ledger);
-    weather.customPresets = weather.customPresets.filter((entry) => String(entry?.id ?? "") !== selectedKey);
-  });
-  const ledger = getOperationsLedger();
-  const weatherState = ensureWeatherState(ledger);
-  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const fallbackPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, "clear");
-  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(fallbackPreset, sceneSnapshot));
-  ui.notifications?.info("Removed custom weather preset.");
-}
-
 async function commitWeatherSnapshot(snapshot, options = {}) {
   if (!snapshot || typeof snapshot !== "object") return null;
   const silent = Boolean(options?.silent);
   const suppressChat = Boolean(options?.suppressChat);
   await updateOperationsLedger((ledger) => {
     const weather = ensureWeatherState(ledger);
-    const environment = ensureEnvironmentState(ledger);
     weather.current = snapshot;
     weather.logs.unshift(snapshot);
     if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
-    environment.logs.unshift({
-      id: snapshot.id,
-      logType: "weather",
-      label: snapshot.label,
-      weatherId: snapshot.weatherId,
-      darkness: snapshot.darkness,
-      visibilityModifier: snapshot.visibilityModifier,
-      note: snapshot.note,
-      createdAt: snapshot.loggedAt,
-      createdBy: snapshot.loggedBy,
-      journalEntryId: String(snapshot.journalEntryId ?? "").trim()
-    });
-    if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
   });
-
-  if (options?.preset) await applyWeatherSceneFxForPreset(options.preset);
 
   const signedModifier =
     Number(snapshot.visibilityModifier ?? 0) > 0
@@ -47293,97 +46762,14 @@ async function commitWeatherSnapshot(snapshot, options = {}) {
   };
 }
 
-async function gmQuickSubmitWeather(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can log weather.");
-    return;
-  }
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const ledger = getOperationsLedger();
-  const weatherState = ensureWeatherState(ledger);
-  const selectedKey = String(root?.querySelector("select[name='quickWeatherProfile']")?.value ?? "").trim();
-  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, selectedKey) ?? {
-    key: "clear",
-    label: "Clear",
-    weatherId: "clear",
-    darkness: sceneSnapshot.darkness,
-    visibilityModifier: sceneSnapshot.visibilityModifier
-  };
-  const draft = getGmQuickWeatherDraft() ?? buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot);
-  const rawDarkness = Number(
-    root?.querySelector("input[name='quickWeatherDarkness']")?.value ??
-      draft.darkness ??
-      selectedPreset.darkness ??
-      sceneSnapshot.darkness ??
-      0
-  );
-  const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
-  const rawVisibility = Number(
-    root?.querySelector("input[name='quickWeatherVisibility']")?.value ??
-      draft.visibilityModifier ??
-      selectedPreset.visibilityModifier ??
-      0
-  );
-  const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
-  const note = String(root?.querySelector("textarea[name='quickWeatherNote']")?.value ?? draft.note ?? "").trim();
-
-  const snapshot = {
-    id: foundry.utils.randomID(),
-    label: String(selectedPreset.label ?? "Weather").trim() || "Weather",
-    weatherId: String(selectedPreset.weatherId ?? selectedPreset.key ?? "").trim(),
-    darkness,
-    visibilityModifier,
-    note: note || `Weather profile logged - darkness ${darkness.toFixed(2)}`,
-    loggedAt: Date.now(),
-    loggedBy: String(game.user?.name ?? "GM")
-  };
-
-  await commitWeatherSnapshot(snapshot, { preset: selectedPreset, sourceLabel: "Manual Weather Log" });
-
-  setGmQuickWeatherDraft({
-    selectedKey,
-    darkness,
-    visibilityModifier,
-    note,
-    presetName: String(selectedPreset.label ?? "")
-  });
-  setActiveGmQuickPanel("none");
-}
-
-async function loadWeatherLogToQuickPanel(logId) {
-  const id = String(logId ?? "").trim();
-  if (!id) return false;
-  const ledger = getOperationsLedger();
-  const weather = ensureWeatherState(ledger);
-  const entry = weather.logs.find((row) => String(row?.id ?? "") === id);
-  if (!entry) return false;
-
-  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const selectedPreset = getWeatherPresetByKey(weather, sceneSnapshot, entry.weatherId);
-  setGmQuickWeatherDraft({
-    ...buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot),
-    selectedKey: String(selectedPreset?.key ?? entry.weatherId ?? ""),
-    darkness: Number(entry.darkness ?? 0),
-    visibilityModifier: Number(entry.visibilityModifier ?? 0),
-    note: String(entry.note ?? "")
-  });
-  setActiveGmQuickPanel("weather");
-  return true;
-}
-
 async function removeWeatherLogById(logId) {
   const id = String(logId ?? "").trim();
   if (!id) return false;
   let removed = false;
   await updateOperationsLedger((ledger) => {
     const weather = ensureWeatherState(ledger);
-    const environment = ensureEnvironmentState(ledger);
     const before = weather.logs.length;
     weather.logs = weather.logs.filter((entry) => String(entry?.id ?? "") !== id);
-    environment.logs = environment.logs.filter(
-      (entry) => !(String(entry?.id ?? "") === id && String(entry?.logType ?? "") === "weather")
-    );
     if (weather.current && String(weather.current.id ?? "") === id) {
       weather.current = weather.logs[0] ?? null;
     }
@@ -47849,8 +47235,7 @@ function buildSessionAutopilotSnapshot() {
 async function logCurrentSceneWeatherSnapshot(options = {}) {
   if (!canAccessAllPlayerOps()) return { logged: false, reason: "gm-only" };
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const weatherState = ensureWeatherState(getOperationsLedger());
-  const previous = weatherState.current ?? null;
+  const previous = ensureWeatherState(getOperationsLedger()).current ?? null;
   const snapshot = {
     id: foundry.utils.randomID(),
     label: String(sceneSnapshot.label ?? previous?.label ?? "Weather").trim() || "Weather",
@@ -47867,9 +47252,7 @@ async function logCurrentSceneWeatherSnapshot(options = {}) {
     loggedAt: Date.now(),
     loggedBy: String(game.user?.name ?? "GM")
   };
-  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, snapshot.weatherId);
   return commitWeatherSnapshot(snapshot, {
-    preset: selectedPreset,
     silent: Boolean(options?.silent),
     suppressChat: Boolean(options?.suppressChat)
   });
@@ -53992,8 +53375,6 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   handleAutomaticUpkeepChatAction,
   schedulePendingSopNoteSync,
   applyAutoInventoryToUnlinkedToken,
-  environmentMoveOriginByToken,
-  maybePromptEnvironmentMovementCheck,
   onMarchTokenMoved,
   onMarchSceneEntry,
   onMarchCombatRound,

@@ -1,45 +1,33 @@
 <nav class="po-tabs po-tabs-sub po-gm-panel-tabs po-gm-ops-tabs" aria-label="GM workspace navigation">
-  <div class="po-gm-nav-group po-gm-nav-group-primary" aria-label="Cockpit">
-    <span class="po-gm-nav-group-label">Cockpit</span>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isCockpit}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="cockpit" aria-current="{{#if isCockpit}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Cockpit</span>
-      <span class="po-gm-tab-sub">Live session actions</span>
-    </button>
-  </div>
-
-  <div class="po-gm-nav-group" aria-label="Run">
-    <span class="po-gm-nav-group-label">Run</span>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isEnvironment}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="environment" aria-current="{{#if isEnvironment}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Environment</span>
-      <span class="po-gm-tab-sub">Weather, terrain, checks</span>
-    </button>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isDowntime}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="downtime" aria-current="{{#if isDowntime}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Downtime</span>
-      <span class="po-gm-tab-sub">Entries and resolution</span>
-    </button>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isMerchants}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="merchants" aria-current="{{#if isMerchants}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Merchants</span>
-      <span class="po-gm-tab-sub">Shops and availability</span>
-    </button>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isLoot}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="loot" aria-current="{{#if isLoot}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Loot</span>
-      <span class="po-gm-tab-sub">Builder and claims</span>
-    </button>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio" aria-current="{{#if isAudio}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Audio</span>
-      <span class="po-gm-tab-sub">Mixes and library</span>
-    </button>
-  </div>
-
-  <div class="po-gm-nav-group" aria-label="Manage">
-    <span class="po-gm-nav-group-label">Manage</span>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction" aria-current="{{#if isFactions}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Reputation</span>
-      <span class="po-gm-tab-sub">Factions and pressure</span>
-    </button>
-    <button type="button" class="po-tab po-gm-nav-tab {{#if isSettings}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="settings" aria-current="{{#if isSettings}}page{{else}}false{{/if}}">
-      <span class="po-gm-tab-title">Settings</span>
-      <span class="po-gm-tab-sub">Module configuration</span>
-    </button>
-  </div>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isCockpit}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="cockpit" aria-current="{{#if isCockpit}}page{{else}}false{{/if}}">
+    <span class="po-gm-tab-title">Cockpit</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isWeather}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="weather" aria-current="{{#if isWeather}}page{{else}}false{{/if}}">
+    <span class="po-gm-tab-title">Weather</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isDowntime}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="downtime" aria-current="{{#if isDowntime}}page{{else}}false{{/if}}">
+    <span class="po-gm-tab-title">Downtime</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isMerchants}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="merchants" aria-current="{{#if isMerchants}}page{{else}}false{{/if}}">
+    <span class="po-gm-tab-title">Merchants</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isLoot}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="loot" aria-current="{{#if isLoot}}page{{else}}false{{/if}}">
+    <span class="po-gm-tab-title">Loot</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio" aria-current="{{#if isAudio}}page{{else}}false{{/if}}">
+    <span class="po-gm-tab-title">Audio</span>
+  </button>
+  <details class="po-gm-nav-more">
+    <summary class="po-tab po-gm-nav-tab">
+      <span class="po-gm-tab-title">More</span>
+    </summary>
+    <div class="po-gm-nav-more-menu">
+      <button type="button" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction" aria-current="{{#if isFactions}}page{{else}}false{{/if}}">
+        <span class="po-gm-tab-title">Reputation</span>
+      </button>
+      <button type="button" class="po-tab po-gm-nav-tab {{#if isSettings}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="settings" aria-current="{{#if isSettings}}page{{else}}false{{/if}}">
+        <span class="po-gm-tab-title">Settings</span>
+      </button>
+    </div>
+  </details>
 </nav>

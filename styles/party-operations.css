@@ -8,7 +8,7 @@
     #rest-watch-player-app,
     #marching-order-app,
     #party-operations-global-modifier-summary,
-    #party-operations-gm-environment-page,
+    #party-operations-gm-weather-page,
     #party-operations-gm-downtime-page,
     #party-operations-gm-merchants-page,
     #party-operations-gm-audio-page,
@@ -3458,33 +3458,38 @@
   color: color-mix(in srgb, var(--po-accent-contrast) 82%, var(--po-text));
 }
 
-.party-operations #po-gm-environment .po-panel-disclosure-body {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--po-space-2) var(--po-space-3);
-  align-items: start;
-}
-
-.party-operations #po-gm-environment .po-hint,
-.party-operations #po-gm-environment .po-environment-hazards-grid,
-.party-operations #po-gm-environment .po-switch,
-.party-operations #po-gm-environment .po-op-divider,
-.party-operations #po-gm-environment .po-section-title,
-.party-operations #po-gm-environment .po-op-action-row,
-.party-operations #po-gm-environment .po-op-summary.is-warn,
-.party-operations #po-gm-environment datalist {
-  grid-column: 1 / -1;
-}
-
-.party-operations #po-gm-environment .po-resource-row,
-.party-operations #po-gm-environment .po-checkbox-target {
+.party-operations .po-gm-ops-tabs .po-gm-nav-more {
+  position: relative;
+  flex: 1 1 120px;
   margin: 0;
 }
 
-@media (max-width: 1080px) {
-  .party-operations #po-gm-environment .po-panel-disclosure-body {
-    grid-template-columns: 1fr;
-  }
+.party-operations .po-gm-ops-tabs .po-gm-nav-more > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.party-operations .po-gm-ops-tabs .po-gm-nav-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.party-operations .po-gm-ops-tabs .po-gm-nav-more-menu {
+  position: absolute;
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: var(--po-space-1);
+  min-width: 160px;
+  margin-top: var(--po-space-1);
+  padding: var(--po-space-1);
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-bg-alt) 96%, var(--po-bg));
+  box-shadow: var(--po-shadow);
+}
+
+.party-operations .po-gm-ops-tabs .po-gm-nav-more-menu .po-tab {
+  width: 100%;
 }
 
 .party-operations .po-gm-quick-actions .po-op-action-row {
@@ -6282,7 +6287,7 @@
     #rest-watch-player-app,
     #marching-order-app,
     #party-operations-global-modifier-summary,
-    #party-operations-gm-environment-page,
+    #party-operations-gm-weather-page,
     #party-operations-gm-downtime-page,
     #party-operations-gm-merchants-page,
     #party-operations-gm-audio-page,
@@ -7933,7 +7938,7 @@
 .party-operations
   :is(
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-loot"],
@@ -7945,7 +7950,7 @@
 .party-operations
   :is(
     .po-window[data-tool="global-modifiers"],
-    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-weather"],
     .po-window[data-tool="gm-downtime"],
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-loot"],
@@ -9093,14 +9098,14 @@
 }
 
 /* =========================================================
-   GM Environment Workspace
+   GM Weather Workspace
    ========================================================= */
-.party-operations .po-window[data-tool="gm-environment"] #po-panel-gm-environment-page {
+.party-operations .po-window[data-tool="gm-weather"] #po-panel-gm-weather-page {
   display: grid;
   gap: 12px;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-hero {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
   gap: 12px;
@@ -9118,60 +9123,54 @@
     0 16px 32px color-mix(in srgb, black 12%, transparent);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-hero-copy {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-hero-copy {
   display: grid;
   gap: 6px;
   align-content: start;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-hero .po-section-title {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-hero .po-section-title {
   font-size: 1.2rem;
   color: var(--po-accent-contrast);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-metric-grid,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-main-grid,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-config-grid,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-lower-grid {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-metric-grid,
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-main-grid {
   display: grid;
   gap: 12px;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-metric-grid {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-metric-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-metric {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-metric {
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 38%, var(--po-border));
   border-radius: 14px;
   background: color-mix(in srgb, var(--po-bg-alt) 84%, transparent);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-metric-label {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-metric-label {
   font-size: 0.68rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--po-muted);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-metric-value {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-metric-value {
   margin-top: 4px;
   font-size: 1rem;
   font-weight: 700;
   color: var(--po-accent-contrast);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-main-grid {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-main-grid {
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-lower-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-card {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-card {
   gap: 12px;
   padding: 14px;
   border-color: color-mix(in srgb, var(--po-border-strong) 38%, var(--po-border));
@@ -9190,33 +9189,24 @@
     0 10px 24px color-mix(in srgb, black 10%, transparent);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-field-grid {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-field-grid.is-compact {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-field-grid.is-compact {
   gap: 8px;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-config-subgrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-list,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-summary-list,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-log-list {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-summary-list,
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-log-list {
   display: grid;
   gap: 8px;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-row,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-summary-item,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-log-row,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-change-row {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-summary-item,
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-log-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -9226,66 +9216,32 @@
   background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-row {
-  justify-content: space-between;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-main,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-copy {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-copy {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-name,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-log-title {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-log-title {
   color: var(--po-accent-contrast);
   font-weight: 700;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-actor-meta,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-log-meta,
-.party-operations .po-window[data-tool="gm-environment"] .po-env-summary-label {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-log-meta,
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-summary-label {
   font-size: 0.74rem;
   color: var(--po-muted);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-summary-item {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-summary-item {
   align-items: flex-start;
   flex-direction: column;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-summary-copy {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-summary-copy {
   color: var(--po-text);
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-config-shell {
-  gap: 12px;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-change-list {
-  display: grid;
-  gap: 8px;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-change-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) auto;
-}
-
-.party-operations .po-window[data-tool="gm-environment"] .po-env-log-row {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-log-row {
   flex-direction: column;
   align-items: stretch;
 }
 
-.party-operations .po-window[data-tool="gm-environment"] .po-env-log-head {
+.party-operations .po-window[data-tool="gm-weather"] .po-weather-log-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -9293,24 +9249,19 @@
 }
 
 @media (max-width: 1280px) {
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-hero,
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-main-grid,
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-config-grid,
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-lower-grid,
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-config-subgrid {
+  .party-operations .po-window[data-tool="gm-weather"] .po-weather-hero,
+  .party-operations .po-window[data-tool="gm-weather"] .po-weather-main-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 820px) {
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-metric-grid,
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-field-grid,
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-change-row {
+  .party-operations .po-window[data-tool="gm-weather"] .po-weather-metric-grid,
+  .party-operations .po-window[data-tool="gm-weather"] .po-weather-field-grid {
     grid-template-columns: 1fr;
   }
 
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-log-head,
-  .party-operations .po-window[data-tool="gm-environment"] .po-env-actor-row {
+  .party-operations .po-window[data-tool="gm-weather"] .po-weather-log-head {
     flex-direction: column;
     align-items: stretch;
   }
