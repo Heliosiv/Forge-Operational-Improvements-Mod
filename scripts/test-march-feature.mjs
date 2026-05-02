@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildMarchActorRosterDialogRows,
@@ -131,6 +132,37 @@ class FakeElement {
     resolveMarchActorImage(actor),
     "portraits/maja.webp",
     "march actor images should prefer actor portrait over generic prototype token art"
+  );
+}
+
+{
+  const privateForgePortrait = "https://assets.forge-vtt.com/private-user-id/portraits/maja.webp";
+  const actor = {
+    img: privateForgePortrait,
+    prototypeToken: { texture: { src: "icons/svg/mystery-man.svg" } },
+    getActiveTokens: () => []
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor, {
+      normalizeImagePath: (value, { fallback = "" } = {}) =>
+        String(value).includes("/private-user-id/") ? fallback : String(value ?? fallback ?? "").trim()
+    }),
+    privateForgePortrait,
+    "march actor images should keep actor portrait URLs when normalization rejects private Forge assets"
+  );
+}
+
+{
+  const marchingOrderTemplate = readFileSync(new URL("../templates/marching-order.hbs", import.meta.url), "utf8");
+  assert.ok(marchingOrderTemplate.includes("po-march-avatar"), "march board should render a dedicated avatar wrapper.");
+  assert.ok(
+    marchingOrderTemplate.includes("po-march-avatar-initial"),
+    "march board avatars should render initials under image assets."
+  );
+  assert.ok(
+    marchingOrderTemplate.includes("hasPortraitImage"),
+    "march board should skip default portrait art and show the initial fallback instead."
   );
 }
 

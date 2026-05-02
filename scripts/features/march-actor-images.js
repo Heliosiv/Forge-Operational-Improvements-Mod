@@ -108,8 +108,11 @@ export function resolveMarchActorImage(
   ];
   const normalizeCandidates = (candidates) =>
     candidates
-      .map((candidate) => normalizeImagePath(candidate, { fallback: "" }))
-      .map((candidate) => String(candidate ?? "").trim())
+      .map((candidate) => {
+        const raw = String(candidate ?? "").trim();
+        if (!raw) return "";
+        return String(normalizeImagePath(raw, { fallback: "" }) || raw).trim();
+      })
       .filter(Boolean);
 
   const normalizedPortraits = normalizeCandidates(portraitCandidates);

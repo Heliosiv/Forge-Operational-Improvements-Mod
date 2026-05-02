@@ -5253,10 +5253,50 @@
   grid-template-columns: 28px 36px minmax(0, 1fr) 30px;
 }
 
+.party-operations [data-tool="marching-order"] .po-march-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--po-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--po-accent) 18%, var(--po-bg-alt));
+  color: var(--po-accent-contrast);
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent);
+}
+
+.party-operations [data-tool="marching-order"] .po-march-avatar-initial {
+  position: relative;
+  z-index: 1;
+  font-size: 0.84rem;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-avatar .po-portrait {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .party-operations [data-tool="marching-order"] .po-march-spacing-detail-row .po-portrait {
   width: 36px;
   height: 36px;
   border-radius: 8px;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-detail-row .po-march-avatar {
+  width: 36px;
+  height: 36px;
 }
 
 .party-operations [data-tool="marching-order"] .po-march-spacing-detail-remove {
@@ -5369,6 +5409,13 @@
 
 .party-operations [data-tool="marching-order"] .po-march-spacing-token.is-draggable {
   cursor: grab;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-token .po-march-avatar {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 7px;
 }
 
 .party-operations [data-tool="marching-order"] .po-march-spacing-token .po-portrait {
@@ -10670,6 +10717,12 @@
   width: 32px;
   height: 32px;
   border-radius: 8px;
+}
+
+.party-operations .po-window[data-tool="marching-order"] .po-march-board-cell .po-march-avatar,
+.party-operations .po-window[data-tool="marching-order"] .po-march-board-staging-chip .po-march-avatar {
+  width: 32px;
+  height: 32px;
 }
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-cell-name,

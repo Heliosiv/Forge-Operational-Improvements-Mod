@@ -77,7 +77,10 @@
         {{#each spacingGrid.orderedActors}}
         <article class="po-march-spacing-detail-row {{#if @root.formationBoard.canManageRoster}}has-roster-actions{{/if}}" data-actor-id="{{actorId}}">
           <span class="po-march-spacing-detail-order">{{orderLabel}}</span>
-          <img class="po-portrait" src="{{img}}" alt="{{name}}" />
+          <span class="po-march-avatar {{#unless hasPortraitImage}}is-fallback{{/unless}}" data-initial="{{initial}}" aria-hidden="true">
+            <span class="po-march-avatar-initial">{{initial}}</span>
+            {{#if hasPortraitImage}}<img class="po-portrait" src="{{img}}" alt="" loading="lazy" />{{/if}}
+          </span>
           <div class="po-march-spacing-detail-main">
             <div class="po-march-spacing-detail-name">{{name}}</div>
             <div class="po-march-spacing-detail-meta">
@@ -136,7 +139,10 @@
           <div class="po-march-spacing-cell {{#if hasActors}}has-actor{{/if}}" role="gridcell" title="{{label}}" data-rank-id="{{rankId}}" data-cell-index="{{cellIndex}}" data-insert-index="{{insertIndex}}">
             {{#each actors}}
             <span class="po-march-spacing-token {{#if hasLight}}has-light{{/if}}" title="{{title}}" data-actor-id="{{actorId}}">
-              <img class="po-portrait" src="{{img}}" alt="{{name}}" />
+              <span class="po-march-avatar {{#unless hasPortraitImage}}is-fallback{{/unless}}" data-initial="{{initial}}" aria-hidden="true">
+                <span class="po-march-avatar-initial">{{initial}}</span>
+                {{#if hasPortraitImage}}<img class="po-portrait" src="{{img}}" alt="" loading="lazy" />{{/if}}
+              </span>
               <label class="po-march-spacing-token-light" title="{{lightTooltip}}" aria-label="Toggle torch for {{name}}" data-actor-id="{{actorId}}">
                 <input type="checkbox" data-action="toggle-light" data-actor-id="{{actorId}}" {{#if hasLight}}checked{{/if}} />
                 <i class="fa-solid fa-fire" aria-hidden="true"></i>
@@ -154,7 +160,10 @@
         <div class="po-march-board-staging-list">
           {{#each formationBoard.unassignedRestActors}}
           <div class="po-march-board-staging-chip {{#if canRemoveFromRoster}}has-roster-actions{{/if}}" data-actor-id="{{id}}">
-            <img class="po-portrait" src="{{img}}" alt="{{name}}" />
+            <span class="po-march-avatar {{#unless hasPortraitImage}}is-fallback{{/unless}}" data-initial="{{initial}}" aria-hidden="true">
+              <span class="po-march-avatar-initial">{{initial}}</span>
+              {{#if hasPortraitImage}}<img class="po-portrait" src="{{img}}" alt="" loading="lazy" />{{/if}}
+            </span>
             <span>{{name}}</span>
             {{#if canRemoveFromRoster}}
             <button type="button" class="po-icon-btn po-march-board-staging-remove" data-action="remove-march-roster-actor" data-actor-id="{{id}}" aria-label="Remove {{name}} from marching setup" title="Remove from marching setup">

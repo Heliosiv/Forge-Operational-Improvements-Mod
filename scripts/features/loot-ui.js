@@ -64,6 +64,12 @@ function updateLootItemOverrideBulkControls(root) {
   });
 }
 
+function getLootItemOverrideSearchInput(root) {
+  const selectionRoot = getLootItemOverrideSelectionRoot(root);
+  const input = selectionRoot?.querySelector?.("[data-po-loot-override-search-input]");
+  return input instanceof HTMLInputElement ? input : null;
+}
+
 function bindLootItemOverrideBulkSelection(root) {
   if (!(root instanceof HTMLElement) || root.dataset.poBoundLootItemOverrideSelection === "1") return;
   root.dataset.poBoundLootItemOverrideSelection = "1";
@@ -83,6 +89,18 @@ function bindLootItemOverrideBulkSelection(root) {
     if (target.matches("[data-po-loot-override-select][data-override-key]")) {
       updateLootItemOverrideBulkControls(root);
     }
+  });
+}
+
+function bindLootItemOverrideSearchSubmit(root, applySearch) {
+  if (!(root instanceof HTMLElement) || root.dataset.poBoundLootItemOverrideSearchSubmit === "1") return;
+  root.dataset.poBoundLootItemOverrideSearchSubmit = "1";
+  root.addEventListener("keydown", (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target?.matches?.("[data-po-loot-override-search-input]")) return;
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    void applySearch(target);
   });
 }
 
@@ -200,11 +218,7 @@ export function createGmLootPageApp(deps) {
     }
 
     _shouldHandleInputAction(action) {
-      return (
-        action === "set-loot-pack-filter" ||
-        action === "set-loot-preview-field" ||
-        action === "set-loot-item-override-search"
-      );
+      return action === "set-loot-pack-filter" || action === "set-loot-preview-field";
     }
 
     _getActionHandlers() {
@@ -283,8 +297,8 @@ export function createGmLootPageApp(deps) {
             failure: "Unable to clear imported world items."
           })
         ),
-        "set-loot-item-override-search": async (actionElement) => {
-          setLootItemOverrideSearch(actionElement);
+        "apply-loot-item-override-search": async () => {
+          setLootItemOverrideSearch(getLootItemOverrideSearchInput(this.element));
           rerender();
         },
         "clear-loot-item-override-search": async () => {
@@ -350,6 +364,10 @@ export function createGmLootPageApp(deps) {
     _bindAdditionalListeners(root) {
       bindLootItemCardIconOpeners(root, openLootItemFromElement);
       bindLootItemOverrideBulkSelection(root);
+      bindLootItemOverrideSearchSubmit(root, (input) => {
+        setLootItemOverrideSearch(input);
+        this._renderWithPreservedState({ force: true, parts: ["main"] });
+      });
       const setDropzoneState = (eventTarget, active) => {
         const dropZone = eventTarget?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return null;

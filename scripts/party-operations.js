@@ -18,7 +18,7 @@ import { createLootPreviewDraftStorage } from "./features/loot-preview-draft-sto
 import { createNoteDraftCache } from "./features/note-draft-cache.js";
 import { createReputationDraftStorage } from "./features/reputation-draft-storage.js";
 import { createWeatherVisibilityHelpers } from "./features/weather-visibility-helpers.js";
-import { resolveMarchActorImage } from "./features/march-actor-images.js";
+import { isDefaultFoundryActorImagePath, resolveMarchActorImage } from "./features/march-actor-images.js";
 import {
   buildGmScreenWeatherPreset,
   buildGmScreenWeatherRecord,
@@ -49861,7 +49861,7 @@ function getMarchRosterActorIds(state = getMarchingOrderState()) {
 function buildMarchRosterActorView(actor, isGM) {
   return {
     ...buildActorView(actor, isGM, "names-passives"),
-    img: getActorTokenImage(actor),
+    ...buildMarchAvatarView(actor),
     canRemoveFromRoster: Boolean(isGM)
   };
 }
@@ -52430,6 +52430,7 @@ function buildMarchSpacingGridContext(state, formationBoard) {
 
   const pushActor = ({ actorId, actor, row, column, offsetLabel }) => {
     const actorView = buildActorView(actor, canAccessAllPlayerOps(), "names-passives");
+    const avatar = buildMarchAvatarView(actor);
     const hasLight = Boolean(state.light?.[actorId]);
     const lightRange = getMarchLightRange(state, actorId);
     const statParts = [];
@@ -52440,12 +52441,7 @@ function buildMarchSpacingGridContext(state, formationBoard) {
     actors.push({
       actorId,
       name: actor.name,
-      img: getActorTokenImage(actor),
-      initial:
-        String(actor.name ?? "?")
-          .trim()
-          .slice(0, 1)
-          .toUpperCase() || "?",
+      ...avatar,
       row,
       column,
       offsetLabel,
@@ -52576,6 +52572,19 @@ function getActorTokenImage(actor) {
     normalizeImagePath: normalizeFoundryAssetImagePath,
     fallback: "icons/svg/mystery-man.svg"
   });
+}
+
+function buildMarchAvatarView(actor) {
+  const img = getActorTokenImage(actor);
+  return {
+    img,
+    initial:
+      String(actor?.name ?? "?")
+        .trim()
+        .slice(0, 1)
+        .toUpperCase() || "?",
+    hasPortraitImage: Boolean(img && !isDefaultFoundryActorImagePath(img))
+  };
 }
 
 function formatClockLabel(hours24, minutes) {

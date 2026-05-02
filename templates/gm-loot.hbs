@@ -356,7 +356,8 @@
               </div>
             </div>
             <div class="po-loot-override-toolbar">
-              <input type="search" class="po-input" placeholder="Search item, type, rarity, tag, or price" value="{{operations.lootSources.itemOverrides.search}}" data-action="set-loot-item-override-search" />
+              <input type="search" class="po-input" placeholder="Search item, type, rarity, tag, or price" value="{{operations.lootSources.itemOverrides.search}}" data-po-loot-override-search-input />
+              <button type="button" class="po-btn po-btn-sm" data-action="apply-loot-item-override-search">Search</button>
               <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-item-override-search">Clear</button>
               <div class="po-segmented-control" role="group" aria-label="Item override filters">
                 <button type="button" class="po-segment {{#if operations.lootSources.itemOverrides.filterAll}}is-active{{/if}}" data-action="set-loot-item-override-filter" data-filter="all">All</button>

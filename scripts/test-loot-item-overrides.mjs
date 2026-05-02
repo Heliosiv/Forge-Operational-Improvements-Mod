@@ -81,7 +81,8 @@ assert.equal(
 const template = fs.readFileSync("templates/gm-loot.hbs", "utf8");
 for (const marker of [
   "Item Overrides",
-  "set-loot-item-override-search",
+  "apply-loot-item-override-search",
+  "data-po-loot-override-search-input",
   "set-loot-item-override-filter",
   "set-loot-item-override-price",
   "toggle-loot-item-override-enabled",

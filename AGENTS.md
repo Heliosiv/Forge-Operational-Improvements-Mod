@@ -8,6 +8,7 @@ This is a Foundry VTT module. Runtime code loads through `module.json` -> `scrip
 
 Run these tools automatically when they apply:
 
+- When the user says `deploy`, `commit and deploy`, `release`, `ship`, or otherwise asks for changes to be made available in Forge, treat it as a stable Forge-recognizable release unless they explicitly say test/preview/local only. The required flow is: inspect `git status --short`; include the requested dirty-tree scope; bump `module.json` to the next version; update `README.md` `Current Build`; run required validation and formatting; run `npm run check`; run `npm run prepare:release`; inspect `release/module.json`, `release/module.zip`, `release/module.zip.sha256.txt`, and `tar -tf release\module.zip`; commit; create an annotated `vX.Y.Z` tag; push `main` and the tag; publish or clobber GitHub release assets for that tag; ensure the Foundry package listing is published for the same version; then run `npm run check:release-publication:forge` and report the exact version Forge Bazaar lists. Do not call a deployment done just because the worktree is clean, a commit exists, or GitHub assets exist.
 - After any JavaScript change, run `npm run lint` and the closest focused `npm run check:*` script for the touched feature.
 - After touching `module.json`, templates, styles, pack paths, or release metadata, run `npm run check:baseline`.
 - Before release/package work, run `npm run check` and then `npm run prepare:release`.
