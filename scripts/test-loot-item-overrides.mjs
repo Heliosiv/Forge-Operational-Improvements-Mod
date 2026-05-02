@@ -8,6 +8,12 @@ import {
   normalizeLootItemOverrides,
   resolveLootItemOverrideKey
 } from "./features/loot-item-overrides.js";
+import {
+  buildLootItemOverrideRowsForEditor,
+  createLootItemOverrideEditorActions,
+  normalizeLootItemOverrideKeyList,
+  pruneLootItemOverrideRecord
+} from "./features/loot-item-override-editor.js";
 
 const packId = "party-operations.party-operations-loot-manifest";
 const plateUuid = `Compendium.${packId}.Item.plate`;
@@ -76,6 +82,122 @@ assert.equal(
   merchantCandidates[0].system.price.value,
   2000,
   "same cloned override data is suitable for merchant candidate pricing"
+);
+
+assert.deepEqual(
+  normalizeLootItemOverrideKeyList([plateUuid, "", plateUuid, "not-a-compendium-uuid", ropeUuid]),
+  [plateUuid, ropeUuid],
+  "bulk key normalization should dedupe valid compendium item override keys"
+);
+assert.deepEqual(
+  pruneLootItemOverrideRecord({ priceGp: "12.5", disabled: false }, { nowMs: 500, userName: "GM Alice" }),
+  { priceGp: 12.5, disabled: false, updatedAt: 500, updatedBy: "GM Alice" },
+  "override pruning should add audit metadata for retained price overrides"
+);
+assert.equal(
+  pruneLootItemOverrideRecord({ priceGp: "", disabled: false }, { nowMs: 500, userName: "GM Alice" }),
+  null,
+  "override pruning should remove rows with no price override and no disabled state"
+);
+
+const overrideRows = buildLootItemOverrideRowsForEditor({
+  documents: sourceDocs,
+  overrides,
+  uiState: { search: "plate", filter: "modified" },
+  sourceId: packId,
+  getLootItemGpValueFromData: (data) => data?.system?.price?.value,
+  getLootRarityFromData: (data) => data?.flags?.["party-operations"]?.rarity,
+  getLootKeywordsFromData: (data) => data?.flags?.["party-operations"]?.keywords ?? [],
+  itemTypeLabels: { equipment: "Equipment" },
+  getLootRarityLabel: (rarity) => String(rarity).toUpperCase()
+});
+
+assert.equal(overrideRows.totalCount, 2, "row builder should count every editable source document");
+assert.equal(overrideRows.filteredCount, 1, "row builder should apply explicit search text");
+assert.equal(overrideRows.rows[0].name, "Plate Armor", "row builder should expose item names");
+assert.equal(overrideRows.rows[0].basePriceLabel, "1,500 gp", "row builder should format base GP values");
+assert.equal(overrideRows.rows[0].effectivePriceLabel, "2,000 gp", "row builder should format override GP values");
+assert.equal(overrideRows.rows[0].itemTypeLabel, "Equipment", "row builder should use provided item type labels");
+assert.equal(overrideRows.rows[0].rarityLabel, "COMMON", "row builder should use provided rarity labels");
+
+const actionWarnings = [];
+const statePatches = [];
+const updateCalls = [];
+const actions = createLootItemOverrideEditorActions({
+  canConfigure: () => true,
+  notifyWarn: (message) => actionWarnings.push(message),
+  setLootItemOverridesUiState: (patch) => statePatches.push(patch),
+  updateLootSourceConfig: async (mutator, options) => {
+    const config = { itemOverrides: { [plateUuid]: { priceGp: 2000, disabled: false } } };
+    mutator(config);
+    updateCalls.push({ config, options });
+  },
+  refreshScope: "operations",
+  now: () => 700,
+  getUserName: () => "GM Bob"
+});
+
+actions.setLootItemOverrideSearch({ value: "rope" });
+actions.setLootItemOverrideFilter({ dataset: { filter: "disabled" } });
+assert.deepEqual(
+  statePatches,
+  [{ search: "rope" }, { filter: "disabled" }],
+  "search and filter actions update UI state"
+);
+
+await actions.setLootItemOverridePrice({ value: "2500", dataset: { overrideKey: plateUuid } });
+assert.equal(updateCalls.at(-1).config.itemOverrides[plateUuid].priceGp, 2500, "price action should update overrides");
+assert.equal(updateCalls.at(-1).config.itemOverrides[plateUuid].updatedBy, "GM Bob", "price action records GM name");
+assert.deepEqual(
+  updateCalls.at(-1).options,
+  { refreshScope: "operations", skipLocalRefresh: true },
+  "override actions should use the operations refresh scope without a local double refresh"
+);
+
+await actions.toggleLootItemOverrideEnabled({ checked: false, dataset: { overrideKey: plateUuid } });
+assert.equal(
+  updateCalls.at(-1).config.itemOverrides[plateUuid].disabled,
+  true,
+  "unchecked enabled toggle disables item"
+);
+
+await actions.resetLootItemOverride({ dataset: { overrideKey: plateUuid } });
+assert.equal(
+  Object.hasOwn(updateCalls.at(-1).config.itemOverrides, plateUuid),
+  false,
+  "single reset action should remove the override"
+);
+
+await actions.setLootItemOverridesEnabledByKeys([plateUuid, ropeUuid], false);
+assert.equal(
+  updateCalls.at(-1).config.itemOverrides[plateUuid].disabled,
+  true,
+  "bulk disable should update selected keys"
+);
+assert.equal(
+  updateCalls.at(-1).config.itemOverrides[ropeUuid].disabled,
+  true,
+  "bulk disable should create selected keys"
+);
+
+await actions.resetLootItemOverridesByKeys([plateUuid]);
+assert.equal(
+  Object.hasOwn(updateCalls.at(-1).config.itemOverrides, plateUuid),
+  false,
+  "bulk reset should delete selected keys"
+);
+assert.deepEqual(actionWarnings, [], "valid override actions should not warn");
+
+const blockedWarnings = [];
+const blockedActions = createLootItemOverrideEditorActions({
+  canConfigure: () => false,
+  notifyWarn: (message) => blockedWarnings.push(message)
+});
+await blockedActions.setLootItemOverridePrice({ value: "1", dataset: { overrideKey: plateUuid } });
+assert.deepEqual(
+  blockedWarnings,
+  ["Only the GM can configure item overrides."],
+  "blocked override writes should use the existing GM-only warning"
 );
 
 const template = fs.readFileSync("templates/gm-loot.hbs", "utf8");

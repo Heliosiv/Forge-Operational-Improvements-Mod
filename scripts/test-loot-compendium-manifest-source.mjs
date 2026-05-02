@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { resolveLootCandidateSources } from "./features/loot-candidate-sources.js";
+
 const runtimeSource = readFileSync("scripts/party-operations.js", "utf8");
 const gmLootTemplate = readFileSync("templates/gm-loot.hbs", "utf8");
 const lootManifestRows = readFileSync("packs/party-operations-loot-manifest.db", "utf8")
@@ -57,11 +59,28 @@ assert.match(
   "roll-table sources should stay disabled in the compendium-backed source path"
 );
 
-assert.match(
-  runtimeSource,
-  /String\(entry\?\.sourceKind \?\? "compendium-pack"\)[\s\S]+!== LOOT_WORLD_ITEMS_SOURCE_ID/,
-  "loot candidate generation should filter out world-item source rows"
-);
+{
+  const sourceWarnings = [];
+  const { enabledSources } = resolveLootCandidateSources(
+    {
+      packs: [
+        { id: "__world_items__", enabled: true },
+        { id: "party-operations.party-operations-loot-manifest", enabled: true, sourceKind: "compendium-pack" },
+        { id: "table.rolls", enabled: true, sourceKind: "roll-table" }
+      ]
+    },
+    {
+      worldItemsSourceId: "__world_items__",
+      warnings: sourceWarnings
+    }
+  );
+  assert.deepEqual(sourceWarnings, [], "source filtering should not warn when a compendium source remains");
+  assert.deepEqual(
+    enabledSources.map((entry) => entry.id),
+    ["party-operations.party-operations-loot-manifest"],
+    "loot candidate generation should filter out world-item and non-compendium source rows"
+  );
+}
 
 assert.match(
   runtimeSource,

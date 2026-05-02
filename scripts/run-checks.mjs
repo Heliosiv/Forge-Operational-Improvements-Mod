@@ -41,6 +41,7 @@ const CHECK_COMMANDS = [
   [process.execPath, ["scripts/test-perf.mjs"]],
   [process.execPath, ["scripts/test-permission-split.mjs"]],
   [process.execPath, ["scripts/test-party-operations-monolith-guards.mjs"]],
+  [process.execPath, ["scripts/test-refactor-feature-manifest.mjs"]],
   [process.execPath, ["scripts/test-player-ui-overrides.mjs"]],
   [process.execPath, ["scripts/test-player-hub-actions.mjs"]],
   [process.execPath, ["scripts/test-player-request-handlers.mjs"]],
