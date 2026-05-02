@@ -56,10 +56,11 @@ async function removeOldArchives(rootDir, keepPaths = []) {
     const normalized = normalizePath(filePath);
     if (keep.has(normalized)) continue;
     const lowerName = path.basename(normalized).toLowerCase();
-    const shouldDelete = lowerName.endsWith(".zip")
-      || lowerName.endsWith(".zip.old")
-      || lowerName.endsWith(".zip.sha256.txt")
-      || lowerName.endsWith(".sha256.txt");
+    const shouldDelete =
+      lowerName.endsWith(".zip") ||
+      lowerName.endsWith(".zip.old") ||
+      lowerName.endsWith(".zip.sha256.txt") ||
+      lowerName.endsWith(".sha256.txt");
     if (!shouldDelete) continue;
     await rm(normalized, { force: true });
   }
@@ -70,32 +71,30 @@ async function ensureFileExists(filePath) {
 }
 
 async function writeReleaseNotes(outputDir, version) {
-  const content = [
-    "# Party Operations Release Notes",
-    "",
-    `Release: v${String(version ?? "").trim() || "dev"}`
-  ].join("\n") + "\n";
+  const content =
+    ["# Party Operations Release Notes", "", `Release: v${String(version ?? "").trim() || "dev"}`].join("\n") + "\n";
   await writeFile(path.join(outputDir, "RELEASE_NOTES.md"), content, "utf8");
   await writeFile(path.join(outputDir, "staging", "RELEASE_NOTES.md"), content, "utf8");
 }
 
 async function writeDeployReadme(outputDir) {
-  const content = [
-    "# Party Operations Deployment",
-    "",
-    "Deploy and distribute using `release/module.zip` only.",
-    "",
-    "- `module.zip` is the canonical release artifact.",
-    "- Every `npm run prepare:release` run overwrites that same zip.",
-    "- Do not keep or publish versioned zip copies.",
-    "- `RELEASE_NOTES.md` contains the current release label bundled with the zip.",
-    "",
-    "Canonical command:",
-    "",
-    "```powershell",
-    "npm run prepare:release",
-    "```"
-  ].join("\n") + "\n";
+  const content =
+    [
+      "# Party Operations Deployment",
+      "",
+      "Deploy and distribute using `release/module.zip` only.",
+      "",
+      "- `module.zip` is the canonical release artifact.",
+      "- Every `npm run prepare:release` run overwrites that same zip.",
+      "- Do not keep or publish versioned zip copies.",
+      "- `RELEASE_NOTES.md` contains the current release label bundled with the zip.",
+      "",
+      "Canonical command:",
+      "",
+      "```powershell",
+      "npm run prepare:release",
+      "```"
+    ].join("\n") + "\n";
   await writeFile(path.join(outputDir, "README.md"), content, "utf8");
   await writeFile(path.join(outputDir, "staging", "README.md"), content, "utf8");
 }
@@ -107,22 +106,31 @@ async function writeSha256(zipPath) {
 }
 
 function runPreparePackage(manifestPath, outputDir) {
-  const result = spawnSync(process.execPath, [
-    path.join(repoRoot, "scripts", "prepare-package.mjs"),
-    "--manifest",
-    manifestPath,
-    "--output",
-    outputDir
-  ], {
-    cwd: repoRoot,
-    stdio: "inherit"
-  });
+  const result = spawnSync(
+    process.execPath,
+    [path.join(repoRoot, "scripts", "prepare-package.mjs"), "--manifest", manifestPath, "--output", outputDir],
+    {
+      cwd: repoRoot,
+      stdio: "inherit"
+    }
+  );
   if (result.status !== 0) {
     throw new Error(`prepare-package.mjs failed with exit code ${result.status ?? 1}`);
   }
 }
 
 function runCompressArchive(stagingDir, zipPath) {
+  if (process.platform !== "win32") {
+    const result = spawnSync("zip", ["-r", zipPath, "."], {
+      cwd: stagingDir,
+      stdio: "inherit"
+    });
+    if (result.status !== 0) {
+      throw new Error(`zip failed with exit code ${result.status ?? 1}`);
+    }
+    return;
+  }
+
   const escapedStaging = stagingDir.replace(/'/g, "''");
   const escapedZip = zipPath.replace(/'/g, "''");
   const command = [
@@ -130,13 +138,7 @@ function runCompressArchive(stagingDir, zipPath) {
     `if (Test-Path '${escapedZip}') { Remove-Item '${escapedZip}' -Force }`,
     `Compress-Archive -Path (Join-Path '${escapedStaging}' '*') -DestinationPath '${escapedZip}' -CompressionLevel Optimal`
   ].join("; ");
-  const result = spawnSync("powershell", [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    command
-  ], {
+  const result = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
     cwd: repoRoot,
     stdio: "inherit"
   });
