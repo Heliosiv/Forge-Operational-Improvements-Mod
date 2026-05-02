@@ -30,6 +30,7 @@ const CHECK_COMMANDS = [
   [process.execPath, ["scripts/test-downtime-ui-draft-storage.mjs"]],
   [process.execPath, ["scripts/test-gather-history-view.mjs"]],
   [process.execPath, ["scripts/test-gather-settings.mjs"]],
+  [process.execPath, ["scripts/test-gm-compact-navigation-css.mjs"]],
   [process.execPath, ["scripts/test-gm-downtime-view.mjs"]],
   [process.execPath, ["scripts/test-integration-access.mjs"]],
   [process.execPath, ["scripts/test-launcher-state.mjs"]],

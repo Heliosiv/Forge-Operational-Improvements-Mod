@@ -307,6 +307,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
     .po-window[data-tool="gm-weather"],
@@ -1658,12 +1659,14 @@
     .po-window[data-tool="gm-loot"]
   )
   .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
-.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+.party-operations#marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
   position: sticky;
   top: 0;
   z-index: 7;
   display: flex !important;
   flex-wrap: wrap;
+  grid-template-columns: none !important;
   align-items: center;
   align-content: flex-start;
   gap: 6px;
@@ -1679,6 +1682,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
     .po-window[data-tool="gm-weather"],
@@ -1689,7 +1693,8 @@
   )
   .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
   .po-tab,
-.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab,
+.party-operations#marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
   flex: 0 0 auto !important;
   width: auto !important;
   min-width: 0;
@@ -1710,6 +1715,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
     .po-window[data-tool="gm-weather"],
@@ -1720,7 +1726,8 @@
   )
   .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
   .po-gm-tab-title,
-.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-title {
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-title,
+.party-operations#marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-title {
   font-size: inherit;
   line-height: inherit;
   letter-spacing: 0;
@@ -1729,6 +1736,7 @@
 .party-operations
   :is(
     .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
     .po-window[data-tool="global-modifiers"],
     .po-window[data-tool="gm-factions"],
     .po-window[data-tool="gm-weather"],
@@ -1739,14 +1747,107 @@
   )
   .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
   .po-gm-tab-sub,
-.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-sub {
+.party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-sub,
+.party-operations#marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-sub {
   display: none;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-header {
+  min-height: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-header-main {
+  flex: 0 1 auto;
+  gap: 0;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-title {
+  font-size: 0.84rem;
+  line-height: 1.05;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-subtitle {
+  font-size: 0.68rem;
+  line-height: 1.1;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-tabs-main-header {
+  flex: 0 1 auto;
+  gap: 4px;
+  justify-content: flex-start;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-header
+  .po-tabs-main-header
+  .po-tab {
+  min-height: 28px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  clip-path: none;
+  font-size: 0.78rem;
+  line-height: 1.1;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-controls {
+  gap: 4px;
+}
+
+.party-operations
+  :is(
+    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+    .po-window[data-tool="operations-shell"][data-main-tab="gm"]
+  )
+  .po-controls
+  .po-icon-btn {
+  min-width: 30px;
+  width: 30px;
+  min-height: 28px;
+  padding: 3px;
 }
 
 @media (max-width: 720px) {
   .party-operations
     :is(
       .po-window[data-tool="rest-watch"][data-main-tab="gm"],
+      .po-window[data-tool="operations-shell"][data-main-tab="gm"],
       .po-window[data-tool="global-modifiers"],
       .po-window[data-tool="gm-factions"],
       .po-window[data-tool="gm-weather"],
@@ -1757,7 +1858,8 @@
     )
     .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
     .po-tab,
-  .party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
+  .party-operations #marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab,
+  .party-operations#marching-order-app .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
     flex: 1 1 calc(50% - 6px) !important;
   }
 }

@@ -23,6 +23,7 @@
     "check:downtime-ui-draft-storage": "node scripts/test-downtime-ui-draft-storage.mjs",
     "check:gather-history-view": "node scripts/test-gather-history-view.mjs",
     "check:gather-settings": "node scripts/test-gather-settings.mjs",
+    "check:gm-compact-navigation-css": "node scripts/test-gm-compact-navigation-css.mjs",
     "check:gm-downtime-view": "node scripts/test-gm-downtime-view.mjs",
     "check:governance": "node scripts/validate-governance.mjs",
     "check:integration-access": "node scripts/test-integration-access.mjs",
