@@ -21,10 +21,9 @@
           <div class="po-gm-page-eyebrow">Simple Calendar Weather</div>
           <div class="po-pill">{{#if weatherTools.calendar.simpleCalendarActive}}Calendar Connected{{else}}Calendar Unavailable{{/if}}</div>
           <h2 class="po-section-title">Weather</h2>
-          <div class="po-op-summary">{{weatherTools.calendar.dateLabel}} - {{weatherTools.calendar.climate}} {{weatherTools.calendar.season}}</div>
+          <div class="po-op-summary">{{weatherTools.calendar.dateLabel}} - {{weatherTools.calendar.locationLabel}} - {{weatherTools.calendar.climate}} {{weatherTools.calendar.season}}</div>
           <div class="po-op-action-row po-gm-page-actions">
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-weather-roll">Roll And Log Weather</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-clear-terrain">Clear Terrain</button>
           </div>
         </div>
         <div class="po-weather-metric-grid po-gm-page-stat-grid" role="list" aria-label="Weather summary">
@@ -33,12 +32,12 @@
             <div class="po-weather-metric-value">{{weather.currentLabel}}</div>
           </div>
           <div class="po-weather-metric po-gm-page-stat" role="listitem">
-            <div class="po-weather-metric-label">Visibility</div>
-            <div class="po-weather-metric-value">{{weather.currentVisibilityModifier}}</div>
+            <div class="po-weather-metric-label">Moon</div>
+            <div class="po-weather-metric-value">{{weatherTools.calendar.lunarSummary}}</div>
           </div>
           <div class="po-weather-metric po-gm-page-stat" role="listitem">
-            <div class="po-weather-metric-label">Darkness</div>
-            <div class="po-weather-metric-value">{{weather.currentDarkness}}</div>
+            <div class="po-weather-metric-label">Visibility</div>
+            <div class="po-weather-metric-value">{{weather.currentVisibilityModifier}}</div>
           </div>
           <div class="po-weather-metric po-gm-page-stat" role="listitem">
             <div class="po-weather-metric-label">Last Roll</div>
@@ -51,17 +50,17 @@
         <section class="po-gm-section po-weather-card">
           <div class="po-collapsible-head">
             <div>
-              <div class="po-section-title">Climate</div>
-              <div class="po-hint">Choose the regional climate used by the GM screen weather generator.</div>
+              <div class="po-section-title">Current Location</div>
+              <div class="po-hint">Select where the players are right now; climate and terrain are derived from that location.</div>
             </div>
-            <div class="po-pill">{{weatherTools.calendar.climateModeLabel}}</div>
+            <div class="po-pill">{{weatherTools.calendar.climate}} {{weatherTools.calendar.season}}</div>
           </div>
 
           <div class="po-weather-field-grid is-compact">
             <label class="po-resource-row">
-              <span>Climate</span>
-              <select name="calendarWeatherClimate" class="po-select" data-action="gm-weather-set-climate">
-                {{#each weatherTools.calendar.climateOptions}}
+              <span>Location</span>
+              <select name="calendarWeatherLocation" class="po-select" data-action="gm-weather-set-location">
+                {{#each weatherTools.calendar.locationOptions}}
                 <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                 {{/each}}
               </select>
@@ -71,101 +70,86 @@
               <span>Auto-Log Daily</span>
               <input type="checkbox" data-action="gm-weather-toggle-auto" {{#if weatherTools.calendar.autoApply}}checked{{/if}} />
             </label>
-
-            <label class="po-resource-row">
-              <span>Use Terrain Climate</span>
-              <input type="checkbox" data-action="gm-weather-toggle-auto-climate" {{#if weatherTools.calendar.climateAutoApply}}checked{{/if}} />
-            </label>
           </div>
 
           <div class="po-weather-summary-list">
             <div class="po-weather-summary-item">
-              <span class="po-weather-summary-label">Suggested Climate</span>
-              <span class="po-weather-summary-copy">{{weatherTools.calendar.recommendedClimate}} - {{weatherTools.calendar.recommendedClimateConfidence}} - {{weatherTools.calendar.recommendedClimateReason}}</span>
+              <span class="po-weather-summary-label">Pattern</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.locationDescription}}</span>
             </div>
             <div class="po-weather-summary-item">
-              <span class="po-weather-summary-label">Terrain Profile</span>
+              <span class="po-weather-summary-label">Terrain Effect</span>
               <span class="po-weather-summary-copy">{{weatherTools.calendar.terrainSummary}}</span>
             </div>
-          </div>
-
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-apply-suggested-climate" {{#unless weatherTools.calendar.canApplyRecommendedClimate}}disabled{{/unless}}>Apply Suggested Climate</button>
           </div>
         </section>
 
         <section class="po-gm-section po-weather-card">
           <div class="po-collapsible-head">
             <div>
-              <div class="po-section-title">Terrain</div>
-              <div class="po-hint">Set the region profile that shapes temperature, rainfall, visibility, and travel impact.</div>
+              <div class="po-section-title">Moon And Season</div>
+              <div class="po-hint">Simple Calendar date, season, and lunar phase shape the generated weather.</div>
             </div>
+            <div class="po-pill">{{weatherTools.calendar.lunarSource}}</div>
           </div>
 
-          <div class="po-weather-field-grid is-compact">
-            {{#each weatherTools.calendar.terrainRows}}
-            <label class="po-resource-row" title="{{hint}}">
-              <span>{{label}}</span>
-              <input type="number" min="0" max="20" step="1" class="po-input" data-action="gm-weather-set-terrain" data-terrain-key="{{key}}" value="{{value}}" />
-            </label>
-            {{/each}}
+          <div class="po-weather-summary-list">
+            <div class="po-weather-summary-item">
+              <span class="po-weather-summary-label">Season</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.season}} - {{weatherTools.calendar.dateLabel}}</span>
+            </div>
+            <div class="po-weather-summary-item">
+              <span class="po-weather-summary-label">Moon</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarSummary}} - {{weatherTools.calendar.lunarIlluminationPercent}}% illumination</span>
+            </div>
+            <div class="po-weather-summary-item">
+              <span class="po-weather-summary-label">Tides</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarTideLabel}}</span>
+            </div>
+            <div class="po-weather-summary-item">
+              <span class="po-weather-summary-label">Significance</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarSignificance}}</span>
+            </div>
           </div>
         </section>
       </div>
 
-      <details class="po-panel-disclosure po-gm-advanced-disclosure">
-        <summary class="po-panel-disclosure-summary">
-          <span class="po-section-title">Map PNG Terrain Import</span>
-          <span class="po-op-summary">Optional helper for filling the terrain profile from a region map</span>
-        </summary>
-        <div class="po-panel-disclosure-body">
-          <div class="po-weather-field-grid is-compact">
-            <label class="po-resource-row">
-              <span>Terrain PNG</span>
-              <input type="text" class="po-input" data-action="gm-weather-set-terrain-image" value="{{weatherTools.calendar.terrainImagePath}}" placeholder="worlds/your-world/maps/county.png" />
-            </label>
-
-            <div class="po-weather-summary-item">
-              <span class="po-weather-summary-label">PNG Import</span>
-              <span class="po-weather-summary-copy">
-                {{#if weatherTools.calendar.terrainImportedSummary}}
-                {{weatherTools.calendar.terrainImportedSummary}} - {{weatherTools.calendar.terrainImportedAtLabel}}
-                {{else}}
-                {{#if weatherTools.calendar.hasTerrainImagePath}}
-                {{weatherTools.calendar.terrainImagePath}} - not imported
-                {{else}}
-                Choose a county/map PNG, then import terrain.
-                {{/if}}
-                {{/if}}
-              </span>
-            </div>
+      <section class="po-gm-section po-weather-card">
+        <div class="po-collapsible-head">
+          <div>
+            <div class="po-section-title">Forecast</div>
+            <div class="po-hint">Preview the location pattern against upcoming Simple Calendar days.</div>
           </div>
-
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-browse-terrain-image">Browse PNG</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-preview-terrain-image" {{#unless weatherTools.calendar.hasTerrainImagePath}}disabled{{/unless}}>Preview PNG Terrain</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-import-terrain-image" {{#unless weatherTools.calendar.hasTerrainImagePath}}disabled{{/unless}}>Import PNG Terrain</button>
-            {{#if weatherTools.calendar.hasTerrainJournalEntry}}
-            <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{weatherTools.calendar.terrainJournalEntryId}}">Open Terrain Archive</button>
-            {{/if}}
-          </div>
-
-          {{#if weatherTools.calendar.hasTerrainImageAnalysis}}
-          <div class="po-weather-summary-list">
-            <div class="po-weather-summary-item">
-              <span class="po-weather-summary-label">PNG Analysis</span>
-              <span class="po-weather-summary-copy">{{weatherTools.calendar.terrainAnalysisModeLabel}} - {{weatherTools.calendar.terrainAnalysisSummary}} - confidence {{weatherTools.calendar.terrainImageAnalysis.confidenceLabel}} - ignored {{weatherTools.calendar.terrainImageAnalysis.ignoredPercentLabel}}</span>
-            </div>
-            {{#each weatherTools.calendar.terrainAnalysisRows}}
-            <div class="po-weather-summary-item">
-              <span class="po-weather-summary-label">{{label}}</span>
-              <span class="po-weather-summary-copy">Weight {{value}} - {{pixelCount}} px - {{percentLabel}}</span>
-            </div>
-            {{/each}}
-          </div>
-          {{/if}}
+          <label class="po-resource-row">
+            <span>Range</span>
+            <select name="calendarWeatherForecastDays" class="po-select" data-action="gm-weather-set-forecast-days">
+              {{#each weatherTools.calendar.forecastDayOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
         </div>
-      </details>
+        {{#if weatherTools.calendar.hasForecastRows}}
+        <div class="po-weather-log-list">
+          {{#each weatherTools.calendar.forecastRows}}
+          <article class="po-weather-log-row">
+            <div class="po-weather-log-head">
+              <div>
+                <div class="po-weather-log-title">{{offsetLabel}} - {{weatherLabel}}</div>
+                <div class="po-weather-log-meta">{{dateLabel}} - {{season}} - {{tempLabel}} - Rain {{rainLabel}}</div>
+              </div>
+              <span class="po-pill">{{lunarSignificanceLabel}}</span>
+            </div>
+            <div class="po-op-summary">Moon: {{lunarSummary}} - {{lunarTideLabel}}</div>
+            <div class="po-op-summary">Hazards: {{hazardLabel}}</div>
+            <div class="po-op-summary">{{summary}}</div>
+          </article>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="po-op-summary">No forecast rows available.</div>
+        {{/if}}
+      </section>
 
       <section class="po-gm-section po-weather-card">
         <div class="po-collapsible-head">

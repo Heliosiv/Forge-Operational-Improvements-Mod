@@ -1,6 +1,6 @@
 # Downtime And Operations Actions
 
-Source: legacy/party-operations-monolith.js:33100-41500
+Source: legacy/party-operations-monolith.js:33108-41508
 Feature IDs: downtime, operations, loot
 Target Modules: scripts/features/downtime-*, scripts/features/operations-*
 

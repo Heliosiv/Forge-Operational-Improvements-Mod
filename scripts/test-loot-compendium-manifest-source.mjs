@@ -81,6 +81,18 @@ assert.match(
   "GM Loot should expose world rarity sliders for compendium outcomes"
 );
 
+assert.match(
+  runtimeSource,
+  /function normalizeLootRaritySelectionWeight\([\s\S]+Math\.max\(0,\s*numeric\)/,
+  "loot rarity slider weights should preserve true zero values"
+);
+
+assert.equal(
+  runtimeSource.includes("Math.max(0.01, Number(rarityWeights.common"),
+  false,
+  "loot rarity slider weights should not coerce zero rarity settings back above zero"
+);
+
 const armorValueExpectations = new Map([
   ["Berryl Gemstone", 250],
   ["Breastplate", 400],

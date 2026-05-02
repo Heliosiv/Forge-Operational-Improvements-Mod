@@ -5239,10 +5239,20 @@
   background: color-mix(in srgb, var(--po-bg-alt) 68%, transparent);
 }
 
+.party-operations [data-tool="marching-order"] .po-march-spacing-detail-row.has-roster-actions {
+  grid-template-columns: 28px 36px minmax(0, 1fr) 30px;
+}
+
 .party-operations [data-tool="marching-order"] .po-march-spacing-detail-row .po-portrait {
   width: 36px;
   height: 36px;
   border-radius: 8px;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-detail-remove {
+  align-self: center;
+  width: 28px;
+  height: 28px;
 }
 
 .party-operations [data-tool="marching-order"] .po-march-spacing-detail-order {
@@ -10753,6 +10763,16 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
   cursor: default;
+}
+
+.party-operations .po-window[data-tool="marching-order"] .po-march-board-staging-chip.has-roster-actions {
+  grid-template-columns: 38px minmax(0, 1fr) 28px;
+}
+
+.party-operations .po-window[data-tool="marching-order"] .po-march-board-staging-remove {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
 }
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-staging-chip.is-draggable {

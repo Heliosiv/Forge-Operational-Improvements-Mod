@@ -1,6 +1,6 @@
 # Loot Runtime Actions
 
-Source: legacy/party-operations-monolith.js:41501-44578
+Source: legacy/party-operations-monolith.js:41509-44586
 Feature IDs: loot, merchants
 Target Modules: scripts/features/loot-runtime-*
 

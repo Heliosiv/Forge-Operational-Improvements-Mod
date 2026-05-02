@@ -65,7 +65,7 @@
   {
     "id": "loot-engine",
     "label": "Loot Generation Engine",
-    "source": "legacy/party-operations-monolith.js:16205-22956",
+    "source": "legacy/party-operations-monolith.js:16205-22964",
     "slicePath": "legacy/slices/08-loot-engine.txt",
     "featureIds": ["loot"],
     "targetModules": ["scripts/features/loot-engine-*"],
@@ -74,7 +74,7 @@
   {
     "id": "operations-ledger-loot-claims",
     "label": "Operations Ledger And Loot Claim State",
-    "source": "legacy/party-operations-monolith.js:22957-25729",
+    "source": "legacy/party-operations-monolith.js:22965-25737",
     "slicePath": "legacy/slices/09-operations-ledger-loot-claims.txt",
     "featureIds": ["operations", "loot", "journal"],
     "targetModules": ["scripts/features/operations-*", "scripts/features/loot-claims-*"],
@@ -83,7 +83,7 @@
   {
     "id": "merchants",
     "label": "Merchant Domain And Workflows",
-    "source": "legacy/party-operations-monolith.js:25730-33099",
+    "source": "legacy/party-operations-monolith.js:25738-33107",
     "slicePath": "legacy/slices/10-merchants.txt",
     "featureIds": ["merchants"],
     "targetModules": ["scripts/features/merchant-domain.js", "scripts/features/merchants-ui.js"],
@@ -92,7 +92,7 @@
   {
     "id": "downtime-operations-actions",
     "label": "Downtime And Operations Actions",
-    "source": "legacy/party-operations-monolith.js:33100-41500",
+    "source": "legacy/party-operations-monolith.js:33108-41508",
     "slicePath": "legacy/slices/11-downtime-operations-actions.txt",
     "featureIds": ["downtime", "operations", "loot"],
     "targetModules": ["scripts/features/downtime-*", "scripts/features/operations-*"],
@@ -101,7 +101,7 @@
   {
     "id": "loot-runtime-actions",
     "label": "Loot Runtime Actions",
-    "source": "legacy/party-operations-monolith.js:41501-44578",
+    "source": "legacy/party-operations-monolith.js:41509-44586",
     "slicePath": "legacy/slices/12-loot-runtime-actions.txt",
     "featureIds": ["loot", "merchants"],
     "targetModules": ["scripts/features/loot-runtime-*"],
@@ -110,7 +110,7 @@
   {
     "id": "weather-upkeep-autopilot",
     "label": "Weather, Upkeep, And Session Autopilot",
-    "source": "legacy/party-operations-monolith.js:44579-45609",
+    "source": "legacy/party-operations-monolith.js:44587-45617",
     "slicePath": "legacy/slices/13-weather-upkeep-autopilot.txt",
     "featureIds": ["operations", "gm-pages"],
     "targetModules": ["scripts/features/weather-*", "scripts/features/upkeep-*"],
@@ -119,7 +119,7 @@
   {
     "id": "injury-recovery",
     "label": "Injury Recovery",
-    "source": "legacy/party-operations-monolith.js:45610-46899",
+    "source": "legacy/party-operations-monolith.js:45618-46907",
     "slicePath": "legacy/slices/14-injury-recovery.txt",
     "featureIds": ["operations", "gm-pages"],
     "targetModules": ["scripts/features/injury-*"],
@@ -128,7 +128,7 @@
   {
     "id": "rest-march-runtime",
     "label": "Rest Watch And March Runtime",
-    "source": "legacy/party-operations-monolith.js:46900-51037",
+    "source": "legacy/party-operations-monolith.js:46908-51045",
     "slicePath": "legacy/slices/15-rest-march-runtime.txt",
     "featureIds": ["rest-watch", "march"],
     "targetModules": ["scripts/features/rest-feature.js", "scripts/features/march-feature.js", "scripts/apps"],
@@ -137,7 +137,7 @@
   {
     "id": "api-socket-bootstrap",
     "label": "API, Socket Handler, And Runtime Bootstrap",
-    "source": "legacy/party-operations-monolith.js:51038-51667",
+    "source": "legacy/party-operations-monolith.js:51046-51675",
     "slicePath": "legacy/slices/16-api-socket-bootstrap.txt",
     "featureIds": ["runtime-shell", "sockets", "hooks", "rest-watch"],
     "targetModules": ["scripts/runtime", "scripts/core/socket-*", "scripts/bootstrap"],

@@ -152,6 +152,23 @@ assert.ok(
   "Spend weighting should prefer the corrective pick when it closes more of the budget delta."
 );
 
+const zeroRarityWeight = getLootBudgetPhaseCandidateWeight(
+  { name: "Disabled Rare", itemValueGp: 50, rarity: "rare", rarityWeight: 0 },
+  {
+    budgetContext: {
+      targetItemBudgetGp: 100,
+      targetCount: 1,
+      itemToleranceGp: 30,
+      toleranceGp: 30
+    },
+    selectedTotalValueGp: 0,
+    selected: [],
+    draft: { mode: "horde" }
+  },
+  "spend"
+);
+assert.equal(zeroRarityWeight, 0, "A zero rarity slider should remove that rarity from weighted loot picks.");
+
 const fillState = {
   budgetContext: {
     targetItemBudgetGp: 100,

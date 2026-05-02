@@ -55,10 +55,14 @@ function validateManifestUrl(manifest, key, errors) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const mode = String(args.mode ?? "ci").trim().toLowerCase();
+  const mode = String(args.mode ?? "ci")
+    .trim()
+    .toLowerCase();
   const expectedTag = String(args["expected-tag"] ?? "").trim();
   const manifestPath = path.join(repoRoot, "module.json");
+  const readmePath = path.join(repoRoot, "README.md");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const readme = await readFile(readmePath, "utf8");
   const errors = [];
 
   const version = String(manifest?.version ?? "").trim();
@@ -68,7 +72,9 @@ async function main() {
     errors.push("Manifest version must match x.y.z or x.y.z-test.n.");
   }
 
-  const esmodules = Array.isArray(manifest?.esmodules) ? manifest.esmodules.map((entry) => String(entry ?? "").trim()).filter(Boolean) : [];
+  const esmodules = Array.isArray(manifest?.esmodules)
+    ? manifest.esmodules.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
   if (esmodules.length !== 1 || esmodules[0] !== "scripts/module.js") {
     errors.push("Manifest esmodules must contain exactly scripts/module.js.");
   }
@@ -86,6 +92,12 @@ async function main() {
   const repoUrl = String(manifest?.url ?? "").trim();
   const manifestUrl = String(manifest?.manifest ?? "").trim();
   const downloadUrl = String(manifest?.download ?? "").trim();
+  const readmeBuildMatch = readme.match(/The current repository manifest version is `([^`]+)`\./);
+  if (!readmeBuildMatch) {
+    errors.push("README Current Build line is required.");
+  } else if (version && readmeBuildMatch[1] !== version) {
+    errors.push(`README Current Build ${readmeBuildMatch[1]} must match manifest version ${version}.`);
+  }
   if (repoUrl && manifestUrl && !manifestUrl.startsWith(`${repoUrl}${RELEASE_DOWNLOAD_PREFIX}`)) {
     errors.push("Manifest manifest URL must point at the repository latest release download path.");
   }

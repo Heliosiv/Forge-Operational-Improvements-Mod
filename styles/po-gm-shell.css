@@ -1396,83 +1396,6 @@
   border-radius: 14px;
 }
 
-.party-operations
-  :is(
-    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
-    .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-weather"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  )
-  .po-gm-nav-group {
-  display: flex;
-  flex: 1 1 240px;
-  gap: 6px;
-  align-items: stretch;
-  min-width: min(100%, 240px);
-}
-
-.party-operations
-  :is(
-    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
-    .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-weather"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  )
-  .po-gm-nav-group-primary {
-  flex: 0 1 260px;
-}
-
-.party-operations
-  :is(
-    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
-    .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-weather"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  )
-  .po-gm-nav-group-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 70px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
-  border-radius: calc(var(--po-radius) - 2px);
-  background: color-mix(in srgb, var(--po-bg-alt) 88%, transparent);
-  color: var(--po-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.party-operations
-  :is(
-    .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-    .po-window[data-tool="operations-shell"][data-main-tab="gm"],
-    .po-window[data-tool="gm-factions"],
-    .po-window[data-tool="gm-weather"],
-    .po-window[data-tool="gm-downtime"],
-    .po-window[data-tool="gm-merchants"],
-    .po-window[data-tool="gm-audio"],
-    .po-window[data-tool="gm-loot"]
-  )
-  .po-gm-nav-group
-  .po-tab {
-  flex: 1 1 126px;
-  width: auto;
-}
-
 .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit {
   gap: 12px;
 }
@@ -1564,21 +1487,6 @@
 }
 
 @media (max-width: 720px) {
-  .party-operations
-    :is(
-      .po-window[data-tool="rest-watch"][data-main-tab="gm"],
-      .po-window[data-tool="operations-shell"][data-main-tab="gm"],
-      .po-window[data-tool="gm-factions"],
-      .po-window[data-tool="gm-weather"],
-      .po-window[data-tool="gm-downtime"],
-      .po-window[data-tool="gm-merchants"],
-      .po-window[data-tool="gm-audio"],
-      .po-window[data-tool="gm-loot"]
-    )
-    .po-gm-nav-group {
-    flex-direction: column;
-  }
-
   .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-grid {
     grid-template-columns: 1fr;
   }

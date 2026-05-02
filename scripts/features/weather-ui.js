@@ -7,15 +7,8 @@ export function createGmWeatherPageApp(deps) {
     setPageInstance,
     buildContext,
     openMainTab,
-    gmWeatherSetClimate,
-    gmWeatherToggleAutoClimate,
-    gmWeatherApplySuggestedClimate,
-    gmWeatherSetTerrain,
-    gmWeatherClearTerrain,
-    gmWeatherSetTerrainImage,
-    gmWeatherBrowseTerrainImage,
-    gmWeatherPreviewTerrainImage,
-    gmWeatherImportTerrainImage,
+    gmWeatherSetLocation,
+    gmWeatherSetForecastDays,
     gmWeatherToggleAuto,
     gmWeatherRoll,
     removeWeatherLogById,
@@ -56,16 +49,12 @@ export function createGmWeatherPageApp(deps) {
       return "Weather action failed. Check console for details.";
     }
 
-    _shouldHandleInputAction(action) {
-      return ["gm-weather-set-terrain", "gm-weather-set-terrain-image"].includes(action);
+    _shouldHandleInputAction() {
+      return false;
     }
 
     _getActionHandlers() {
       const { rerender, rerenderAlways, rerenderIfTruthy, openPanelTab } = createPageActionHelpers(this);
-      const rerenderUnlessInput = (operation) => async (actionElement, event) => {
-        await operation(actionElement, event);
-        if (event?.type !== "input") rerender();
-      };
       return {
         "gm-weather-page-back": async () => {
           this.close();
@@ -75,15 +64,8 @@ export function createGmWeatherPageApp(deps) {
           rerender();
         },
         "gm-panel-tab": openPanelTab("weather", openGmPanelByKey),
-        "gm-weather-set-climate": rerenderAlways(gmWeatherSetClimate),
-        "gm-weather-toggle-auto-climate": rerenderAlways(gmWeatherToggleAutoClimate),
-        "gm-weather-apply-suggested-climate": rerenderAlways(() => gmWeatherApplySuggestedClimate()),
-        "gm-weather-set-terrain": rerenderAlways(gmWeatherSetTerrain),
-        "gm-weather-clear-terrain": rerenderAlways(() => gmWeatherClearTerrain()),
-        "gm-weather-set-terrain-image": rerenderUnlessInput(gmWeatherSetTerrainImage),
-        "gm-weather-browse-terrain-image": rerenderAlways(() => gmWeatherBrowseTerrainImage()),
-        "gm-weather-preview-terrain-image": rerenderAlways(() => gmWeatherPreviewTerrainImage()),
-        "gm-weather-import-terrain-image": rerenderAlways(() => gmWeatherImportTerrainImage()),
+        "gm-weather-set-location": rerenderAlways(gmWeatherSetLocation),
+        "gm-weather-set-forecast-days": rerenderAlways(gmWeatherSetForecastDays),
         "gm-weather-toggle-auto": rerenderAlways(gmWeatherToggleAuto),
         "gm-weather-roll": rerenderAlways(() => gmWeatherRoll()),
         "gm-weather-remove-log": rerenderIfTruthy((actionElement) =>

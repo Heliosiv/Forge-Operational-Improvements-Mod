@@ -48,15 +48,20 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
 
 {
   const gmWeatherTemplate = readFileSync("templates/gm-weather.hbs", "utf8");
+  const gmPanelNavPartial = readFileSync("templates/partials/gm-panel-nav.hbs", "utf8");
   const weatherUiSource = readFileSync("scripts/features/weather-ui.js", "utf8");
   const partyOperationsSource = readFileSync("scripts/party-operations.js", "utf8");
+
+  assert.ok(gmPanelNavPartial.includes('role="tablist"'), "GM workspace nav should expose tablist semantics.");
+  assert.ok(gmPanelNavPartial.includes('role="tab"'), "GM workspace nav buttons should expose tab semantics.");
+  assert.ok(gmPanelNavPartial.includes("aria-selected"), "GM workspace nav should sync selected tab state.");
 
   for (const requiredText of [
     "Weather",
     "Roll And Log Weather",
-    "Climate",
-    "Terrain",
-    "Map PNG Terrain Import",
+    "Current Location",
+    "Moon And Season",
+    "Forecast",
     "History",
     "Open Archive"
   ]) {
@@ -73,7 +78,11 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
     "Push Check",
     "Recent Check Results",
     "Environment Logs",
-    "Weather Climate Maker"
+    "Weather Climate Maker",
+    "Map PNG Terrain Import",
+    "Terrain PNG",
+    "Browse PNG",
+    "Import PNG Terrain"
   ]) {
     assert.ok(!gmWeatherTemplate.includes(removedText), `GM weather page should not include ${removedText}.`);
   }
@@ -89,7 +98,16 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
     "load-weather-log",
     "gm-calendar-weather-roll",
     "gm-environment-page-refresh",
-    "gm-environment-page-back"
+    "gm-environment-page-back",
+    "gm-weather-set-climate",
+    "gm-weather-set-terrain",
+    "gm-weather-clear-terrain",
+    "gm-weather-set-terrain-image",
+    "gm-weather-browse-terrain-image",
+    "gm-weather-preview-terrain-image",
+    "gm-weather-import-terrain-image",
+    "gm-weather-toggle-auto-climate",
+    "gm-weather-apply-suggested-climate"
   ]) {
     assert.ok(!gmWeatherTemplate.includes(removedAction), `GM weather page should not emit ${removedAction}.`);
     assert.ok(

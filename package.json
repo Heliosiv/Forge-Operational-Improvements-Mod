@@ -51,6 +51,7 @@
     "check:note-draft-cache": "node scripts/test-note-draft-cache.mjs",
     "check:perf": "node scripts/test-perf.mjs",
     "check:permission-split": "node scripts/test-permission-split.mjs",
+    "check:party-operations-monolith-guards": "node scripts/test-party-operations-monolith-guards.mjs",
     "check:player-ui-overrides": "node scripts/test-player-ui-overrides.mjs",
     "check:player-hub-actions": "node scripts/test-player-hub-actions.mjs",
     "check:player-request-handlers": "node scripts/test-player-request-handlers.mjs",

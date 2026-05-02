@@ -12,11 +12,17 @@ import {
   buildGmScreenWeatherSnapshot,
   buildGmScreenWeatherSnapshotDetailLines,
   classifyGmScreenWeatherTerrainPixel,
+  getGmScreenWeatherForecastDayOptions,
+  getGmScreenWeatherLocationOptions,
+  getGmScreenWeatherLocationProfile,
   getGmScreenWeatherTerrainRows,
+  normalizeGmScreenWeatherForecastDays,
+  normalizeGmScreenWeatherLocationKey,
   normalizeGmScreenWeatherTerrainCounts,
   normalizeGmScreenWeatherTerrainImageAnalysis,
   pickGmScreenWeatherEntry,
   recommendGmScreenWeatherClimateForTerrain,
+  resolveGmScreenLunarContext,
   resolveGmScreenCalendarContext,
   resolveGmScreenSeasonForDayNumber,
   resolveGmScreenSeasonFromCalendarDate,
@@ -119,6 +125,40 @@ assertEq(
   },
   "Calendar context should preserve Simple Calendar day keys and labels"
 );
+assertEq(normalizeGmScreenWeatherForecastDays(9), 14, "Forecast days should snap to supported horizons");
+assert(
+  getGmScreenWeatherForecastDayOptions(30).some((option) => option.value === 30 && option.selected),
+  "Forecast day options should select the requested horizon"
+);
+assertEq(
+  normalizeGmScreenWeatherLocationKey("Coast And Islands"),
+  "coast-islands",
+  "Location labels should normalize to stable profile keys"
+);
+assertEq(
+  getGmScreenWeatherLocationProfile("coast-islands").climate,
+  "Coastal",
+  "Location profiles should carry the weather climate"
+);
+assert(
+  getGmScreenWeatherLocationOptions("mountains").some((option) => option.value === "mountains" && option.selected),
+  "Location options should expose selected state"
+);
+const fullMoon = resolveGmScreenLunarContext({
+  date: {
+    moons: [
+      {
+        name: "Selune",
+        phase: { name: "Full Moon" },
+        illumination: 1
+      }
+    ]
+  },
+  dayNumber: 12
+});
+assertEq(fullMoon.source, "Simple Calendar", "Lunar context should prefer moon data from the calendar date");
+assertEq(fullMoon.phaseKey, "full", "Lunar context should identify full moons");
+assertEq(fullMoon.tideLabel, "Spring tides", "Full and new moons should produce spring tides");
 
 const pickedWeatherA = pickGmScreenWeatherEntry({ climate: "Temperate", season: "Summer", seed: "same-day" });
 const pickedWeatherB = pickGmScreenWeatherEntry({ climate: "Temperate", season: "Summer", seed: "same-day" });
@@ -183,6 +223,43 @@ assert(
 assert(
   severeSnapshotDetails.some((line) => line.startsWith("Travel:")),
   "GMScreen snapshot detail lines should include travel impact"
+);
+const coastalFullMoonRecord = buildGmScreenWeatherRecord({
+  climate: "Coastal",
+  season: "Autumn",
+  dayNumber: 200,
+  hourOfDay: 22,
+  seed: "full-moon-coast",
+  terrainCounts: getGmScreenWeatherLocationProfile("coast-islands").terrainCounts,
+  lunarContext: fullMoon,
+  entry: {
+    condition: "Clear",
+    weight: 1,
+    wind: "Breeze",
+    baseTempC: 12,
+    note: "Moonlit shore."
+  }
+});
+assert(
+  coastalFullMoonRecord.hazardFlags.includes("Spring Tides"),
+  "Lunar phases should become significant around coastal and water locations"
+);
+const coastalFullMoonSnapshotDetails = buildGmScreenWeatherSnapshotDetailLines(
+  buildGmScreenWeatherSnapshot(
+    buildGmScreenWeatherPreset(coastalFullMoonRecord, {
+      dayKey: "Y1-M7-D20",
+      dateLabel: "Harvest 20"
+    }),
+    {
+      id: "coastal-full-moon",
+      loggedAt: 1000,
+      loggedBy: "GM"
+    }
+  )
+);
+assert(
+  coastalFullMoonSnapshotDetails.some((line) => line.startsWith("Moon: Selune: Full Moon")),
+  "Snapshot detail lines should include lunar phase details"
 );
 
 const normalizedTerrain = normalizeGmScreenWeatherTerrainCounts({ Mountain: 3, Water: 2, unknown: 99 });

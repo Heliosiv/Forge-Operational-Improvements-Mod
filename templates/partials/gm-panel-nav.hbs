@@ -1,20 +1,21 @@
-<nav class="po-tabs po-tabs-sub po-gm-panel-tabs po-gm-ops-tabs" aria-label="GM workspace navigation">
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isCockpit}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="cockpit" aria-current="{{#if isCockpit}}page{{else}}false{{/if}}">
+{{#if isCockpit}}
+<nav class="po-tabs po-tabs-sub po-gm-panel-tabs po-gm-ops-tabs" role="tablist" aria-label="GM workspace navigation">
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isCockpit}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="cockpit" aria-selected="{{#if isCockpit}}true{{else}}false{{/if}}" aria-current="{{#if isCockpit}}page{{else}}false{{/if}}" tabindex="{{#if isCockpit}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Cockpit</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isWeather}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="weather" aria-current="{{#if isWeather}}page{{else}}false{{/if}}">
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isWeather}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="weather" aria-selected="{{#if isWeather}}true{{else}}false{{/if}}" aria-current="{{#if isWeather}}page{{else}}false{{/if}}" tabindex="{{#if isWeather}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Weather</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isDowntime}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="downtime" aria-current="{{#if isDowntime}}page{{else}}false{{/if}}">
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isDowntime}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="downtime" aria-selected="{{#if isDowntime}}true{{else}}false{{/if}}" aria-current="{{#if isDowntime}}page{{else}}false{{/if}}" tabindex="{{#if isDowntime}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Downtime</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isMerchants}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="merchants" aria-current="{{#if isMerchants}}page{{else}}false{{/if}}">
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isMerchants}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="merchants" aria-selected="{{#if isMerchants}}true{{else}}false{{/if}}" aria-current="{{#if isMerchants}}page{{else}}false{{/if}}" tabindex="{{#if isMerchants}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Merchants</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isLoot}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="loot" aria-current="{{#if isLoot}}page{{else}}false{{/if}}">
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isLoot}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="loot" aria-selected="{{#if isLoot}}true{{else}}false{{/if}}" aria-current="{{#if isLoot}}page{{else}}false{{/if}}" tabindex="{{#if isLoot}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Loot</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio" aria-current="{{#if isAudio}}page{{else}}false{{/if}}">
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio" aria-selected="{{#if isAudio}}true{{else}}false{{/if}}" aria-current="{{#if isAudio}}page{{else}}false{{/if}}" tabindex="{{#if isAudio}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Audio</span>
   </button>
   <details class="po-gm-nav-more">
@@ -22,12 +23,13 @@
       <span class="po-gm-tab-title">More</span>
     </summary>
     <div class="po-gm-nav-more-menu">
-      <button type="button" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction" aria-current="{{#if isFactions}}page{{else}}false{{/if}}">
+      <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction" aria-selected="{{#if isFactions}}true{{else}}false{{/if}}" aria-current="{{#if isFactions}}page{{else}}false{{/if}}" tabindex="{{#if isFactions}}0{{else}}-1{{/if}}">
         <span class="po-gm-tab-title">Reputation</span>
       </button>
-      <button type="button" class="po-tab po-gm-nav-tab {{#if isSettings}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="settings" aria-current="{{#if isSettings}}page{{else}}false{{/if}}">
+      <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isSettings}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="settings" aria-selected="{{#if isSettings}}true{{else}}false{{/if}}" aria-current="{{#if isSettings}}page{{else}}false{{/if}}" tabindex="{{#if isSettings}}0{{else}}-1{{/if}}">
         <span class="po-gm-tab-title">Settings</span>
       </button>
     </div>
   </details>
 </nav>
+{{/if}}

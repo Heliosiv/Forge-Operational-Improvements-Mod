@@ -75,7 +75,7 @@
       {{#if spacingGrid.hasActors}}
       <div class="po-march-spacing-details-list">
         {{#each spacingGrid.orderedActors}}
-        <article class="po-march-spacing-detail-row" data-actor-id="{{actorId}}">
+        <article class="po-march-spacing-detail-row {{#if @root.formationBoard.canManageRoster}}has-roster-actions{{/if}}" data-actor-id="{{actorId}}">
           <span class="po-march-spacing-detail-order">{{orderLabel}}</span>
           <img class="po-portrait" src="{{img}}" alt="{{name}}" />
           <div class="po-march-spacing-detail-main">
@@ -89,6 +89,11 @@
               <span>{{lightLabel}}</span>
             </div>
           </div>
+          {{#if @root.formationBoard.canManageRoster}}
+          <button type="button" class="po-icon-btn po-march-spacing-detail-remove" data-action="remove-march-roster-actor" data-actor-id="{{actorId}}" aria-label="Remove {{name}} from marching setup" title="Remove from marching setup">
+            <i class="fa-solid fa-user-minus"></i>
+          </button>
+          {{/if}}
         </article>
         {{/each}}
       </div>
@@ -110,6 +115,11 @@
           <span class="po-pill">PP {{spacingGrid.passivePerceptionLow}}-{{spacingGrid.passivePerceptionHigh}}</span>
           {{/if}}
           <span class="po-pill">Lights {{overview.lightSources}}</span>
+          {{#if formationBoard.canManageRoster}}
+          <button type="button" class="po-btn po-btn-sm" data-action="add-march-roster-actor" title="Add a character or NPC to the marching setup">
+            <i class="fa-solid fa-user-plus"></i> Add Actor
+          </button>
+          {{/if}}
         </div>
       </header>
       {{#if spacingPresets}}
@@ -143,9 +153,14 @@
         <div class="po-section-title">Not Placed</div>
         <div class="po-march-board-staging-list">
           {{#each formationBoard.unassignedRestActors}}
-          <div class="po-march-board-staging-chip" data-actor-id="{{id}}">
+          <div class="po-march-board-staging-chip {{#if canRemoveFromRoster}}has-roster-actions{{/if}}" data-actor-id="{{id}}">
             <img class="po-portrait" src="{{img}}" alt="{{name}}" />
             <span>{{name}}</span>
+            {{#if canRemoveFromRoster}}
+            <button type="button" class="po-icon-btn po-march-board-staging-remove" data-action="remove-march-roster-actor" data-actor-id="{{id}}" aria-label="Remove {{name}} from marching setup" title="Remove from marching setup">
+              <i class="fa-solid fa-user-minus"></i>
+            </button>
+            {{/if}}
           </div>
           {{/each}}
         </div>

@@ -45,6 +45,28 @@ function Invoke-GitPushWithRetry {
   }
 }
 
+function Update-ReadmeCurrentBuild {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ReleaseVersion
+  )
+
+  $readmePath = "README.md"
+  if (-not (Test-Path $readmePath)) {
+    throw "README.md not found. Release commits must keep Current Build aligned with module.json."
+  }
+
+  $readme = Get-Content -Raw $readmePath
+  $pattern = 'The current repository manifest version is `[^`]+`\.'
+  $replacement = "The current repository manifest version is ``$ReleaseVersion``."
+  $updated = [regex]::Replace($readme, $pattern, $replacement, 1)
+  if ($updated -eq $readme) {
+    throw "README.md Current Build line was not found."
+  }
+
+  Set-Content -NoNewline -Path $readmePath -Value $updated
+}
+
 $proxyVars = @("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 $proxySnapshot = @{}
 foreach ($name in $proxyVars) {
@@ -66,13 +88,14 @@ try {
   $module = $raw | ConvertFrom-Json
   $module.version = $Version
   $module | ConvertTo-Json -Depth 20 | Set-Content -NoNewline "module.json"
+  Update-ReadmeCurrentBuild -ReleaseVersion $Version
 
   & node "scripts/validate-governance.mjs" "--mode" "release" "--expected-tag" "v$Version"
   if ($LASTEXITCODE -ne 0) {
     throw "Governance validation failed for release v$Version"
   }
 
-  Invoke-GitCommand -Args @("add", "module.json")
+  Invoke-GitCommand -Args @("add", "module.json", "README.md")
   Invoke-GitCommand -Args @("add", "-u")
   Invoke-GitCommand -Args @("commit", "-m", "$Message v$Version")
   Invoke-GitCommand -Args @("tag", "-a", "v$Version", "-m", "Release v$Version")

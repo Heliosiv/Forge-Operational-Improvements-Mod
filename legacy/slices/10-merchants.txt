@@ -1,6 +1,6 @@
 # Merchant Domain And Workflows
 
-Source: legacy/party-operations-monolith.js:25730-33099
+Source: legacy/party-operations-monolith.js:25738-33107
 Feature IDs: merchants
 Target Modules: scripts/features/merchant-domain.js, scripts/features/merchants-ui.js
 

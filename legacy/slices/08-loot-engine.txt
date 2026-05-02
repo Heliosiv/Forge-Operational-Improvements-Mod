@@ -1,6 +1,6 @@
 # Loot Generation Engine
 
-Source: legacy/party-operations-monolith.js:16205-22956
+Source: legacy/party-operations-monolith.js:16205-22964
 Feature IDs: loot
 Target Modules: scripts/features/loot-engine-*
 
@@ -4553,7 +4553,8 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
 
   const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
   const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
-  const rarityWeight = Math.max(0.01, Number(entry?.rarityWeight ?? 1) || 1);
+  const rarityWeightRaw = Number(entry?.rarityWeight ?? 1);
+  const rarityWeight = Number.isFinite(rarityWeightRaw) ? Math.max(0, rarityWeightRaw) : 1;
   const combatantWeight = Math.max(
     0.01,
     Number(getLootCombatantRarityWeightModifier(state?.draft ?? {}, entry?.rarity) || 1)
@@ -5194,7 +5195,8 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       const selectedCount = getLootSelectedQuantityCount(selected);
       const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
       const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
-      const rarityWeight = Math.max(0.01, Number(entry?.rarityWeight ?? 1) || 1);
+      const rarityWeightRaw = Number(entry?.rarityWeight ?? 1);
+      const rarityWeight = Number.isFinite(rarityWeightRaw) ? Math.max(0, rarityWeightRaw) : 1;
       const combatantWeight = Math.max(0.01, Number(getLootCombatantRarityWeightModifier(draft, entry?.rarity) || 1));
       const typeWeight = Math.max(0, Number(getLootBuilderItemTypeWeight(draft, entry?.itemType) || 0));
       const valueWeight = Math.max(
@@ -6468,33 +6470,39 @@ function getLootEngineRarityWeights() {
   const config = getPartyOpsConfigSetting();
   const rarityWeights = config?.rarityWeights ?? {};
   return {
-    common: Math.max(0.01, Number(rarityWeights.common ?? 1) || 1),
-    uncommon: Math.max(0.01, Number(rarityWeights.uncommon ?? 1) || 1),
-    rare: Math.max(0.01, Number(rarityWeights.rare ?? 1) || 1),
-    "very-rare": Math.max(0.01, Number(rarityWeights.veryRare ?? rarityWeights["very-rare"] ?? 1) || 1),
-    legendary: Math.max(0.01, Number(rarityWeights.legendary ?? 1) || 1)
+    common: normalizeLootRaritySelectionWeight(rarityWeights.common ?? 1),
+    uncommon: normalizeLootRaritySelectionWeight(rarityWeights.uncommon ?? 1),
+    rare: normalizeLootRaritySelectionWeight(rarityWeights.rare ?? 1),
+    "very-rare": normalizeLootRaritySelectionWeight(rarityWeights.veryRare ?? rarityWeights["very-rare"] ?? 1),
+    legendary: normalizeLootRaritySelectionWeight(rarityWeights.legendary ?? 1)
   };
+}
+
+function normalizeLootRaritySelectionWeight(value = 1) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : 1;
 }
 
 function getLootEngineRarityWeightRatios() {
   const weights = getLootEngineRarityWeights();
   const defaults = DEFAULT_PARTY_OPS_CONFIG.rarityWeights ?? {};
   return {
-    common: Math.max(0.01, Number(weights.common ?? 1) || 1) / Math.max(0.01, Number(defaults.common ?? 1) || 1),
-    uncommon: Math.max(0.01, Number(weights.uncommon ?? 1) || 1) / Math.max(0.01, Number(defaults.uncommon ?? 1) || 1),
-    rare: Math.max(0.01, Number(weights.rare ?? 1) || 1) / Math.max(0.01, Number(defaults.rare ?? 1) || 1),
+    common: normalizeLootRaritySelectionWeight(weights.common ?? 1) / Math.max(0.01, Number(defaults.common ?? 1) || 1),
+    uncommon:
+      normalizeLootRaritySelectionWeight(weights.uncommon ?? 1) / Math.max(0.01, Number(defaults.uncommon ?? 1) || 1),
+    rare: normalizeLootRaritySelectionWeight(weights.rare ?? 1) / Math.max(0.01, Number(defaults.rare ?? 1) || 1),
     "very-rare":
-      Math.max(0.01, Number(weights["very-rare"] ?? 1) || 1) /
+      normalizeLootRaritySelectionWeight(weights["very-rare"] ?? 1) /
       Math.max(0.01, Number(defaults.veryRare ?? defaults["very-rare"] ?? 1) || 1),
     legendary:
-      Math.max(0.01, Number(weights.legendary ?? 1) || 1) / Math.max(0.01, Number(defaults.legendary ?? 1) || 1)
+      normalizeLootRaritySelectionWeight(weights.legendary ?? 1) / Math.max(0.01, Number(defaults.legendary ?? 1) || 1)
   };
 }
 
 function getLootEngineRarityWeightRatio(rarity = "") {
   const bucket = getLootRarityBucket(rarity);
   const ratios = getLootEngineRarityWeightRatios();
-  return Math.max(0.01, Number(ratios[bucket] ?? 1) || 1);
+  return normalizeLootRaritySelectionWeight(ratios[bucket] ?? 1);
 }
 
 function getMerchantWorldRarityPriceMultiplier(rarity = "", overrides = null) {
