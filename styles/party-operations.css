@@ -173,6 +173,16 @@
   padding: var(--po-space-3) var(--po-space-4);
 }
 
+.party-operations .po-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-3);
+  padding: var(--po-space-3) var(--po-space-4);
+}
+
 .party-operations .po-content {
   min-height: 0;
   display: flex;
@@ -8288,6 +8298,22 @@
   align-items: center;
 }
 
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-bulkbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0 2px;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-select-all {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: 700;
+}
+
 .party-operations .po-window[data-tool="gm-loot"] .po-segmented-control {
   display: inline-flex;
   border: 1px solid var(--po-border);
@@ -8328,6 +8354,12 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.86rem;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-select-col {
+  width: 42px;
+  min-width: 42px;
+  text-align: center;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-override-table th,

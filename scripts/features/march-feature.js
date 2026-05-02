@@ -15,6 +15,116 @@ export const MARCH_BOARD_RANKS = Object.freeze([
   { id: "reserve", label: "Reserve Lane", shortLabel: "Reserve" }
 ]);
 
+const MARCH_ACTOR_TYPE_FILTERS = new Set(["all", "character", "npc"]);
+const MARCH_ACTOR_ROSTER_FILTERS = new Set(["available", "all", "roster"]);
+const MARCH_ACTOR_OWNERSHIP_FILTERS = new Set(["all", "player-owned", "unowned"]);
+const MARCH_ACTOR_DISPOSITION_FILTERS = new Set(["all", "friendly", "neutral", "hostile"]);
+
+function normalizeMarchActorFilter(value, allowed, fallback) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return allowed.has(normalized) ? normalized : fallback;
+}
+
+export function normalizeMarchActorTypeFilter(value) {
+  return normalizeMarchActorFilter(value, MARCH_ACTOR_TYPE_FILTERS, "all");
+}
+
+export function normalizeMarchActorRosterFilter(value) {
+  return normalizeMarchActorFilter(value, MARCH_ACTOR_ROSTER_FILTERS, "available");
+}
+
+export function normalizeMarchActorOwnershipFilter(value) {
+  return normalizeMarchActorFilter(value, MARCH_ACTOR_OWNERSHIP_FILTERS, "all");
+}
+
+export function normalizeMarchActorDispositionFilter(value) {
+  return normalizeMarchActorFilter(value, MARCH_ACTOR_DISPOSITION_FILTERS, "all");
+}
+
+export function resolveMarchActorDispositionKey(actor, tokenDispositions = {}) {
+  const dispositions =
+    tokenDispositions && typeof tokenDispositions === "object"
+      ? tokenDispositions
+      : { HOSTILE: -1, NEUTRAL: 0, FRIENDLY: 1 };
+  const disposition = Number(actor?.prototypeToken?.disposition ?? dispositions.NEUTRAL ?? 0);
+  if (Number.isFinite(disposition) && disposition === Number(dispositions.FRIENDLY)) return "friendly";
+  if (Number.isFinite(disposition) && disposition === Number(dispositions.HOSTILE)) return "hostile";
+  return "neutral";
+}
+
+export function getMarchActorDispositionLabel(dispositionKey) {
+  const normalized = normalizeMarchActorDispositionFilter(dispositionKey);
+  if (normalized === "friendly") return "Friendly";
+  if (normalized === "hostile") return "Hostile";
+  return "Neutral";
+}
+
+export function buildMarchActorRosterDialogRows({
+  actors = [],
+  search = "",
+  typeFilter = "all",
+  rosterFilter = "available",
+  ownershipFilter = "all",
+  dispositionFilter = "all",
+  currentRosterActorIds = [],
+  tokenDispositions = {}
+} = {}) {
+  const rosterIds =
+    currentRosterActorIds instanceof Set
+      ? currentRosterActorIds
+      : new Set((Array.isArray(currentRosterActorIds) ? currentRosterActorIds : []).map((id) => String(id ?? "")));
+  const normalizedType = normalizeMarchActorTypeFilter(typeFilter);
+  const normalizedRoster = normalizeMarchActorRosterFilter(rosterFilter);
+  const normalizedOwnership = normalizeMarchActorOwnershipFilter(ownershipFilter);
+  const normalizedDisposition = normalizeMarchActorDispositionFilter(dispositionFilter);
+  const searchText = String(search ?? "")
+    .trim()
+    .toLowerCase();
+
+  return (Array.isArray(actors) ? actors : [])
+    .map((actor) => {
+      const id = String(actor?.id ?? "").trim();
+      if (!id) return null;
+      const type = normalizeMarchActorTypeFilter(actor?.type);
+      if (type === "all") return null;
+      const disposition = resolveMarchActorDispositionKey(actor, tokenDispositions);
+      const hasPlayerOwner = Boolean(actor?.hasPlayerOwner);
+      const inRoster = rosterIds.has(id);
+      const name = String(actor?.name ?? "Unknown").trim() || "Unknown";
+      const typeLabel = type === "character" ? "Character" : "NPC";
+      const ownershipLabel = hasPlayerOwner ? "Player-owned" : "Unowned";
+      const dispositionLabel = getMarchActorDispositionLabel(disposition);
+      return {
+        id,
+        name,
+        type,
+        typeLabel,
+        disposition,
+        dispositionLabel,
+        hasPlayerOwner,
+        ownershipLabel,
+        inRoster,
+        label: inRoster ? `${name} (already in roster)` : name,
+        searchText: [name, typeLabel, ownershipLabel, dispositionLabel].join(" ").toLowerCase()
+      };
+    })
+    .filter(Boolean)
+    .filter((row) => normalizedType === "all" || row.type === normalizedType)
+    .filter((row) => {
+      if (normalizedRoster === "all") return true;
+      if (normalizedRoster === "roster") return row.inRoster;
+      return !row.inRoster;
+    })
+    .filter((row) => {
+      if (normalizedOwnership === "all") return true;
+      return normalizedOwnership === "player-owned" ? row.hasPlayerOwner : !row.hasPlayerOwner;
+    })
+    .filter((row) => normalizedDisposition === "all" || row.disposition === normalizedDisposition)
+    .filter((row) => !searchText || row.searchText.includes(searchText));
+}
+
 export function buildMarchFormationSummaryContext({
   formationSnapshot = {},
   tracker = {},

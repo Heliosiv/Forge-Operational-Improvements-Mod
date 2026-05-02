@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  buildMarchActorRosterDialogRows,
   buildMarchFormationSummaryContext,
   buildMarchOverviewContext,
   MARCH_BOARD_RANKS,
@@ -9,6 +10,51 @@ import {
   setupMarchingDragAndDrop
 } from "./features/march-feature.js";
 import { resolveMarchActorImage } from "./features/march-actor-images.js";
+
+{
+  const actors = [
+    { id: "pc-a", name: "Ard Lane", type: "character", hasPlayerOwner: true, prototypeToken: { disposition: 1 } },
+    { id: "npc-a", name: "Aboleth", type: "npc", hasPlayerOwner: false, prototypeToken: { disposition: -1 } },
+    { id: "npc-b", name: "Scout", type: "npc", hasPlayerOwner: false, prototypeToken: { disposition: 0 } },
+    { id: "pc-b", name: "Oskar Octavius", type: "character", hasPlayerOwner: true, prototypeToken: { disposition: 1 } }
+  ];
+
+  assert.deepEqual(
+    buildMarchActorRosterDialogRows({
+      actors,
+      currentRosterActorIds: ["pc-b"],
+      tokenDispositions: { HOSTILE: -1, NEUTRAL: 0, FRIENDLY: 1 }
+    }).map((row) => row.id),
+    ["pc-a", "npc-a", "npc-b"],
+    "the default add-march actor filter should hide actors that are already in the roster"
+  );
+
+  assert.deepEqual(
+    buildMarchActorRosterDialogRows({
+      actors,
+      search: "npc",
+      typeFilter: "npc",
+      dispositionFilter: "hostile",
+      rosterFilter: "all",
+      currentRosterActorIds: ["pc-b"],
+      tokenDispositions: { HOSTILE: -1, NEUTRAL: 0, FRIENDLY: 1 }
+    }).map((row) => row.id),
+    ["npc-a"],
+    "march actor dialog filters should combine search, type, disposition, and roster scope"
+  );
+
+  assert.deepEqual(
+    buildMarchActorRosterDialogRows({
+      actors,
+      rosterFilter: "roster",
+      ownershipFilter: "player-owned",
+      currentRosterActorIds: ["pc-b"],
+      tokenDispositions: { HOSTILE: -1, NEUTRAL: 0, FRIENDLY: 1 }
+    }).map((row) => row.label),
+    ["Oskar Octavius (already in roster)"],
+    "the roster filter should expose already-added actors with a clear label"
+  );
+}
 
 class FakeClassList {
   constructor() {
@@ -127,6 +173,53 @@ class FakeElement {
     resolveMarchActorImage(actor),
     "tokens/prototype.webp",
     "march actor images should still use non-default prototype token art when portrait is generic"
+  );
+}
+
+{
+  const actor = {
+    img: "icons/svg/mystery-man.svg",
+    thumbnail: "portraits/maja-thumbnail.webp",
+    prototypeToken: { texture: { src: "tokens/prototype.webp" } },
+    getActiveTokens: () => []
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor),
+    "portraits/maja-thumbnail.webp",
+    "march actor images should use alternate actor portrait fields before token art when the main img is generic"
+  );
+}
+
+{
+  const actor = {
+    img: "icons/svg/mystery-man.svg",
+    prototypeToken: { texture: { src: "icons/svg/mystery-man.svg" } },
+    getActiveTokens: () => [{ _source: { texture: { src: "tokens/source-token.webp" } } }]
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor),
+    "tokens/source-token.webp",
+    "march actor images should read token document source texture paths before falling back to default art"
+  );
+}
+
+{
+  const actor = {
+    img: "icons/svg/mystery-man.svg",
+    prototypeToken: { texture: { src: "icons/svg/mystery-man.svg" } },
+    getActiveTokens: () => [],
+    toObject: () => ({
+      img: "icons/svg/mystery-man.svg",
+      prototypeToken: { texture: { src: "tokens/source-prototype.webp" } }
+    })
+  };
+
+  assert.equal(
+    resolveMarchActorImage(actor),
+    "tokens/source-prototype.webp",
+    "march actor images should recover source prototype token art from Foundry document snapshots"
   );
 }
 

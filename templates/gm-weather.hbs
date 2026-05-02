@@ -24,6 +24,7 @@
           <div class="po-op-summary">{{weatherTools.calendar.dateLabel}} - {{weatherTools.calendar.locationLabel}} - {{weatherTools.calendar.climate}} {{weatherTools.calendar.season}}</div>
           <div class="po-op-action-row po-gm-page-actions">
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-weather-roll">Roll And Log Weather</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-plot-week" {{#unless weatherTools.calendar.canPlotForecastWeek}}disabled{{/unless}}>Save 7 Days To Calendar</button>
           </div>
         </div>
         <div class="po-weather-metric-grid po-gm-page-stat-grid" role="list" aria-label="Weather summary">
@@ -100,14 +101,18 @@
             </div>
             <div class="po-weather-summary-item">
               <span class="po-weather-summary-label">Moon</span>
-              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarSummary}} - {{weatherTools.calendar.lunarIlluminationPercent}}% illumination</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarPlainSummary}}</span>
+            </div>
+            <div class="po-weather-summary-item">
+              <span class="po-weather-summary-label">Moon Meaning</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarPhaseMeaning}} {{weatherTools.calendar.lunarIlluminationMeaning}}</span>
             </div>
             <div class="po-weather-summary-item">
               <span class="po-weather-summary-label">Tides</span>
-              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarTideLabel}}</span>
+              <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarTideSummary}}</span>
             </div>
             <div class="po-weather-summary-item">
-              <span class="po-weather-summary-label">Significance</span>
+              <span class="po-weather-summary-label">At Table</span>
               <span class="po-weather-summary-copy">{{weatherTools.calendar.lunarSignificance}}</span>
             </div>
           </div>
@@ -118,16 +123,19 @@
         <div class="po-collapsible-head">
           <div>
             <div class="po-section-title">Forecast</div>
-            <div class="po-hint">Preview the location pattern against upcoming Simple Calendar days.</div>
+            <div class="po-hint">Preview the location pattern against upcoming Simple Calendar days. Last saved week: {{weatherTools.calendar.lastForecastPlottedAtLabel}}.</div>
           </div>
-          <label class="po-resource-row">
-            <span>Range</span>
-            <select name="calendarWeatherForecastDays" class="po-select" data-action="gm-weather-set-forecast-days">
-              {{#each weatherTools.calendar.forecastDayOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-plot-week" {{#unless weatherTools.calendar.canPlotForecastWeek}}disabled{{/unless}}>Save Week</button>
+            <label class="po-resource-row">
+              <span>Range</span>
+              <select name="calendarWeatherForecastDays" class="po-select" data-action="gm-weather-set-forecast-days">
+                {{#each weatherTools.calendar.forecastDayOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+          </div>
         </div>
         {{#if weatherTools.calendar.hasForecastRows}}
         <div class="po-weather-log-list">
@@ -136,13 +144,14 @@
             <div class="po-weather-log-head">
               <div>
                 <div class="po-weather-log-title">{{offsetLabel}} - {{weatherLabel}}</div>
-                <div class="po-weather-log-meta">{{dateLabel}} - {{season}} - {{tempLabel}} - Rain {{rainLabel}}</div>
+                <div class="po-weather-log-meta">{{dateLabel}} - {{season}} - {{tempLabel}} - Precip {{rainLabel}}</div>
               </div>
               <span class="po-pill">{{lunarSignificanceLabel}}</span>
             </div>
-            <div class="po-op-summary">Moon: {{lunarSummary}} - {{lunarTideLabel}}</div>
+            <div class="po-op-summary">System: {{weatherSystemSummary}}</div>
+            <div class="po-op-summary">{{precipitationExplanation}}</div>
+            <div class="po-op-summary">Moon: {{lunarPlainSummary}} {{lunarTideSummary}}</div>
             <div class="po-op-summary">Hazards: {{hazardLabel}}</div>
-            <div class="po-op-summary">{{summary}}</div>
           </article>
           {{/each}}
         </div>

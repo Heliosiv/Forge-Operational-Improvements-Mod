@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
 const socketRoutes = readFileSync(new URL("./core/socket-gm-requester-routes.js", import.meta.url), "utf8");
 const socketHandlers = readFileSync(new URL("./core/socket-route-handlers.js", import.meta.url), "utf8");
+const stylesSource = readFileSync(new URL("../styles/party-operations.css", import.meta.url), "utf8");
 const gmDowntimeTemplate = readFileSync(new URL("../templates/gm-downtime.hbs", import.meta.url), "utf8");
 const playerDowntimeTemplate = readFileSync(
   new URL("../templates/partials/rest-watch-player/simple-downtime.hbs", import.meta.url),
@@ -55,6 +56,7 @@ assertMatch(
 );
 
 assertMatch(gmDowntimeTemplate, /class="[^"]*po-downtime-v2/, "GM downtime page should render the v2 surface.");
+assertMatch(gmDowntimeTemplate, /<main class="po-main">/, "GM downtime page should render inside the app scroll body.");
 assertMatch(gmDowntimeTemplate, /data-action="downtime-v2-launch-session"/, "GM page should expose one launch action.");
 assertMatch(gmDowntimeTemplate, /name="downtimeV2RosterActorIds"/, "GM page should assign a roster.");
 assertMatch(gmDowntimeTemplate, /data-downtime-v2-card-row/, "GM page should expose reusable action cards.");
@@ -72,6 +74,11 @@ assertNoMatch(
   gmDowntimeTemplate,
   /name="downtimeActionKey"/,
   "Old Phase 1 action selector should not remain in the GM page."
+);
+assertMatch(
+  stylesSource,
+  /\.party-operations \.po-main \{[\s\S]*?flex: 1;[\s\S]*?min-height: 0;[\s\S]*?overflow: auto;/,
+  "GM downtime app body should scroll instead of clipping long action card text."
 );
 
 assertMatch(

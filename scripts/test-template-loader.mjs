@@ -59,8 +59,10 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   for (const requiredText of [
     "Weather",
     "Roll And Log Weather",
+    "Save 7 Days To Calendar",
     "Current Location",
     "Moon And Season",
+    "Moon Meaning",
     "Forecast",
     "History",
     "Open Archive"
@@ -86,6 +88,22 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   ]) {
     assert.ok(!gmWeatherTemplate.includes(removedText), `GM weather page should not include ${removedText}.`);
   }
+
+  for (const removedWeatherText of ["% illumination", "Travel speed", "Travel:"]) {
+    assert.ok(
+      !gmWeatherTemplate.includes(removedWeatherText),
+      `GM weather page should not expose ${removedWeatherText}.`
+    );
+  }
+
+  assert.ok(
+    gmWeatherTemplate.includes('data-action="gm-weather-plot-week"'),
+    "GM weather page should expose the week save action."
+  );
+  assert.ok(
+    weatherUiSource.includes('"gm-weather-plot-week"'),
+    "GM weather page app should handle the week save action."
+  );
 
   for (const removedAction of [
     "gm-quick-weather-save-preset",

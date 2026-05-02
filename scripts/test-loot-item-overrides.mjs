@@ -86,6 +86,11 @@ for (const marker of [
   "set-loot-item-override-price",
   "toggle-loot-item-override-enabled",
   "reset-loot-item-override",
+  'data-po-scroll-preserve="loot-item-overrides"',
+  "data-po-loot-override-select",
+  "enable-selected-loot-item-overrides",
+  "disable-selected-loot-item-overrides",
+  "reset-selected-loot-item-overrides",
   "modifiedCount",
   "disabledCount"
 ]) {

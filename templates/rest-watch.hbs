@@ -269,7 +269,7 @@
             <div class="po-info-chip" title="Overall operational risk from role coverage and base pressure"><span>Risk</span><strong>{{operations.summary.effects.riskTier}}</strong></div>
             <div class="po-info-chip" title="Estimated number of long-rest cycles before food is depleted"><span>Food Cycles</span><strong>{{operations.resources.summary.foodCyclesLeft}}</strong></div>
             <div class="po-info-chip" title="Estimated number of long-rest cycles before water is depleted"><span>Water Cycles</span><strong>{{operations.resources.summary.waterCyclesLeft}}</strong></div>
-            <div class="po-info-chip" title="Inventory bindings linked to owned player-character items"><span>Bindings</span><strong>{{operations.resources.summary.selectedBindingCount}} / 3</strong></div>
+            <div class="po-info-chip" title="Inventory bindings linked to player-owned actor items"><span>Bindings</span><strong>{{operations.resources.summary.selectedBindingCount}} / 3</strong></div>
           </div>
         </div>
 
@@ -309,7 +309,7 @@
           <div class="po-hint">Track supply pools and linked target items here. GM-only gather presets, upkeep tuning, DCs, and pending requests now live in the GM workspace.</div>
           {{else}}
           <div class="po-op-divider"></div>
-          <div class="po-hint">Choose your own character-owned target items for food, water, and torches.</div>
+          <div class="po-hint">Choose player-owned actor target items for food, water, and torches.</div>
           {{/if}}
           <div class="po-resource-config-panel po-resource-config-panel-compact">
             <div class="po-resource-config-split po-resource-config-split-compact">

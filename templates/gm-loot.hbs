@@ -364,11 +364,24 @@
                 <button type="button" class="po-segment {{#if operations.lootSources.itemOverrides.filterDisabled}}is-active{{/if}}" data-action="set-loot-item-override-filter" data-filter="disabled">Disabled</button>
               </div>
             </div>
+            <div class="po-loot-override-bulkbar">
+              <label class="po-check-row po-loot-override-select-all">
+                <input type="checkbox" data-po-loot-override-select-all />
+                <span>Select visible</span>
+              </label>
+              <span class="po-op-summary" data-po-loot-override-selection-count>0 selected</span>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="enable-selected-loot-item-overrides" data-po-loot-override-bulk-action disabled>Enable Selected</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="disable-selected-loot-item-overrides" data-po-loot-override-bulk-action disabled>Disable Selected</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="reset-selected-loot-item-overrides" data-po-loot-override-bulk-action disabled>Reset Selected</button>
+              </div>
+            </div>
             <div class="po-op-summary">Showing {{operations.lootSources.itemOverrides.visibleCount}} of {{operations.lootSources.itemOverrides.filteredCount}} matching items{{#if operations.lootSources.itemOverrides.hiddenCount}}; refine search to see the remaining {{operations.lootSources.itemOverrides.hiddenCount}}{{/if}}.</div>
-            <div class="po-loot-override-table-shell">
+            <div class="po-loot-override-table-shell" data-po-scroll-preserve="loot-item-overrides">
               <table class="po-loot-override-table">
                 <thead>
                   <tr>
+                    <th class="po-loot-override-select-col"><span class="po-sr-only">Select</span></th>
                     <th>Item</th>
                     <th>Type</th>
                     <th>Rarity</th>
@@ -382,6 +395,7 @@
                   {{#if operations.lootSources.itemOverrides.hasRows}}
                   {{#each operations.lootSources.itemOverrides.rows}}
                   <tr class="{{#if modified}}is-modified{{/if}} {{#if disabled}}is-disabled{{/if}}">
+                    <td class="po-loot-override-select-col"><input type="checkbox" data-po-loot-override-select data-override-key="{{overrideKey}}" aria-label="Select {{name}}" /></td>
                     <td>
                       <div class="po-loot-override-item-cell">
                         <img src="{{img}}" alt="" />
@@ -398,7 +412,7 @@
                   {{/each}}
                   {{else}}
                   <tr>
-                    <td colspan="7" class="po-muted-cell">No compendium items match the current override filters.</td>
+                    <td colspan="8" class="po-muted-cell">No compendium items match the current override filters.</td>
                   </tr>
                   {{/if}}
                 </tbody>

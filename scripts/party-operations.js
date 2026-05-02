@@ -60,6 +60,7 @@ import { createOperationsJournalService } from "./features/operations-journal-se
 import {
   applyMarchRequest,
   MARCH_BOARD_RANKS,
+  buildMarchActorRosterDialogRows,
   buildMarchOverviewContext,
   createMarchFeatureModule,
   normalizeSocketMarchRequest,
@@ -7010,11 +7011,16 @@ function buildOperationsContextFallback() {
     forecastRows: [],
     hasForecastRows: false,
     lunarSummary: "Estimated moon phase",
+    lunarPlainSummary:
+      "Estimated moon phase. About half the moon is lit, giving mixed shadows and partial night light.",
     lunarSource: "Estimated",
     lunarTideLabel: "Ordinary tides",
-    lunarSignificance: "Moonlight has a minor travel effect.",
+    lunarTideSummary: "Ordinary tides mean no special lunar tide pressure today.",
+    lunarSignificance: "Use modest moonlight changes unless the scene happens at night or near water.",
     lunarSignificanceLabel: "Minor",
     lunarIlluminationPercent: 50,
+    lunarIlluminationMeaning: "About half the moon is lit, giving mixed shadows and partial night light.",
+    lunarPhaseMeaning: "Moon phase changes night brightness and coastal water behavior.",
     climate: "Temperate",
     configuredClimate: "Temperate",
     climateOptions: getGmScreenWeatherClimateOptions("Temperate"),
@@ -7029,6 +7035,12 @@ function buildOperationsContextFallback() {
     dayKey: "",
     dateLabel: "-",
     simpleCalendarActive: false,
+    hasCalendarMutationApi: false,
+    canPlotForecastWeek: false,
+    plotWeekLabel: "Save 7 Days",
+    lastForecastPlottedAt: 0,
+    lastForecastPlottedAtLabel: "Never",
+    lastForecastPlottedDays: 0,
     autoApply: false,
     lastDayKey: "",
     lastRolledAtLabel: "Never",
@@ -7066,6 +7078,10 @@ function buildOperationsContextFallback() {
       terrainImportedAtLabel:
         Number(calendarWeather.terrainImportedAt ?? 0) > 0
           ? new Date(Number(calendarWeather.terrainImportedAt)).toLocaleString()
+          : "Never",
+      lastForecastPlottedAtLabel:
+        Number(calendarWeather.lastForecastPlottedAt ?? 0) > 0
+          ? new Date(Number(calendarWeather.lastForecastPlottedAt)).toLocaleString()
           : "Never"
     };
   } catch (_error) {}
@@ -8985,6 +9001,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await gmWeatherRoll();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "gm-weather-plot-week": async () => {
+            await gmWeatherPlotWeek();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "set-injury-config": async () => {
             await setInjuryRecoveryConfig(element);
           },
@@ -9381,11 +9401,16 @@ function buildGmWeatherPageContext() {
       forecastRows: [],
       hasForecastRows: false,
       lunarSummary: "Estimated moon phase",
+      lunarPlainSummary:
+        "Estimated moon phase. About half the moon is lit, giving mixed shadows and partial night light.",
       lunarSource: "Estimated",
       lunarTideLabel: "Ordinary tides",
-      lunarSignificance: "Moonlight has a minor travel effect.",
+      lunarTideSummary: "Ordinary tides mean no special lunar tide pressure today.",
+      lunarSignificance: "Use modest moonlight changes unless the scene happens at night or near water.",
       lunarSignificanceLabel: "Minor",
       lunarIlluminationPercent: 50,
+      lunarIlluminationMeaning: "About half the moon is lit, giving mixed shadows and partial night light.",
+      lunarPhaseMeaning: "Moon phase changes night brightness and coastal water behavior.",
       climate: "Temperate",
       configuredClimate: "Temperate",
       climateOptions: getGmScreenWeatherClimateOptions("Temperate"),
@@ -9400,6 +9425,12 @@ function buildGmWeatherPageContext() {
       dayKey: "",
       dateLabel: "-",
       simpleCalendarActive: false,
+      hasCalendarMutationApi: false,
+      canPlotForecastWeek: false,
+      plotWeekLabel: "Save 7 Days",
+      lastForecastPlottedAt: 0,
+      lastForecastPlottedAtLabel: "Never",
+      lastForecastPlottedDays: 0,
       autoApply: false,
       lastDayKey: "",
       lastRolledAtLabel: "Never",
@@ -10127,6 +10158,7 @@ export const GmWeatherPageApp = createGmWeatherPageApp({
   gmWeatherSetForecastDays,
   gmWeatherToggleAuto,
   gmWeatherRoll,
+  gmWeatherPlotWeek,
   removeWeatherLogById,
   openJournalEntryFromElement,
   openGmPanelByKey
@@ -10405,6 +10437,8 @@ export const GmLootPageApp = createGmLootPageApp({
   setLootItemOverridePrice,
   toggleLootItemOverrideEnabled,
   resetLootItemOverride,
+  setLootItemOverridesEnabledByKeys,
+  resetLootItemOverridesByKeys,
   setLootKeywordIncludeMode,
   setLootKeywordIncludeTags,
   setLootKeywordExcludeTags,
@@ -24419,7 +24453,11 @@ function buildDefaultOperationsLedger() {
       calendarTerrainImageAnalysis: null,
       calendarAutoApply: false,
       calendarLastDayKey: "",
-      calendarLastRolledAt: 0
+      calendarLastRolledAt: 0,
+      calendarForecastEntryIds: {},
+      calendarForecastPlottedAt: 0,
+      calendarForecastPlottedDays: 0,
+      calendarForecastPlottedLocationKey: ""
     },
     partyHealth: {
       syncToSceneNonParty: true,
@@ -24832,9 +24870,9 @@ function getResourceOwnerActors(user = game.user) {
   const canManage = canAccessAllPlayerOps(user);
   return game.actors.contents
     .filter((actor) => {
-      if (!actor || actor.type !== "character") return false;
+      if (!actor) return false;
       if (canManage) return Boolean(actor.hasPlayerOwner);
-      return canUserOwnActor(user, actor, { requireCharacter: true });
+      return canUserOwnActor(user, actor, { requireCharacter: false });
     })
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
@@ -25329,9 +25367,16 @@ function buildOperationsContext() {
               ? `Temp ${Number(entry.temperatureC)}C (H ${Number(entry.dailyHighC)} / L ${Number(entry.dailyLowC)})`
               : "",
             String(entry.wind ?? "").trim() ? `Wind ${String(entry.wind)} ${Number(entry.windSpeed ?? 0)} km/h` : "",
+            String(entry.precipitationLabel ?? "").trim()
+              ? `Precipitation ${String(entry.precipitationLabel)}`
+              : Number(entry.rainAmount ?? 0) > 0
+                ? `Precipitation ${Number(entry.rainAmount)} mm`
+                : "",
             String(entry.visibility ?? "").trim() ? `Visibility ${String(entry.visibility)}` : "",
             String(entry.terrainSummary ?? "").trim() ? `Terrain ${String(entry.terrainSummary)}` : "",
-            String(entry.lunarSummary ?? "").trim() ? `Moon ${String(entry.lunarSummary)}` : "",
+            String(entry.lunarPlainSummary ?? entry.lunarSummary ?? "").trim()
+              ? `Moon ${String(entry.lunarPlainSummary ?? entry.lunarSummary)}`
+              : "",
             hazardText ? `Hazards ${hazardText}` : ""
           ]
             .filter(Boolean)
@@ -25356,6 +25401,10 @@ function buildOperationsContext() {
     terrainImportedAtLabel:
       Number(calendarWeather.terrainImportedAt ?? 0) > 0
         ? new Date(Number(calendarWeather.terrainImportedAt)).toLocaleString()
+        : "Never",
+    lastForecastPlottedAtLabel:
+      Number(calendarWeather.lastForecastPlottedAt ?? 0) > 0
+        ? new Date(Number(calendarWeather.lastForecastPlottedAt)).toLocaleString()
         : "Never"
   };
   const globalLogs = (environmentState.logs ?? [])
@@ -35676,12 +35725,20 @@ function normalizeWeatherSnapshot(entry = {}, defaults = {}) {
     rainAmount: Number.isFinite(Number(entry?.rainAmount ?? defaults?.rainAmount))
       ? Number(entry?.rainAmount ?? defaults?.rainAmount)
       : 0,
+    precipitationLabel: String(entry?.precipitationLabel ?? defaults?.precipitationLabel ?? ""),
+    precipitationIntensity: String(entry?.precipitationIntensity ?? defaults?.precipitationIntensity ?? ""),
+    precipitationExplanation: String(entry?.precipitationExplanation ?? defaults?.precipitationExplanation ?? ""),
+    weatherSystemSummary: String(entry?.weatherSystemSummary ?? defaults?.weatherSystemSummary ?? ""),
     visibility: String(entry?.visibility ?? defaults?.visibility ?? ""),
     hazards,
     terrainSummary: String(entry?.terrainSummary ?? defaults?.terrainSummary ?? ""),
     lunarSummary: String(entry?.lunarSummary ?? defaults?.lunarSummary ?? ""),
+    lunarPlainSummary: String(entry?.lunarPlainSummary ?? defaults?.lunarPlainSummary ?? ""),
     lunarSignificance: String(entry?.lunarSignificance ?? defaults?.lunarSignificance ?? ""),
     lunarTideLabel: String(entry?.lunarTideLabel ?? defaults?.lunarTideLabel ?? ""),
+    lunarTideSummary: String(entry?.lunarTideSummary ?? defaults?.lunarTideSummary ?? ""),
+    lunarPhaseMeaning: String(entry?.lunarPhaseMeaning ?? defaults?.lunarPhaseMeaning ?? ""),
+    lunarIlluminationMeaning: String(entry?.lunarIlluminationMeaning ?? defaults?.lunarIlluminationMeaning ?? ""),
     lunarIlluminationPercent: Number.isFinite(
       Number(entry?.lunarIlluminationPercent ?? defaults?.lunarIlluminationPercent)
     )
@@ -35732,6 +35789,25 @@ function ensureWeatherState(ledger) {
   ledger.weather.calendarLastRolledAt = Number.isFinite(Number(ledger.weather.calendarLastRolledAt))
     ? Number(ledger.weather.calendarLastRolledAt)
     : 0;
+  const forecastEntryIds =
+    ledger.weather.calendarForecastEntryIds && typeof ledger.weather.calendarForecastEntryIds === "object"
+      ? ledger.weather.calendarForecastEntryIds
+      : {};
+  ledger.weather.calendarForecastEntryIds = Object.fromEntries(
+    Object.entries(forecastEntryIds)
+      .map(([dayKey, entryId]) => [String(dayKey ?? "").trim(), String(entryId ?? "").trim()])
+      .filter(([dayKey, entryId]) => dayKey && entryId)
+  );
+  ledger.weather.calendarForecastPlottedAt = Number.isFinite(Number(ledger.weather.calendarForecastPlottedAt))
+    ? Number(ledger.weather.calendarForecastPlottedAt)
+    : 0;
+  ledger.weather.calendarForecastPlottedDays = Math.max(
+    0,
+    Math.floor(Number(ledger.weather.calendarForecastPlottedDays ?? 0) || 0)
+  );
+  ledger.weather.calendarForecastPlottedLocationKey = normalizeGmScreenWeatherLocationKey(
+    ledger.weather.calendarForecastPlottedLocationKey || ledger.weather.calendarLocationKey
+  );
   delete ledger.weather.customPresets;
   if (!Array.isArray(ledger.weather.logs)) ledger.weather.logs = [];
   ledger.weather.logs = ledger.weather.logs
@@ -35964,8 +36040,8 @@ async function setOperationalResource(element) {
       if (!itemLinkKeys.has(selectionKey)) return;
       const actorId = String(element?.value ?? "");
       const actor = actorId ? game.actors.get(actorId) : null;
-      if (actorId && !canAccessAllPlayerOps() && !canUserOwnActor(game.user, actor, { requireCharacter: true })) {
-        ui.notifications?.warn("Choose one of your owned characters for that resource target.");
+      if (actorId && !canAccessAllPlayerOps() && !canUserOwnActor(game.user, actor, { requireCharacter: false })) {
+        ui.notifications?.warn("Choose one of your owned actors for that resource target.");
         return;
       }
       ledger.resources.itemSelections[selectionKey].actorId = actorId;
@@ -35981,8 +36057,8 @@ async function setOperationalResource(element) {
       if (!itemLinkKeys.has(selectionKey)) return;
       const actorId = String(ledger.resources.itemSelections[selectionKey]?.actorId ?? "");
       const actor = actorId ? game.actors.get(actorId) : null;
-      if (!canAccessAllPlayerOps() && !canUserOwnActor(game.user, actor, { requireCharacter: true })) {
-        ui.notifications?.warn("Choose one of your owned characters before selecting a resource item.");
+      if (!canAccessAllPlayerOps() && !canUserOwnActor(game.user, actor, { requireCharacter: false })) {
+        ui.notifications?.warn("Choose one of your owned actors before selecting a resource item.");
         return;
       }
       const itemId = String(element?.value ?? "");
@@ -42901,6 +42977,11 @@ function pruneLootItemOverrideRecord(record = {}) {
   };
 }
 
+function normalizeLootItemOverrideKeyList(keys = []) {
+  const source = Array.isArray(keys) ? keys : [];
+  return Array.from(new Set(source.map((entry) => normalizeLootItemOverrideKey(entry)).filter(Boolean)));
+}
+
 async function updateLootItemOverrideFromElement(element, mutator) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure item overrides.");
@@ -42928,8 +43009,47 @@ async function updateLootItemOverrideFromElement(element, mutator) {
       else delete overrides[overrideKey];
       config.itemOverrides = overrides;
     },
-    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS }
+    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS, skipLocalRefresh: true }
   );
+}
+
+async function updateLootItemOverridesByKeys(keys = [], mutator) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure item overrides.");
+    return false;
+  }
+  const overrideKeys = normalizeLootItemOverrideKeyList(keys);
+  if (overrideKeys.length < 1 || typeof mutator !== "function") {
+    ui.notifications?.warn("Select one or more item rows first.");
+    return false;
+  }
+  await updateLootSourceConfig(
+    (config) => {
+      const overrides = normalizeLootItemOverrides(config.itemOverrides ?? {});
+      const updatedAt = Date.now();
+      const updatedBy = String(game.user?.name ?? "GM").trim() || "GM";
+      for (const overrideKey of overrideKeys) {
+        const previous = overrides[overrideKey] ?? {
+          priceGp: null,
+          disabled: false,
+          updatedAt: 0,
+          updatedBy: ""
+        };
+        const nextDraft = {
+          ...previous,
+          updatedAt,
+          updatedBy
+        };
+        mutator(nextDraft, overrideKey);
+        const nextRecord = pruneLootItemOverrideRecord(nextDraft);
+        if (nextRecord) overrides[overrideKey] = nextRecord;
+        else delete overrides[overrideKey];
+      }
+      config.itemOverrides = overrides;
+    },
+    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS, skipLocalRefresh: true }
+  );
+  return true;
 }
 
 function setLootItemOverrideSearch(element) {
@@ -42965,8 +43085,35 @@ async function resetLootItemOverride(element) {
       delete overrides[overrideKey];
       config.itemOverrides = overrides;
     },
-    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS }
+    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS, skipLocalRefresh: true }
   );
+}
+
+async function setLootItemOverridesEnabledByKeys(keys = [], enabled = true) {
+  return updateLootItemOverridesByKeys(keys, (record) => {
+    record.disabled = enabled !== true;
+  });
+}
+
+async function resetLootItemOverridesByKeys(keys = []) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure item overrides.");
+    return false;
+  }
+  const overrideKeys = normalizeLootItemOverrideKeyList(keys);
+  if (overrideKeys.length < 1) {
+    ui.notifications?.warn("Select one or more item rows first.");
+    return false;
+  }
+  await updateLootSourceConfig(
+    (config) => {
+      const overrides = normalizeLootItemOverrides(config.itemOverrides ?? {});
+      for (const overrideKey of overrideKeys) delete overrides[overrideKey];
+      config.itemOverrides = overrides;
+    },
+    { refreshScope: REFRESH_SCOPE_KEYS.OPERATIONS, skipLocalRefresh: true }
+  );
+  return true;
 }
 
 async function toggleLootPackSource(element) {
@@ -46213,22 +46360,28 @@ function buildCalendarWeatherForecastRows({
     rows.push({
       dayOffset,
       offsetLabel: formatWeatherForecastOffsetLabel(dayOffset),
+      timestamp: forecastTimestamp,
       dateLabel: calendar.dateLabel,
       dayKey: calendar.dayKey,
       season: calendar.season,
+      record,
       weatherType: record.weatherType,
       weatherLabel: `${record.weatherType}, ${record.wind}`,
       tempLabel: `${record.dailyLowC}C / ${record.dailyHighC}C`,
       visibility: record.visibility,
-      rainLabel: `${record.rainAmount} mm`,
+      rainLabel: record.precipitationLabel || `${record.rainAmount} mm`,
+      precipitationExplanation: record.precipitationExplanation,
+      weatherSystemSummary: record.weatherSystemSummary,
       hazardLabel: hazards.length ? hazards.join(", ") : "None",
       hasHazards: hazards.length > 0,
       lunarSummary: lunar.summary,
+      lunarPlainSummary: lunar.plainSummary,
       lunarTideLabel: lunar.tideLabel,
+      lunarTideSummary: lunar.tideSummary,
       lunarSignificance: lunar.significance,
       lunarSignificanceLabel: lunar.significanceLabel,
       isLunarSignificant: lunar.significanceLabel === "Significant",
-      summary: record.travelImpact
+      summary: record.weatherSystemSummary || record.precipitationExplanation || record.encounterImpact
     });
   }
   return rows;
@@ -46272,6 +46425,7 @@ function buildCalendarWeatherContext(weatherState = null) {
     locationProfile,
     forecastDays
   });
+  const hasCalendarMutationApi = Boolean(getSimpleCalendarMutationApi());
   return {
     ...calendar,
     climate: configuredClimate,
@@ -46294,11 +46448,15 @@ function buildCalendarWeatherContext(weatherState = null) {
     hasForecastRows: forecastRows.length > 0,
     lunar,
     lunarSummary: lunar.summary,
+    lunarPlainSummary: lunar.plainSummary,
     lunarSource: lunar.source,
     lunarTideLabel: lunar.tideLabel,
+    lunarTideSummary: lunar.tideSummary,
     lunarSignificance: lunar.significance,
     lunarSignificanceLabel: lunar.significanceLabel,
     lunarIlluminationPercent: lunar.illuminationPercent,
+    lunarIlluminationMeaning: lunar.illuminationMeaning,
+    lunarPhaseMeaning: lunar.phaseMeaning,
     terrainCounts,
     terrainRows,
     terrainSummary: activeTerrainRows.length
@@ -46319,9 +46477,15 @@ function buildCalendarWeatherContext(weatherState = null) {
       terrainAnalysisMode === "imported" ? "Imported" : terrainAnalysisMode === "preview" ? "Preview" : "",
     hasTerrainImageAnalysis: terrainImageAnalysis.hasAnalysis,
     simpleCalendarActive: isSimpleCalendarActive(),
+    hasCalendarMutationApi,
+    canPlotForecastWeek: isSimpleCalendarActive() && hasCalendarMutationApi && forecastRows.length >= 7,
+    plotWeekLabel: "Save 7 Days",
     autoApply: weatherState?.calendarAutoApply === true,
     lastDayKey: String(weatherState?.calendarLastDayKey ?? "").trim(),
-    lastRolledAt: Number(weatherState?.calendarLastRolledAt ?? 0) || 0
+    lastRolledAt: Number(weatherState?.calendarLastRolledAt ?? 0) || 0,
+    lastForecastPlottedAt: Number(weatherState?.calendarForecastPlottedAt ?? 0) || 0,
+    lastForecastPlottedDays: Math.max(0, Math.floor(Number(weatherState?.calendarForecastPlottedDays ?? 0) || 0)),
+    lastForecastPlottedLocationKey: String(weatherState?.calendarForecastPlottedLocationKey ?? "").trim()
   };
 }
 
@@ -46353,13 +46517,13 @@ function buildCalendarWeatherPreset(weatherState = null) {
   return { calendar, preset, record };
 }
 
-function buildCalendarWeatherSnapshot(weatherState = null) {
+function buildCalendarWeatherSnapshot(weatherState = null, options = {}) {
   const generated = buildCalendarWeatherPreset(weatherState);
   return {
     ...generated,
     snapshot: buildGmScreenWeatherSnapshot(generated.preset, {
-      id: foundry.utils.randomID(),
-      loggedAt: Date.now(),
+      id: String(options?.id ?? "").trim() || foundry.utils.randomID(),
+      loggedAt: Number.isFinite(Number(options?.loggedAt)) ? Number(options.loggedAt) : Date.now(),
       loggedBy: String(game.user?.name ?? "GM"),
       calendarDayKey: generated.calendar.dayKey,
       calendarDateLabel: generated.calendar.dateLabel
@@ -46367,38 +46531,53 @@ function buildCalendarWeatherSnapshot(weatherState = null) {
   };
 }
 
-async function createWeatherCalendarNote(snapshot = {}, timestamp = getCurrentWorldTimestamp()) {
+function buildWeatherCalendarNotePayload(snapshot = {}, timestamp = getCurrentWorldTimestamp()) {
+  const label = String(snapshot.calendarDateLabel ?? "").trim() || formatRecoveryDueLabel(timestamp);
+  const detailLines = buildGmScreenWeatherSnapshotDetailLines(snapshot);
+  const detailContent =
+    detailLines.length > 0
+      ? `<ul>${detailLines.map((line) => `<li>${poEscapeHtml(line)}</li>`).join("")}</ul>`
+      : `<p><strong>Details:</strong> ${poEscapeHtml(String(snapshot.note ?? ""))}</p>`;
+  const weatherLabel = String(snapshot.label ?? "Calendar Weather");
+  const content = [
+    `<p><strong>Weather:</strong> ${poEscapeHtml(weatherLabel)}</p>`,
+    `<p><strong>Date:</strong> ${poEscapeHtml(label)}</p>`,
+    detailContent
+  ].join("");
+  return {
+    title: `Weather: ${weatherLabel} - ${label}`,
+    content,
+    timestamp,
+    endTimestamp: Number(timestamp) + 60,
+    allDay: true,
+    playerVisible: true,
+    visibleToPlayers: true
+  };
+}
+
+async function syncWeatherCalendarNote(snapshot = {}, timestamp = getCurrentWorldTimestamp(), options = {}) {
   const api = getSimpleCalendarMutationApi();
   if (!isSimpleCalendarActive() || !api) return { created: false, reason: "simple-calendar-unavailable" };
   try {
-    const label = String(snapshot.calendarDateLabel ?? "").trim() || formatRecoveryDueLabel(timestamp);
-    const detailLines = buildGmScreenWeatherSnapshotDetailLines(snapshot);
-    const detailContent =
-      detailLines.length > 0
-        ? `<ul>${detailLines.map((line) => `<li>${poEscapeHtml(line)}</li>`).join("")}</ul>`
-        : `<p><strong>Details:</strong> ${poEscapeHtml(String(snapshot.note ?? ""))}</p>`;
-    const content = [
-      `<p><strong>Weather:</strong> ${poEscapeHtml(String(snapshot.label ?? "Calendar Weather"))}</p>`,
-      `<p><strong>Date:</strong> ${poEscapeHtml(label)}</p>`,
-      detailContent
-    ].join("");
-    const created = await createSimpleCalendarEntry(api, {
-      title: `Weather: ${String(snapshot.label ?? "Calendar Weather")}`,
-      content,
-      timestamp,
-      endTimestamp: Number(timestamp) + 60,
-      allDay: true,
-      playerVisible: true,
-      visibleToPlayers: true
-    });
+    const payload = buildWeatherCalendarNotePayload(snapshot, timestamp);
+    const entryId = String(options?.entryId ?? "").trim();
+    if (entryId && (await updateSimpleCalendarEntry(api, entryId, payload))) {
+      return { created: false, updated: true, id: entryId };
+    }
+    const created = await createSimpleCalendarEntry(api, payload);
     return {
       created: Boolean(created?.success),
+      updated: false,
       id: String(created?.id ?? "").trim()
     };
   } catch (error) {
     console.warn(`${MODULE_ID}: failed to create weather calendar note`, error);
     return { created: false, reason: "calendar-note-failed" };
   }
+}
+
+async function createWeatherCalendarNote(snapshot = {}, timestamp = getCurrentWorldTimestamp()) {
+  return syncWeatherCalendarNote(snapshot, timestamp);
 }
 
 async function createWeatherOperationsJournalEntry(snapshot = {}, options = {}) {
@@ -46509,6 +46688,114 @@ async function gmWeatherToggleAuto(element) {
     weather.calendarAutoApply = enabled;
   });
   ui.notifications?.info(`Calendar weather auto-roll ${enabled ? "enabled" : "disabled"}.`);
+}
+
+function buildForecastWeatherSnapshot(row = {}) {
+  const record = row?.record && typeof row.record === "object" ? row.record : null;
+  const preset = buildGmScreenWeatherPreset(record ?? {}, {
+    dayKey: String(row?.dayKey ?? ""),
+    dateLabel: String(row?.dateLabel ?? "")
+  });
+  return buildGmScreenWeatherSnapshot(preset, {
+    id: foundry.utils.randomID(),
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM"),
+    calendarDayKey: String(row?.dayKey ?? ""),
+    calendarDateLabel: String(row?.dateLabel ?? "")
+  });
+}
+
+async function persistCalendarForecastPlotMetadata({
+  entryIds = {},
+  plottedAt = Date.now(),
+  days = 7,
+  locationKey = ""
+} = {}) {
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const mergedEntryIds = {
+      ...(weather.calendarForecastEntryIds && typeof weather.calendarForecastEntryIds === "object"
+        ? weather.calendarForecastEntryIds
+        : {})
+    };
+    for (const [dayKey, entryId] of Object.entries(entryIds)) {
+      const normalizedDayKey = String(dayKey ?? "").trim();
+      const normalizedEntryId = String(entryId ?? "").trim();
+      if (normalizedDayKey && normalizedEntryId) mergedEntryIds[normalizedDayKey] = normalizedEntryId;
+    }
+    weather.calendarForecastEntryIds = mergedEntryIds;
+    weather.calendarForecastPlottedAt = Number.isFinite(Number(plottedAt)) ? Number(plottedAt) : Date.now();
+    weather.calendarForecastPlottedDays = Math.max(0, Math.floor(Number(days) || 0));
+    weather.calendarForecastPlottedLocationKey = normalizeGmScreenWeatherLocationKey(
+      locationKey || weather.calendarLocationKey
+    );
+  });
+}
+
+async function gmWeatherPlotWeek() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can save calendar weather.");
+    return null;
+  }
+  const api = getSimpleCalendarMutationApi();
+  if (!isSimpleCalendarActive() || !api) {
+    ui.notifications?.warn("Simple Calendar is not available for saving weather forecasts.");
+    return { saved: 0, created: 0, updated: 0, failed: 0 };
+  }
+
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const timestamp = getCurrentWorldTimestamp();
+  const secondsPerDay = getCalendarSecondsPerDayBridge({ gameRef: game, globalRef: globalThis });
+  const locationKey = normalizeGmScreenWeatherLocationKey(
+    weatherState?.calendarLocationKey || weatherState?.calendarClimate || "temperate-lowlands"
+  );
+  const rows = buildCalendarWeatherForecastRows({
+    api,
+    timestamp,
+    secondsPerDay,
+    locationProfile: getGmScreenWeatherLocationProfile(locationKey),
+    forecastDays: 7
+  }).slice(0, 7);
+  const existingEntryIds =
+    weatherState.calendarForecastEntryIds && typeof weatherState.calendarForecastEntryIds === "object"
+      ? weatherState.calendarForecastEntryIds
+      : {};
+  const savedEntryIds = {};
+  let createdCount = 0;
+  let updatedCount = 0;
+  let failedCount = 0;
+
+  for (const row of rows) {
+    const snapshot = buildForecastWeatherSnapshot(row);
+    const existingEntryId = String(existingEntryIds[row.dayKey] ?? "").trim();
+    const result = await syncWeatherCalendarNote(snapshot, row.timestamp, { entryId: existingEntryId });
+    if (result?.created || result?.updated) {
+      if (String(result?.id ?? "").trim()) savedEntryIds[row.dayKey] = String(result.id).trim();
+      if (result.updated) updatedCount += 1;
+      else createdCount += 1;
+    } else {
+      failedCount += 1;
+    }
+  }
+
+  await persistCalendarForecastPlotMetadata({
+    entryIds: savedEntryIds,
+    plottedAt: Date.now(),
+    days: rows.length,
+    locationKey
+  });
+
+  const savedCount = createdCount + updatedCount;
+  if (savedCount > 0) {
+    ui.notifications?.info(
+      `Saved ${savedCount} weather forecast day${savedCount === 1 ? "" : "s"} to Simple Calendar (${createdCount} new, ${updatedCount} updated).`
+    );
+  }
+  if (failedCount > 0) {
+    ui.notifications?.warn(`${failedCount} weather forecast day${failedCount === 1 ? "" : "s"} could not be saved.`);
+  }
+  return { saved: savedCount, created: createdCount, updated: updatedCount, failed: failedCount };
 }
 
 async function gmWeatherRoll() {
@@ -49678,6 +49965,59 @@ function bindActorSearchDialog(dialog, actors) {
   searchInput.focus?.({ preventScroll: true });
 }
 
+function bindMarchActorRosterDialog(dialog, actors, currentRosterActorIds) {
+  const root = dialog?.element?.[0] ?? dialog?.element ?? null;
+  if (!root) return;
+  const searchInput = root.querySelector("input[name='actorSearch']");
+  const actorSelect = root.querySelector("select[name='actorId']");
+  const typeFilter = root.querySelector("select[name='actorTypeFilter']");
+  const rosterFilter = root.querySelector("select[name='actorRosterFilter']");
+  const ownershipFilter = root.querySelector("select[name='actorOwnershipFilter']");
+  const dispositionFilter = root.querySelector("select[name='actorDispositionFilter']");
+  const countLabel = root.querySelector("[data-po-actor-filter-count]");
+  if (!actorSelect) return;
+
+  const renderOptions = () => {
+    const previousValue = String(actorSelect.value ?? "").trim();
+    const rows = buildMarchActorRosterDialogRows({
+      actors,
+      currentRosterActorIds,
+      search: searchInput?.value ?? "",
+      typeFilter: typeFilter?.value ?? "all",
+      rosterFilter: rosterFilter?.value ?? "available",
+      ownershipFilter: ownershipFilter?.value ?? "all",
+      dispositionFilter: dispositionFilter?.value ?? "all",
+      tokenDispositions: CONST?.TOKEN_DISPOSITIONS
+    });
+    clearElementChildren(actorSelect);
+    const documentRef = actorSelect.ownerDocument ?? document;
+    if (rows.length > 0) {
+      for (const row of rows) {
+        const option = documentRef.createElement("option");
+        option.value = row.id;
+        option.textContent = row.label;
+        option.title = [row.typeLabel, row.ownershipLabel, row.dispositionLabel].join(" - ");
+        actorSelect.appendChild(option);
+      }
+    } else {
+      const option = documentRef.createElement("option");
+      option.value = "";
+      option.textContent = "No matching actors";
+      actorSelect.appendChild(option);
+    }
+    if (rows.some((row) => row.id === previousValue)) actorSelect.value = previousValue;
+    if (countLabel) countLabel.textContent = `${rows.length} match${rows.length === 1 ? "" : "es"}`;
+  };
+
+  searchInput?.addEventListener("input", renderOptions);
+  for (const filter of [typeFilter, rosterFilter, ownershipFilter, dispositionFilter]) {
+    filter?.addEventListener("change", renderOptions);
+  }
+
+  renderOptions();
+  searchInput?.focus?.({ preventScroll: true });
+}
+
 async function assignSlotToUser(element) {
   const state = getRestWatchState();
   if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
@@ -50863,36 +51203,89 @@ async function addMarchRosterActor() {
     return;
   }
 
-  const options = actors.map((actor) => {
-    const actorId = String(actor?.id ?? "");
-    const label = currentRosterActorIds.has(actorId) ? `${actor.name} (already in roster)` : actor.name;
-    return `<option value="${poEscapeHtml(actorId)}">${poEscapeHtml(label)}</option>`;
+  const initialRows = buildMarchActorRosterDialogRows({
+    actors,
+    currentRosterActorIds,
+    tokenDispositions: CONST?.TOKEN_DISPOSITIONS
   });
-  const content = `<div class="form-group"><label>Actor</label><select name="actorId">${options.join("")}</select></div>`;
-  const dialog = new Dialog({
-    title: "Add March Actor",
-    content,
-    buttons: {
-      add: {
-        label: "Add",
-        callback: async (html) => {
-          const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
-          const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
-          if (!isEligibleMarchRosterActor(actor)) return;
-          const updated = await updateMarchingOrderState((draft) => {
-            draft.rosterActorIds = normalizeMarchRosterActorIds([...(draft.rosterActorIds ?? []), actorId]);
-            draft.rosterExcludedActorIds = normalizeMarchRosterActorIds(draft.rosterExcludedActorIds).filter(
-              (entryId) => entryId !== actorId
-            );
-          });
-          if (updated) ui.notifications?.info(`${actor.name} added to marching roster.`);
-        }
+  const options = initialRows.map(
+    (row) => `<option value="${poEscapeHtml(row.id)}">${poEscapeHtml(row.label)}</option>`
+  );
+  const emptyOption = `<option value="">No matching actors</option>`;
+  const content = `
+    <div class="form-group">
+      <label>Search</label>
+      <input type="search" name="actorSearch" placeholder="Search actors..." autocomplete="off" />
+    </div>
+    <div class="form-group">
+      <label>Type</label>
+      <select name="actorTypeFilter">
+        <option value="all" selected>Characters and NPCs</option>
+        <option value="character">Characters</option>
+        <option value="npc">NPCs</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Roster</label>
+      <select name="actorRosterFilter">
+        <option value="available" selected>Not in roster</option>
+        <option value="all">All eligible actors</option>
+        <option value="roster">Already in roster</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Ownership</label>
+      <select name="actorOwnershipFilter">
+        <option value="all" selected>Any ownership</option>
+        <option value="player-owned">Player-owned</option>
+        <option value="unowned">Unowned</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Disposition</label>
+      <select name="actorDispositionFilter">
+        <option value="all" selected>Any disposition</option>
+        <option value="friendly">Friendly</option>
+        <option value="neutral">Neutral</option>
+        <option value="hostile">Hostile</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Actor <span class="notes" data-po-actor-filter-count>${initialRows.length} match${initialRows.length === 1 ? "" : "es"}</span></label>
+      <select name="actorId" size="10">${options.length > 0 ? options.join("") : emptyOption}</select>
+    </div>`;
+  const dialog = new Dialog(
+    {
+      title: "Add March Actor",
+      content,
+      buttons: {
+        add: {
+          label: "Add",
+          callback: async (html) => {
+            const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
+            const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+            if (!isEligibleMarchRosterActor(actor)) return;
+            if (currentRosterActorIds.has(actorId)) {
+              ui.notifications?.info(`${actor.name} is already in the marching roster.`);
+              return;
+            }
+            const updated = await updateMarchingOrderState((draft) => {
+              draft.rosterActorIds = normalizeMarchRosterActorIds([...(draft.rosterActorIds ?? []), actorId]);
+              draft.rosterExcludedActorIds = normalizeMarchRosterActorIds(draft.rosterExcludedActorIds).filter(
+                (entryId) => entryId !== actorId
+              );
+            });
+            if (updated) ui.notifications?.info(`${actor.name} added to marching roster.`);
+          }
+        },
+        cancel: { label: "Cancel" }
       },
-      cancel: { label: "Cancel" }
+      default: "add"
     },
-    default: "add"
-  });
+    { width: 520 }
+  );
   dialog.render(true);
+  bindMarchActorRosterDialog(dialog, actors, currentRosterActorIds);
 }
 
 async function removeMarchRosterActorFromElement(element) {
@@ -51043,7 +51436,9 @@ async function joinRank(element) {
 }
 
 async function toggleLight(element) {
-  const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
+  const actorId = String(
+    element?.dataset?.actorId ?? element?.closest("[data-actor-id]")?.dataset?.actorId ?? ""
+  ).trim();
   const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
   if (!actorId) return;
   if (!canAccessAllPlayerOps()) {

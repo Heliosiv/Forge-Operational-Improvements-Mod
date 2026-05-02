@@ -11,6 +11,7 @@ export function createGmWeatherPageApp(deps) {
     gmWeatherSetForecastDays,
     gmWeatherToggleAuto,
     gmWeatherRoll,
+    gmWeatherPlotWeek,
     removeWeatherLogById,
     openJournalEntryFromElement,
     openGmPanelByKey
@@ -68,6 +69,7 @@ export function createGmWeatherPageApp(deps) {
         "gm-weather-set-forecast-days": rerenderAlways(gmWeatherSetForecastDays),
         "gm-weather-toggle-auto": rerenderAlways(gmWeatherToggleAuto),
         "gm-weather-roll": rerenderAlways(() => gmWeatherRoll()),
+        "gm-weather-plot-week": rerenderAlways(() => gmWeatherPlotWeek()),
         "gm-weather-remove-log": rerenderIfTruthy((actionElement) =>
           removeWeatherLogById(actionElement?.dataset?.logId)
         ),

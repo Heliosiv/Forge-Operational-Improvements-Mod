@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(__dirname, "party-operations.js"), "utf8");
+const restWatchTemplate = readFileSync(join(__dirname, "..", "templates", "rest-watch.hbs"), "utf8");
 
 function getFunctionSource(name) {
   const start = source.indexOf(`function ${name}`);
@@ -41,5 +42,35 @@ for (const name of ["saveRestWatchEntryNoteByContext", "saveMarchingNoteByContex
     `${name} should allow shared player-ops access through the player preflight.`
   );
 }
+
+{
+  const fn = getFunctionSource("getResourceOwnerActors");
+  assert.doesNotMatch(fn, /actor\.type\s*!==\s*"character"/, "Resource targets should not be limited to PC actors.");
+  assert.match(
+    fn,
+    /canUserOwnActor\(user,\s*actor,\s*\{\s*requireCharacter:\s*false\s*\}\)/,
+    "Player resource targets should include non-character actors that the player owns."
+  );
+}
+
+{
+  const fn = getFunctionSource("setOperationalResource");
+  assert.match(
+    fn,
+    /itemSelectionActor[\s\S]*canUserOwnActor\(game\.user,\s*actor,\s*\{\s*requireCharacter:\s*false\s*\}\)/,
+    "Saving a resource target actor should allow owned non-character actors."
+  );
+  assert.match(
+    fn,
+    /Choose one of your owned actors for that resource target\./,
+    "Resource target validation copy should not call targets characters."
+  );
+}
+
+assert.match(
+  restWatchTemplate,
+  /Choose player-owned actor target items for food, water, and torches\./,
+  "Resource target helper copy should describe actor-owned targets, not character-only targets."
+);
 
 process.stdout.write("party operations monolith guard validation passed\n");

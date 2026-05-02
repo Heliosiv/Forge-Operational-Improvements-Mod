@@ -159,6 +159,32 @@ const fullMoon = resolveGmScreenLunarContext({
 assertEq(fullMoon.source, "Simple Calendar", "Lunar context should prefer moon data from the calendar date");
 assertEq(fullMoon.phaseKey, "full", "Lunar context should identify full moons");
 assertEq(fullMoon.tideLabel, "Spring tides", "Full and new moons should produce spring tides");
+assert(
+  fullMoon.tideSummary.includes("larger high and low tide swings"),
+  "Lunar tide summaries should explain spring tides in plain language"
+);
+assert(
+  fullMoon.plainSummary.includes("brightest"),
+  "Lunar summaries should explain illumination without requiring raw percentages"
+);
+
+const firstQuarterMoon = resolveGmScreenLunarContext({
+  date: {
+    moon: {
+      phase: { name: "First Quarter" },
+      illumination: 0.58
+    }
+  },
+  dayNumber: 20
+});
+assert(
+  firstQuarterMoon.phaseMeaning.includes("half-lit") && firstQuarterMoon.phaseMeaning.includes("growing brighter"),
+  "First quarter moons should be explained as half-lit and waxing"
+);
+assert(
+  firstQuarterMoon.tideSummary.includes("smaller tide swings"),
+  "Neap tides should be explained as smaller tide swings"
+);
 
 const pickedWeatherA = pickGmScreenWeatherEntry({ climate: "Temperate", season: "Summer", seed: "same-day" });
 const pickedWeatherB = pickGmScreenWeatherEntry({ climate: "Temperate", season: "Summer", seed: "same-day" });
@@ -198,8 +224,8 @@ const severePreset = buildGmScreenWeatherPreset(severeRecord, {
 assertEq(severePreset.source, "gmscreen", "Generated GMScreen presets should be source-tagged");
 assertEq(severePreset.daeChanges, [], "Generated GMScreen presets should never carry DAE changes");
 assert(
-  severePreset.note.includes("Deepwinter 4") && severePreset.note.includes("Travel:"),
-  "Generated GMScreen presets should include calendar and travel details"
+  severePreset.note.includes("Deepwinter 4") && severePreset.note.includes("System:"),
+  "Generated GMScreen presets should include calendar and weather-system details"
 );
 const severeSnapshot = buildGmScreenWeatherSnapshot(severePreset, {
   id: "weather-snapshot",
@@ -221,8 +247,12 @@ assert(
   "GMScreen snapshot detail lines should include hazards"
 );
 assert(
-  severeSnapshotDetails.some((line) => line.startsWith("Travel:")),
-  "GMScreen snapshot detail lines should include travel impact"
+  severeSnapshotDetails.some((line) => line.startsWith("Weather System:")),
+  "GMScreen snapshot detail lines should include weather-system explanation"
+);
+assert(
+  !severeSnapshotDetails.some((line) => line.startsWith("Travel:")),
+  "GMScreen snapshot detail lines should not include travel speed advisories"
 );
 const coastalFullMoonRecord = buildGmScreenWeatherRecord({
   climate: "Coastal",
@@ -430,7 +460,36 @@ assert(
 );
 assert(
   wetRainDetails.some((line) => line.startsWith("Moisture:")),
-  "GMScreen snapshot detail lines should include humidity and rain"
+  "GMScreen snapshot detail lines should include humidity and precipitation"
+);
+
+const torrentialRainRecord = buildGmScreenWeatherRecord({
+  climate: "Tropical",
+  season: "Summer",
+  dayNumber: 88,
+  hourOfDay: 15,
+  randomFn: () => 0.95,
+  terrainCounts: { Water: 5, Swamp: 4, Coast: 2 },
+  entry: {
+    condition: "Monsoon",
+    weight: 1,
+    wind: "Gale",
+    baseTempC: 29,
+    note: "Saturated tropical air."
+  }
+});
+assert(
+  torrentialRainRecord.rainAmount >= 100,
+  "Real weather-system precipitation should allow 100 mm or more in severe wet systems"
+);
+assertEq(
+  torrentialRainRecord.precipitationIntensity,
+  "Torrential",
+  "Extreme wet systems should expose a torrential precipitation label"
+);
+assert(
+  torrentialRainRecord.precipitationExplanation.includes("flash flooding"),
+  "Torrential rain should explain table-facing consequences"
 );
 
 const flatClearRecord = buildGmScreenWeatherRecord({

@@ -962,6 +962,44 @@ function darknessAdjustmentForLunarPhase(label = "") {
   return 0;
 }
 
+function describeLunarPhase(label = "") {
+  const normalized = normalizeMoonPhaseLabel(label) || "Moon Phase";
+  const key = getLunarPhaseKey(normalized);
+  if (key === "new") return "New moon means the moon is dark; nights are at their darkest.";
+  if (key === "full") return "Full moon means the moon is fully lit; open ground is much brighter at night.";
+  if (key === "first-quarter") return "First quarter means the moon is half-lit and growing brighter each night.";
+  if (key === "last-quarter") return "Last quarter means the moon is half-lit and fading darker each night.";
+  if (key === "waxing-crescent") return "Waxing crescent means a thin moon is growing brighter after sunset.";
+  if (key === "waning-crescent") return "Waning crescent means a thin moon is fading toward a dark new moon.";
+  if (key === "waxing-gibbous") return "Waxing gibbous means a mostly lit moon is building toward full moon.";
+  if (key === "waning-gibbous") return "Waning gibbous means a mostly lit moon is fading after full moon.";
+  if (key.includes("quarter")) return "Quarter moon means the moon is roughly half-lit.";
+  if (key.includes("crescent")) return "Crescent moon means only a small slice of the moon is lit.";
+  if (key.includes("gibbous")) return "Gibbous moon means most of the moon is lit.";
+  return `${normalized} changes night brightness and coastal water behavior.`;
+}
+
+function describeLunarIllumination(percent = 50) {
+  const value = clampInteger(percent, 0, 100, 50);
+  if (value <= 5) return "The moon gives almost no useful light.";
+  if (value < 30) return "Only a small slice is lit, so nights stay quite dark.";
+  if (value < 45) return "Less than half is lit, giving weak night light.";
+  if (value <= 60) return "About half the moon is lit, giving mixed shadows and partial night light.";
+  if (value < 80) return "Most of the moon is lit, so clear nights are noticeably brighter.";
+  if (value < 95) return "Nearly the whole moon is lit, so clear nights are bright.";
+  return "The moon is essentially full, so clear nights are at their brightest.";
+}
+
+function describeLunarTide(phaseKey = "") {
+  if (phaseKey === "new" || phaseKey === "full") {
+    return "Spring tides mean larger high and low tide swings; coasts, marshes, and fords are more volatile.";
+  }
+  if (String(phaseKey ?? "").includes("quarter")) {
+    return "Neap tides mean smaller tide swings; coastal water is steadier than it is near a new or full moon.";
+  }
+  return "Ordinary tides mean no special lunar tide pressure today.";
+}
+
 function collectMoonCandidates(value, candidates = [], seen = new Set()) {
   if (!value || typeof value !== "object" || seen.has(value)) return candidates;
   seen.add(value);
@@ -1094,26 +1132,35 @@ export function resolveGmScreenLunarContext({
   const isSpringTide = phaseKey === "full" || phaseKey === "new";
   const isQuarter = phaseKey.includes("quarter");
   const tideLabel = isSpringTide ? "Spring tides" : isQuarter ? "Neap tides" : "Ordinary tides";
+  const tideSummary = describeLunarTide(phaseKey);
+  const illuminationPercent = clampInteger(primary?.illuminationPercent, 0, 100, illuminationForLunarPhase(phaseLabel));
+  const phaseMeaning = describeLunarPhase(phaseLabel);
+  const illuminationMeaning = describeLunarIllumination(illuminationPercent);
   const moonName = String(primary?.name ?? "").trim();
   const summary = `${moonName ? `${moonName}: ` : ""}${phaseLabel}`;
   const source = calendarMoons.length ? "Simple Calendar" : "Estimated";
+  const plainSummary = `${summary}. ${illuminationMeaning}`;
   const significance =
     phaseKey === "new"
-      ? "New moon deepens night travel, hiding tracks and ambushes."
+      ? "Use darker nights, easier hiding, and more dangerous night watches."
       : phaseKey === "full"
-        ? "Full moon improves open-night visibility and draws attention to exposed movement."
+        ? "Use brighter nights, easier long views, and more visible exposed movement."
         : isQuarter
-          ? "Quarter moons calm tidal extremes but leave uneven night light."
-          : "Moonlight has a minor travel effect.";
+          ? "Use half-lit nights and steadier coastal water."
+          : "Use modest moonlight changes unless the scene happens at night or near water.";
   return {
     source,
     summary,
+    plainSummary,
     phaseLabel,
     phaseKey,
+    phaseMeaning,
     tideLabel,
+    tideSummary,
     significance,
     significanceLabel: phaseKey === "full" || phaseKey === "new" || isQuarter ? "Significant" : "Minor",
-    illuminationPercent: clampInteger(primary?.illuminationPercent, 0, 100, illuminationForLunarPhase(phaseLabel)),
+    illuminationPercent,
+    illuminationMeaning,
     darknessAdjustment: darknessAdjustmentForLunarPhase(phaseLabel),
     moons
   };
@@ -1131,18 +1178,18 @@ function buildGmScreenLunarWeatherImpact(lunarContext = {}, terrainCounts = {}) 
   const encounterNotes = [];
   if (lunar.phaseKey === "new") {
     hazardFlags.push("Dark Moon");
-    travelNotes.push("new moon darkness makes watches, fords, and navigation less forgiving");
+    travelNotes.push("new moon darkness makes watches, fords, and landmarks harder to read");
     encounterNotes.push("stealth and hidden movement become more important after sunset");
   } else if (lunar.phaseKey === "full") {
     hazardFlags.push("Bright Moonlight");
-    travelNotes.push("full moonlight helps open-night navigation when clouds allow it");
+    travelNotes.push("full moonlight makes exposed night movement easier to see");
     encounterNotes.push("exposed movement is easier to spot under moonlight");
   }
   if ((lunar.phaseKey === "new" || lunar.phaseKey === "full") && waterWeight > 0) {
     hazardFlags.push("Spring Tides");
-    travelNotes.push("spring tides make coasts, marsh edges, and crossings more volatile");
+    travelNotes.push("spring tides raise the swing between high and low water");
   } else if (lunar.phaseKey.includes("quarter") && waterWeight > 0) {
-    travelNotes.push("neap tides reduce tidal extremes around water routes");
+    travelNotes.push("neap tides keep coastal water swings smaller");
   }
   return {
     hazardFlags,
@@ -1298,30 +1345,153 @@ export function humidityForGmScreenWeather(condition = "", terrainCounts = {}) {
   return clampInteger(humidity, 10, 100, 50);
 }
 
-export function precipMmDayForGmScreenWeather(condition = "", windSpeed = 10, terrainCounts = {}) {
+function getGmScreenPrecipitationRange(condition = "", climate = "Temperate", season = "Spring") {
   const lowered = String(condition ?? "").toLowerCase();
-  const terrain = normalizeTerrainCounts(terrainCounts);
-  let mmDay = 0;
-  if (lowered.includes("dust storm")) mmDay = 0;
-  else if (lowered.includes("drizzle")) mmDay = 2;
-  else if (lowered.includes("heavy rain")) mmDay = 24;
-  else if (lowered.includes("rain")) mmDay = 10;
-  else if (lowered.includes("typhoon")) mmDay = 70;
-  else if (lowered.includes("monsoon")) mmDay = 45;
-  else if (lowered.includes("storm") || lowered.includes("thunder")) mmDay = 30;
-  else if (lowered.includes("snow") || lowered.includes("sleet") || lowered.includes("blizzard")) mmDay = 12;
-  else if (lowered.includes("heatwave") || lowered.includes("hot")) mmDay = 1;
-  else if (lowered.includes("scorching")) mmDay = 0;
-  if (lowered.includes("heavy")) mmDay *= 1.3;
+  const normalizedClimate = normalizeGmScreenWeatherClimate(climate);
+  const normalizedSeason = normalizeGmScreenWeatherSeason(season);
+  const isTropicalWetSeason = normalizedClimate === "Tropical" && ["Spring", "Summer"].includes(normalizedSeason);
 
-  if (mmDay > 0) {
+  if (lowered.includes("dust storm") || lowered.includes("scorching") || lowered.includes("heatwave")) {
+    return { min: 0, max: 0, kind: "rain", systemLabel: "Dry high-pressure system" };
+  }
+  if (lowered.includes("typhoon")) {
+    return { min: 80, max: 220, kind: "rain", systemLabel: "Tropical cyclone" };
+  }
+  if (lowered.includes("monsoon")) {
+    return { min: 45, max: 160, kind: "rain", systemLabel: "Monsoon surge" };
+  }
+  if (lowered.includes("blizzard") || lowered.includes("whiteout")) {
+    return { min: 12, max: 70, kind: "snow water equivalent", systemLabel: "Winter storm system" };
+  }
+  if (lowered.includes("snow") || lowered.includes("sleet")) {
+    return { min: 3, max: 30, kind: "snow water equivalent", systemLabel: "Cold precipitation band" };
+  }
+  if (lowered.includes("heavy rain")) {
+    return { min: 25, max: 95, kind: "rain", systemLabel: "Slow wet front" };
+  }
+  if (lowered.includes("storm") || lowered.includes("thunder")) {
+    return { min: 12, max: isTropicalWetSeason ? 130 : 105, kind: "rain", systemLabel: "Unstable storm front" };
+  }
+  if (lowered.includes("drizzle")) {
+    return { min: 0.2, max: 5, kind: "rain", systemLabel: "Low cloud and drizzle" };
+  }
+  if (lowered.includes("rain")) {
+    return { min: 4, max: isTropicalWetSeason ? 55 : 35, kind: "rain", systemLabel: "Passing rain band" };
+  }
+  if (lowered.includes("fog") || lowered.includes("humid") || lowered.includes("overcast")) {
+    return { min: 0, max: 2, kind: "rain", systemLabel: "Moist stable air" };
+  }
+  return { min: 0, max: 0, kind: "rain", systemLabel: "Dry or settled weather" };
+}
+
+function precipitationIntensityForAmount(amount = 0) {
+  const value = Math.max(0, Number(amount) || 0);
+  if (value <= 0) return "Dry";
+  if (value < 1) return "Trace";
+  if (value < 5) return "Light";
+  if (value < 20) return "Moderate";
+  if (value < 50) return "Heavy";
+  if (value < 100) return "Very heavy";
+  return "Torrential";
+}
+
+function precipitationImpactForAmount(amount = 0, kind = "rain") {
+  const value = Math.max(0, Number(amount) || 0);
+  const loweredKind = String(kind ?? "rain").toLowerCase();
+  if (value <= 0) return "No measurable precipitation is expected.";
+  if (value < 1) return "Only trace moisture is expected; it is mostly atmosphere and damp surfaces.";
+  if (value < 5) return "Light precipitation dampens surfaces without changing the whole day.";
+  if (value < 20) return "Moderate precipitation makes the day clearly wet.";
+  if (value < 50)
+    return loweredKind.includes("snow")
+      ? "Heavy snow water content can build difficult snowpack."
+      : "Heavy rain can fill ditches, soften trails, and raise small streams.";
+  if (value < 100)
+    return loweredKind.includes("snow")
+      ? "Very heavy snow water content can close passes and bury tracks."
+      : "Very heavy rain can flood low ground and make crossings dangerous.";
+  return loweredKind.includes("snow")
+    ? "Extreme snow water content can create whiteout-level accumulation and serious exposure risk."
+    : "Torrential rain can produce flash flooding, washed roads, and fast-rising rivers.";
+}
+
+export function buildGmScreenPrecipitationProfile({
+  condition = "",
+  windSpeed = 10,
+  terrainCounts = {},
+  climate = "Temperate",
+  season = "Spring",
+  randomFn = null
+} = {}) {
+  const terrain = normalizeTerrainCounts(terrainCounts);
+  const normalizedClimate = normalizeGmScreenWeatherClimate(climate);
+  const normalizedSeason = normalizeGmScreenWeatherSeason(season);
+  const range = getGmScreenPrecipitationRange(condition, normalizedClimate, normalizedSeason);
+  const rawRandom = typeof randomFn === "function" ? Number(randomFn()) : 0.58;
+  const randomValue = Number.isFinite(rawRandom) ? Math.max(0, Math.min(0.999, rawRandom)) : 0.58;
+  let low = Math.max(0, Number(range.min) || 0);
+  let high = Math.max(low, Number(range.max) || 0);
+
+  if (high > 0) {
     const windMultiplier = 1 + Math.max(0, (Number(windSpeed) - 12) * 0.02);
-    const moistureMultiplier = 1 + Math.min(0.75, terrain.Water * 0.04 + terrain.Swamp * 0.06 + terrain.Coast * 0.03);
-    mmDay *= windMultiplier * moistureMultiplier;
-    mmDay += terrain.Water * 0.8 + terrain.Swamp * 1.2 + terrain.Coast * 0.4;
+    const moistureMultiplier = 1 + Math.min(0.9, terrain.Water * 0.05 + terrain.Swamp * 0.07 + terrain.Coast * 0.04);
+    const desertMultiplier = 1 - Math.min(0.5, terrain.Desert * 0.08);
+    const climateMultiplier =
+      normalizedClimate === "Tropical" || normalizedClimate === "Swamp"
+        ? 1.2
+        : normalizedClimate === "Coastal"
+          ? 1.1
+          : normalizedClimate === "Arid"
+            ? 0.6
+            : 1;
+    low *= windMultiplier * moistureMultiplier * desertMultiplier * climateMultiplier;
+    high *= windMultiplier * moistureMultiplier * desertMultiplier * climateMultiplier;
+    high += terrain.Water * 1.1 + terrain.Swamp * 1.8 + terrain.Coast * 0.7;
+    low += terrain.Swamp > 0 ? 0.5 : 0;
   }
 
-  return Math.min(180, Math.max(0, mmDay - terrain.Desert * 2));
+  const spread = Math.max(0, high - low);
+  const amount = spread > 0 ? low + spread * Math.pow(randomValue, 1.35) : low;
+  const amountMm = Math.round(Math.min(240, Math.max(0, amount)) * 10) / 10;
+  const intensityLabel = precipitationIntensityForAmount(amountMm);
+  const kind = String(range.kind ?? "rain");
+  const amountLabel =
+    amountMm <= 0
+      ? "0 mm"
+      : amountMm < 1
+        ? `${amountMm} mm trace`
+        : `${amountMm} mm ${kind.includes("snow") ? "water equivalent" : "rain"}`;
+  const explanation = [
+    `${range.systemLabel}: ${intensityLabel.toLowerCase()} ${kind.includes("snow") ? "snowfall" : "rainfall"} (${amountLabel}).`,
+    precipitationImpactForAmount(amountMm, kind)
+  ].join(" ");
+
+  return {
+    amountMm,
+    intensityLabel,
+    kind,
+    amountLabel,
+    systemLabel: range.systemLabel,
+    explanation,
+    summary: `${range.systemLabel}; ${intensityLabel.toLowerCase()} precipitation, ${amountLabel}`
+  };
+}
+
+export function precipMmDayForGmScreenWeather(condition = "", windSpeed = 10, terrainCounts = {}, options = {}) {
+  return buildGmScreenPrecipitationProfile({
+    condition,
+    windSpeed,
+    terrainCounts,
+    climate: options?.climate ?? "Temperate",
+    season: options?.season ?? "Spring",
+    randomFn: options?.randomFn ?? null
+  }).amountMm;
+}
+
+export function formatGmScreenPrecipitationLabel(profile = {}) {
+  const intensity = String(profile?.intensityLabel ?? precipitationIntensityForAmount(profile?.amountMm)).trim();
+  const amountLabel = String(profile?.amountLabel ?? `${Number(profile?.amountMm ?? 0)} mm`).trim();
+  return `${intensity} (${amountLabel})`;
 }
 
 export function visibilityForGmScreenWeather(condition = "", terrainCounts = {}) {
@@ -1534,7 +1704,15 @@ export function buildGmScreenWeatherRecord({
   const temperatureC = temperatureForGmScreenWeatherHour(dailyHighC, dailyLowC, hourOfDay);
   const windSpeed = windSpeedForGmScreenWeather(pickedEntry.wind);
   const humidity = humidityForGmScreenWeather(pickedEntry.condition, terrain);
-  const rainAmount = precipMmDayForGmScreenWeather(pickedEntry.condition, windSpeed, terrain);
+  const precipitation = buildGmScreenPrecipitationProfile({
+    condition: pickedEntry.condition,
+    windSpeed,
+    terrainCounts: terrain,
+    climate: normalizedClimate,
+    season: normalizedSeason,
+    randomFn: random
+  });
+  const rainAmount = precipitation.amountMm;
   const visibility = visibilityForGmScreenWeather(pickedEntry.condition, terrain);
   const lunar =
     lunarContext && typeof lunarContext === "object" && lunarContext.phaseKey
@@ -1582,6 +1760,11 @@ export function buildGmScreenWeatherRecord({
     encounterImpact,
     humidity,
     rainAmount: Math.round(rainAmount * 10) / 10,
+    precipitation,
+    precipitationLabel: formatGmScreenPrecipitationLabel(precipitation),
+    precipitationIntensity: precipitation.intensityLabel,
+    precipitationExplanation: precipitation.explanation,
+    weatherSystemSummary: precipitation.summary,
     hazardFlags,
     severity: weatherSeverityForGmScreenWeather(pickedEntry.condition),
     terrainCounts: terrain,
@@ -1589,8 +1772,10 @@ export function buildGmScreenWeatherRecord({
     terrainSummary: formatGmScreenWeatherTerrainSummary(terrain),
     lunar,
     lunarSummary: lunar.summary,
+    lunarPlainSummary: lunar.plainSummary,
     lunarSignificance: lunar.significance,
     lunarTideLabel: lunar.tideLabel,
+    lunarTideSummary: lunar.tideSummary,
     tableNote: String(pickedEntry.note ?? "")
   };
 }
@@ -1624,12 +1809,12 @@ export function buildGmScreenWeatherNote(record = {}, { dateLabel = "", dayKey =
   return [
     `${calendar}: ${record.weatherType} in ${record.climate} ${record.season}.`,
     `Temp ${record.temperatureC}C (H ${record.dailyHighC} / L ${record.dailyLowC}), wind ${record.wind} ${record.windSpeed} km/h.`,
-    `Humidity ${record.humidity}%, rain ${record.rainAmount} mm/day, visibility ${record.visibility}, hazards ${hazards}.`,
+    `Humidity ${record.humidity}%, precipitation ${record.precipitationLabel || `${record.rainAmount} mm`}, visibility ${record.visibility}, hazards ${hazards}.`,
+    record.precipitationExplanation ? `System: ${record.precipitationExplanation}` : "",
     `Terrain: ${record.terrainSummary || formatGmScreenWeatherTerrainSummary(record.terrainCounts)}.`,
     record.lunarSummary
-      ? `Moon: ${record.lunarSummary} (${record.lunarTideLabel || "Ordinary tides"}). ${record.lunarSignificance || ""}`
+      ? `Moon: ${record.lunarPlainSummary || record.lunarSummary}. ${record.lunarTideSummary || ""} ${record.lunarSignificance || ""}`
       : "",
-    `Travel: ${record.travelImpact}`,
     `Encounter: ${record.encounterImpact}`,
     String(record.tableNote ?? "")
   ]
@@ -1667,10 +1852,14 @@ export function buildGmScreenWeatherSnapshotDetailLines(snapshot = {}) {
   const humidity = getNumericDetail(snapshot?.humidity);
   const rainAmount = getNumericDetail(snapshot?.rainAmount);
   if (humidity !== null || rainAmount !== null) {
+    const precipitationLabel = String(snapshot?.precipitationLabel ?? "").trim();
     lines.push(
-      `Moisture: ${humidity !== null ? `${humidity}% humidity` : "humidity unknown"}; ${rainAmount !== null ? `${rainAmount} mm/day rain` : "rain unknown"}`
+      `Moisture: ${humidity !== null ? `${humidity}% humidity` : "humidity unknown"}; ${precipitationLabel || (rainAmount !== null ? `${rainAmount} mm precipitation` : "precipitation unknown")}`
     );
   }
+
+  const precipitationExplanation = String(snapshot?.precipitationExplanation ?? "").trim();
+  if (precipitationExplanation) lines.push(`Weather System: ${precipitationExplanation}`);
 
   const visibility = String(snapshot?.visibility ?? "").trim();
   const visibilityModifier = getNumericDetail(snapshot?.visibilityModifier);
@@ -1688,20 +1877,14 @@ export function buildGmScreenWeatherSnapshotDetailLines(snapshot = {}) {
   const lunarSummary = String(snapshot?.lunarSummary ?? "").trim();
   if (lunarSummary) {
     const lunarParts = [
-      lunarSummary,
-      String(snapshot?.lunarTideLabel ?? "").trim(),
-      Number.isFinite(Number(snapshot?.lunarIlluminationPercent))
-        ? `${Number(snapshot.lunarIlluminationPercent)}% illumination`
-        : ""
+      String(snapshot?.lunarPlainSummary ?? "").trim() || lunarSummary,
+      String(snapshot?.lunarTideSummary ?? "").trim() || String(snapshot?.lunarTideLabel ?? "").trim()
     ].filter(Boolean);
     lines.push(`Moon: ${lunarParts.join(" - ")}`);
   }
 
   const lunarSignificance = String(snapshot?.lunarSignificance ?? "").trim();
   if (lunarSignificance) lines.push(`Lunar Significance: ${lunarSignificance}`);
-
-  const travelImpact = String(snapshot?.travelImpact ?? "").trim();
-  if (travelImpact) lines.push(`Travel: ${travelImpact}`);
 
   const encounterImpact = String(snapshot?.encounterImpact ?? "").trim();
   if (encounterImpact) lines.push(`Encounter: ${encounterImpact}`);
@@ -1766,12 +1949,20 @@ export function buildGmScreenWeatherSnapshot(
     windSpeed: Number(record?.windSpeed ?? 0),
     humidity: Number(record?.humidity ?? 0),
     rainAmount: Number(record?.rainAmount ?? 0),
+    precipitationLabel: String(record?.precipitationLabel ?? ""),
+    precipitationIntensity: String(record?.precipitationIntensity ?? ""),
+    precipitationExplanation: String(record?.precipitationExplanation ?? ""),
+    weatherSystemSummary: String(record?.weatherSystemSummary ?? ""),
     visibility: String(record?.visibility ?? ""),
     hazards: Array.isArray(record?.hazardFlags) ? [...record.hazardFlags] : [],
     terrainSummary: String(record?.terrainSummary ?? ""),
     lunarSummary: String(record?.lunarSummary ?? record?.lunar?.summary ?? ""),
+    lunarPlainSummary: String(record?.lunarPlainSummary ?? record?.lunar?.plainSummary ?? ""),
     lunarSignificance: String(record?.lunarSignificance ?? record?.lunar?.significance ?? ""),
     lunarTideLabel: String(record?.lunarTideLabel ?? record?.lunar?.tideLabel ?? ""),
+    lunarTideSummary: String(record?.lunarTideSummary ?? record?.lunar?.tideSummary ?? ""),
+    lunarPhaseMeaning: String(record?.lunar?.phaseMeaning ?? ""),
+    lunarIlluminationMeaning: String(record?.lunar?.illuminationMeaning ?? ""),
     lunarIlluminationPercent: Number(record?.lunar?.illuminationPercent ?? 0),
     lunarSource: String(record?.lunar?.source ?? ""),
     travelImpact: String(record?.travelImpact ?? ""),

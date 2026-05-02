@@ -1,5 +1,29 @@
 export const DEFAULT_MARCH_ACTOR_IMAGE = "icons/svg/mystery-man.svg";
 
+const ACTOR_PORTRAIT_PATHS = Object.freeze([
+  "img",
+  "_source.img",
+  "thumbnail",
+  "thumb",
+  "portrait",
+  "system.details.image",
+  "system.details.avatar"
+]);
+
+const TOKEN_TEXTURE_PATHS = Object.freeze([
+  "document.texture.src",
+  "document._source.texture.src",
+  "texture.src",
+  "_source.texture.src",
+  "object.document.texture.src",
+  "object.document._source.texture.src",
+  "object.texture.src",
+  "prototypeToken.texture.src",
+  "prototypeToken._source.texture.src",
+  "token.texture.src",
+  "token._source.texture.src"
+]);
+
 export function isDefaultFoundryActorImagePath(value = "") {
   const normalized = String(value ?? "")
     .trim()
@@ -15,6 +39,37 @@ export function isDefaultFoundryActorImagePath(value = "") {
   );
 }
 
+function readPath(source, path) {
+  if (!source || typeof source !== "object") return "";
+  let cursor = source;
+  for (const segment of String(path ?? "").split(".")) {
+    if (!segment) continue;
+    cursor = cursor?.[segment];
+    if (cursor === null || cursor === undefined) return "";
+  }
+  if (typeof cursor === "string") return cursor;
+  if (cursor && typeof cursor === "object" && typeof cursor.src === "string") return cursor.src;
+  return "";
+}
+
+function getActorSourceSnapshot(actor = null) {
+  if (!actor || typeof actor?.toObject !== "function") return null;
+  for (const args of [[false], []]) {
+    try {
+      const snapshot = actor.toObject(...args);
+      if (snapshot && typeof snapshot === "object") return snapshot;
+    } catch {
+      // Try the next Foundry-version signature.
+    }
+  }
+  return null;
+}
+
+function collectPathCandidates(source, paths) {
+  if (!source || typeof source !== "object") return [];
+  return paths.map((path) => readPath(source, path)).filter(Boolean);
+}
+
 function getActiveTokenTextureSources(actor = null) {
   if (!actor || typeof actor?.getActiveTokens !== "function") return [];
   const calls = [() => actor.getActiveTokens(true, true), () => actor.getActiveTokens()];
@@ -27,12 +82,7 @@ function getActiveTokenTextureSources(actor = null) {
     }
     if (!Array.isArray(tokens) || tokens.length <= 0) continue;
     return tokens
-      .flatMap((token) => [
-        token?.document?.texture?.src,
-        token?.texture?.src,
-        token?.object?.document?.texture?.src,
-        token?.object?.texture?.src
-      ])
+      .flatMap((token) => collectPathCandidates(token, TOKEN_TEXTURE_PATHS))
       .map((entry) => String(entry ?? "").trim())
       .filter(Boolean);
   }
@@ -46,11 +96,15 @@ export function resolveMarchActorImage(
     fallback = DEFAULT_MARCH_ACTOR_IMAGE
   } = {}
 ) {
-  const portraitCandidates = [actor?.img];
+  const actorSource = getActorSourceSnapshot(actor);
+  const portraitCandidates = [
+    ...collectPathCandidates(actor, ACTOR_PORTRAIT_PATHS),
+    ...collectPathCandidates(actorSource, ACTOR_PORTRAIT_PATHS)
+  ];
   const tokenCandidates = [
     ...getActiveTokenTextureSources(actor),
-    actor?.prototypeToken?.texture?.src,
-    actor?.token?.texture?.src
+    ...collectPathCandidates(actor, TOKEN_TEXTURE_PATHS),
+    ...collectPathCandidates(actorSource, TOKEN_TEXTURE_PATHS)
   ];
   const normalizeCandidates = (candidates) =>
     candidates

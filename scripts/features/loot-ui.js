@@ -35,6 +35,57 @@ function createDebouncedAction(callback, delayMs = 160) {
   };
 }
 
+function getLootItemOverrideSelectionRoot(root) {
+  return root instanceof HTMLElement ? root.querySelector(".po-loot-item-overrides-panel") : null;
+}
+
+function getSelectedLootItemOverrideKeys(root) {
+  const selectionRoot = getLootItemOverrideSelectionRoot(root);
+  if (!selectionRoot) return [];
+  return Array.from(selectionRoot.querySelectorAll("[data-po-loot-override-select][data-override-key]:checked"))
+    .map((entry) => String(entry?.dataset?.overrideKey ?? "").trim())
+    .filter(Boolean);
+}
+
+function updateLootItemOverrideBulkControls(root) {
+  const selectionRoot = getLootItemOverrideSelectionRoot(root);
+  if (!selectionRoot) return;
+  const rowToggles = Array.from(selectionRoot.querySelectorAll("[data-po-loot-override-select][data-override-key]"));
+  const selectedCount = rowToggles.filter((entry) => entry instanceof HTMLInputElement && entry.checked).length;
+  const countNode = selectionRoot.querySelector("[data-po-loot-override-selection-count]");
+  if (countNode) countNode.textContent = `${selectedCount} selected`;
+  selectionRoot.querySelectorAll("[data-po-loot-override-bulk-action]").forEach((entry) => {
+    if ("disabled" in entry) entry.disabled = selectedCount < 1;
+  });
+  selectionRoot.querySelectorAll("[data-po-loot-override-select-all]").forEach((entry) => {
+    if (!(entry instanceof HTMLInputElement)) return;
+    entry.checked = rowToggles.length > 0 && selectedCount === rowToggles.length;
+    entry.indeterminate = selectedCount > 0 && selectedCount < rowToggles.length;
+  });
+}
+
+function bindLootItemOverrideBulkSelection(root) {
+  if (!(root instanceof HTMLElement) || root.dataset.poBoundLootItemOverrideSelection === "1") return;
+  root.dataset.poBoundLootItemOverrideSelection = "1";
+  root.addEventListener("change", (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const selectionRoot = getLootItemOverrideSelectionRoot(root);
+    if (!selectionRoot || !selectionRoot.contains(target)) return;
+    if (target.matches("[data-po-loot-override-select-all]")) {
+      const checked = target instanceof HTMLInputElement && target.checked;
+      selectionRoot.querySelectorAll("[data-po-loot-override-select][data-override-key]").forEach((entry) => {
+        if (entry instanceof HTMLInputElement) entry.checked = checked;
+      });
+      updateLootItemOverrideBulkControls(root);
+      return;
+    }
+    if (target.matches("[data-po-loot-override-select][data-override-key]")) {
+      updateLootItemOverrideBulkControls(root);
+    }
+  });
+}
+
 export function createGmLootPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -63,6 +114,8 @@ export function createGmLootPageApp(deps) {
     setLootItemOverridePrice,
     toggleLootItemOverrideEnabled,
     resetLootItemOverride,
+    setLootItemOverridesEnabledByKeys,
+    resetLootItemOverridesByKeys,
     setLootKeywordIncludeMode,
     setLootKeywordIncludeTags,
     setLootKeywordExcludeTags,
@@ -245,6 +298,15 @@ export function createGmLootPageApp(deps) {
         "set-loot-item-override-price": rerenderUnlessInput(setLootItemOverridePrice),
         "toggle-loot-item-override-enabled": rerenderAlways(toggleLootItemOverrideEnabled),
         "reset-loot-item-override": rerenderAlways(resetLootItemOverride),
+        "enable-selected-loot-item-overrides": rerenderIfTruthy(() =>
+          setLootItemOverridesEnabledByKeys(getSelectedLootItemOverrideKeys(this.element), true)
+        ),
+        "disable-selected-loot-item-overrides": rerenderIfTruthy(() =>
+          setLootItemOverridesEnabledByKeys(getSelectedLootItemOverrideKeys(this.element), false)
+        ),
+        "reset-selected-loot-item-overrides": rerenderIfTruthy(() =>
+          resetLootItemOverridesByKeys(getSelectedLootItemOverrideKeys(this.element))
+        ),
         "set-loot-keyword-include-mode": rerenderAlways(setLootKeywordIncludeMode),
         "set-loot-keyword-include-tags": rerenderAlways(setLootKeywordIncludeTags),
         "set-loot-keyword-exclude-tags": rerenderAlways(setLootKeywordExcludeTags),
@@ -287,6 +349,7 @@ export function createGmLootPageApp(deps) {
 
     _bindAdditionalListeners(root) {
       bindLootItemCardIconOpeners(root, openLootItemFromElement);
+      bindLootItemOverrideBulkSelection(root);
       const setDropzoneState = (eventTarget, active) => {
         const dropZone = eventTarget?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return null;

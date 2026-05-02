@@ -137,8 +137,8 @@
             {{#each actors}}
             <span class="po-march-spacing-token {{#if hasLight}}has-light{{/if}}" title="{{title}}" data-actor-id="{{actorId}}">
               <img class="po-portrait" src="{{img}}" alt="{{name}}" />
-              <label class="po-march-spacing-token-light" title="{{lightTooltip}}" aria-label="Toggle torch for {{name}}">
-                <input type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
+              <label class="po-march-spacing-token-light" title="{{lightTooltip}}" aria-label="Toggle torch for {{name}}" data-actor-id="{{actorId}}">
+                <input type="checkbox" data-action="toggle-light" data-actor-id="{{actorId}}" {{#if hasLight}}checked{{/if}} />
                 <i class="fa-solid fa-fire" aria-hidden="true"></i>
               </label>
             </span>
