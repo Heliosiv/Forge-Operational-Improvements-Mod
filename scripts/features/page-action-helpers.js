@@ -79,7 +79,7 @@ export function createPageActionHelpers(app, { perfTracker = createModulePerfTra
     if (!panelKey) return;
     if (panelKey === normalizePanelKey(currentPanelKey)) return;
     app.persistWindowPosition?.({ immediate: true });
-    if (panelKey === "cockpit") await app.close?.();
+    await app.close?.();
     if (typeof openPanelByKey === "function") openPanelByKey(panelKey, { force: true });
   };
 

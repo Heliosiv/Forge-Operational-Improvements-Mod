@@ -1,4 +1,3 @@
-{{#if isCockpit}}
 <nav class="po-tabs po-tabs-sub po-gm-panel-tabs po-gm-ops-tabs" role="tablist" aria-label="GM workspace navigation">
   <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isCockpit}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="cockpit" aria-selected="{{#if isCockpit}}true{{else}}false{{/if}}" aria-current="{{#if isCockpit}}page{{else}}false{{/if}}" tabindex="{{#if isCockpit}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Cockpit</span>
@@ -18,18 +17,10 @@
   <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio" aria-selected="{{#if isAudio}}true{{else}}false{{/if}}" aria-current="{{#if isAudio}}page{{else}}false{{/if}}" tabindex="{{#if isAudio}}0{{else}}-1{{/if}}">
     <span class="po-gm-tab-title">Audio</span>
   </button>
-  <details class="po-gm-nav-more">
-    <summary class="po-tab po-gm-nav-tab">
-      <span class="po-gm-tab-title">More</span>
-    </summary>
-    <div class="po-gm-nav-more-menu">
-      <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction" aria-selected="{{#if isFactions}}true{{else}}false{{/if}}" aria-current="{{#if isFactions}}page{{else}}false{{/if}}" tabindex="{{#if isFactions}}0{{else}}-1{{/if}}">
-        <span class="po-gm-tab-title">Reputation</span>
-      </button>
-      <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isSettings}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="settings" aria-selected="{{#if isSettings}}true{{else}}false{{/if}}" aria-current="{{#if isSettings}}page{{else}}false{{/if}}" tabindex="{{#if isSettings}}0{{else}}-1{{/if}}">
-        <span class="po-gm-tab-title">Settings</span>
-      </button>
-    </div>
-  </details>
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction" aria-selected="{{#if isFactions}}true{{else}}false{{/if}}" aria-current="{{#if isFactions}}page{{else}}false{{/if}}" tabindex="{{#if isFactions}}0{{else}}-1{{/if}}">
+    <span class="po-gm-tab-title">Reputation</span>
+  </button>
+  <button type="button" role="tab" class="po-tab po-gm-nav-tab {{#if isSettings}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="settings" aria-selected="{{#if isSettings}}true{{else}}false{{/if}}" aria-current="{{#if isSettings}}page{{else}}false{{/if}}" tabindex="{{#if isSettings}}0{{else}}-1{{/if}}">
+    <span class="po-gm-tab-title">Settings</span>
+  </button>
 </nav>
-{{/if}}

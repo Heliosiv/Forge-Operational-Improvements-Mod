@@ -1,7 +1,8 @@
 export const LOOT_ITEM_OVERRIDE_FILTERS = Object.freeze({
   ALL: "all",
   MODIFIED: "modified",
-  DISABLED: "disabled"
+  DISABLED: "disabled",
+  ENABLED: "enabled"
 });
 
 export const LOOT_ITEM_OVERRIDE_PRICE_MAX_GP = 1000000;

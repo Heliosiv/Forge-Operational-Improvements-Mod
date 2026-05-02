@@ -36,7 +36,9 @@ export function createDowntimeUiDraftStorage({
   };
 
   const setDowntimeUiDraftSection = (sectionKey, patch = null) => {
-    const section = String(sectionKey ?? "").trim().toLowerCase();
+    const section = String(sectionKey ?? "")
+      .trim()
+      .toLowerCase();
     if (!section) return getDowntimeUiDraft();
     const current = getDowntimeUiDraft();
     const next = { ...current };
@@ -45,14 +47,18 @@ export function createDowntimeUiDraftStorage({
       return writeDowntimeUiDraft(next);
     }
     next[section] = {
-      ...(current?.[section] && typeof current[section] === "object" && !Array.isArray(current[section]) ? current[section] : {}),
+      ...(current?.[section] && typeof current[section] === "object" && !Array.isArray(current[section])
+        ? current[section]
+        : {}),
       ...patch
     };
     return writeDowntimeUiDraft(next);
   };
 
   const replaceDowntimeUiDraftSection = (sectionKey, patch = null) => {
-    const section = String(sectionKey ?? "").trim().toLowerCase();
+    const section = String(sectionKey ?? "")
+      .trim()
+      .toLowerCase();
     if (!section) return getDowntimeUiDraft();
     const current = getDowntimeUiDraft();
     const next = { ...current };
@@ -65,7 +71,9 @@ export function createDowntimeUiDraftStorage({
   };
 
   const clearDowntimeUiDraft = (sectionKey = null) => {
-    const section = String(sectionKey ?? "").trim().toLowerCase();
+    const section = String(sectionKey ?? "")
+      .trim()
+      .toLowerCase();
     if (!section) {
       try {
         storage?.removeItem?.(getDowntimeUiDraftStorageKey());
@@ -77,7 +85,8 @@ export function createDowntimeUiDraftStorage({
     return replaceDowntimeUiDraftSection(section, null);
   };
 
-  const isRootElement = (value) => htmlElementClass ? value instanceof htmlElementClass : Boolean(value?.querySelector);
+  const isRootElement = (value) =>
+    htmlElementClass ? value instanceof htmlElementClass : Boolean(value?.querySelector);
 
   const syncDowntimeSubmissionDraftFromRoot = (root) => {
     if (!isRootElement(root)) return {};
@@ -91,7 +100,10 @@ export function createDowntimeUiDraftStorage({
       craftItemId: String(root.querySelector("select[name='downtimeCraftItemId']")?.value ?? "").trim(),
       materialsOwned: String(root.querySelector("select[name='downtimeCraftMaterialsOwned']")?.value ?? "").trim(),
       materialDropsJson: String(root.querySelector("input[name='downtimeCraftMaterialDrops']")?.value ?? "[]"),
-      professionId: String(root.querySelector("select[name='downtimeProfessionId']")?.value ?? "").trim()
+      professionId: String(root.querySelector("select[name='downtimeProfessionId']")?.value ?? "").trim(),
+      v2ActorId: String(root.querySelector("select[name='downtimeV2ActorId']")?.value ?? "").trim(),
+      v2CardId: String(root.querySelector("select[name='downtimeV2CardId']")?.value ?? "").trim(),
+      v2Note: String(root.querySelector("textarea[name='downtimeV2Note']")?.value ?? "")
     });
   };
 

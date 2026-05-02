@@ -6,9 +6,6 @@
     </div>
     <div class="po-header-actions">
       <button type="button" class="po-btn po-btn-sm" data-action="gm-downtime-page-back">Back to Cockpit</button>
-      <button type="button" class="po-icon-btn" data-action="gm-downtime-page-refresh" aria-label="Refresh">
-        <span aria-hidden="true">R</span>
-      </button>
     </div>
   </header>
 
@@ -23,8 +20,8 @@
             <div class="po-op-summary">{{downtime.publication.submitHint}}</div>
           </div>
           <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-save-config">Save Setup</button>
-            <button type="button" class="po-btn po-btn-sm is-primary" data-action="downtime-v2-launch-session" {{#unless downtime.activeSession.canLaunch}}disabled{{/unless}}>{{downtime.publication.buttonLabel}}</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-save-config" title="Saves the current session roster, hours, and selected action cards without opening it to players.">Save Setup</button>
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="downtime-v2-launch-session" title="Publishes this downtime session to assigned players so they can pick cards and submit rolls." {{#unless downtime.activeSession.canLaunch}}disabled{{/unless}}>{{downtime.publication.buttonLabel}}</button>
           </div>
         </div>
 
@@ -38,22 +35,22 @@
         {{/if}}
 
         <div class="po-info-strip po-gm-page-stat-grid" role="list" aria-label="Downtime summary">
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Session Hours</span><strong>{{downtime.activeSession.hours}}</strong></div>
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Roster</span><strong>{{downtime.activeSession.rosterCount}}</strong></div>
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Cards</span><strong>{{downtime.activeSession.availableCardCount}}</strong></div>
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Pending</span><strong>{{downtime.pendingCount}}</strong></div>
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Delivered</span><strong>{{downtime.resolvedCount}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem" title="How many in-world hours this downtime session covers."><span>Session Hours</span><strong>{{downtime.activeSession.hours}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem" title="Actors that are allowed to participate in this session."><span>Roster</span><strong>{{downtime.activeSession.rosterCount}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem" title="Reusable action cards currently offered to players."><span>Cards</span><strong>{{downtime.activeSession.availableCardCount}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem" title="Player submissions waiting for GM review and delivery."><span>Pending</span><strong>{{downtime.pendingCount}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem" title="Results already delivered and saved to the downtime log."><span>Delivered</span><strong>{{downtime.resolvedCount}}</strong></div>
         </div>
 
         <section class="po-op-role-row po-downtime-session-editor">
           <div class="po-downtime-session-main">
             <h3>Current Session</h3>
             <div class="po-downtime-session-fields">
-              <label class="po-field">
+              <label class="po-field" title="The label players see for this launched downtime block.">
                 <span>Session Name</span>
                 <input type="text" name="downtimeV2SessionTitle" class="po-input" value="{{downtime.activeSession.title}}" />
               </label>
-              <label class="po-field po-downtime-hours-field">
+              <label class="po-field po-downtime-hours-field" title="How much downtime each submitted action can spend. This feeds progress and result drafts.">
                 <span>Hours</span>
                 <input type="number" min="1" max="24" step="1" name="downtimeV2Hours" class="po-input" value="{{downtime.activeSession.hours}}" />
               </label>
@@ -64,7 +61,7 @@
             {{#if downtime.hasActors}}
             <div class="po-checkbox-grid po-downtime-roster-grid">
               {{#each downtime.actorOptions}}
-              <label class="po-check-row">
+              <label class="po-check-row" title="Checked actors can submit downtime actions for this session.">
                 <input type="checkbox" name="downtimeV2RosterActorIds" value="{{id}}" {{#if selected}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
                 <span>{{name}}</span>
                 {{#if hasProjects}}<small>{{projectCount}} active project(s)</small>{{/if}}
@@ -89,27 +86,27 @@
                   <div class="po-op-summary">{{cardTitle}} | {{resultDraft.tierLabel}} | Roll {{roll.total}}</div>
                   {{#if note}}<div class="po-op-summary">Player note: {{note}}</div>{{/if}}
                 </div>
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="downtime-v2-deliver-result" data-submission-id="{{id}}">Deliver Result</button>
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="downtime-v2-deliver-result" data-submission-id="{{id}}" title="Applies this reviewed result to the actor, saves it to delivered results, and sends it back to the player.">Deliver Result</button>
               </div>
-              <label class="po-field">
+              <label class="po-field" title="Short GM-facing result text that will be saved with the delivered outcome.">
                 <span>GM Summary</span>
                 <textarea name="resolveDowntimeV2Summary" rows="2" class="po-input">{{resultDraft.summary}}</textarea>
               </label>
               <div class="po-grid po-grid-3">
-                <label class="po-field">
+                <label class="po-field" title="Progress added to an existing or newly created downtime project.">
                   <span>Progress</span>
                   <input type="number" min="0" max="999" step="1" name="resolveDowntimeV2Progress" class="po-input" value="{{resultDraft.progress}}" />
                 </label>
-                <label class="po-field">
+                <label class="po-field" title="Gold cost charged or recorded for this result.">
                   <span>Cost GP</span>
                   <input type="number" min="0" max="999" step="1" name="resolveDowntimeV2CostGp" class="po-input" value="{{resultDraft.costGp}}" />
                 </label>
-                <label class="po-field">
+                <label class="po-field" title="Name of the item, feature, contact, or project outcome created by completion.">
                   <span>Completion Name</span>
                   <input type="text" name="resolveDowntimeV2CompletionName" class="po-input" value="{{resultDraft.completionName}}" />
                 </label>
               </div>
-              <label class="po-field">
+              <label class="po-field" title="Player-facing reward text delivered with the result.">
                 <span>Reward</span>
                 <textarea name="resolveDowntimeV2RewardText" rows="2" class="po-input">{{resultDraft.rewardText}}</textarea>
               </label>
@@ -129,7 +126,7 @@
           <div class="po-panel-disclosure-body">
             <div class="po-op-role-row po-downtime-library-head">
               <div class="po-op-summary">Card templates stay reusable. Open a card only when its prompt, reward, or completion item needs editing.</div>
-              <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-add-card">Add Card</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-add-card" title="Adds a new reusable downtime action card to the library.">Add Card</button>
             </div>
 
             {{#if downtime.hasCards}}
@@ -137,15 +134,15 @@
               {{#each downtime.cardLibrary}}
               <article class="po-list-row po-downtime-card-row" data-downtime-v2-card-row data-card-id="{{id}}">
                 <div class="po-downtime-card-quick">
-                  <label class="po-check-row po-downtime-card-use">
+                  <label class="po-check-row po-downtime-card-use" title="Include this card when the current downtime session launches.">
                     <input type="checkbox" name="downtimeV2AvailableCardIds" value="{{id}}" {{#if selected}}checked{{/if}} />
                     <strong>Use</strong>
                   </label>
-                  <label class="po-field po-downtime-card-title">
+                  <label class="po-field po-downtime-card-title" title="Player-facing card name.">
                     <span>Title</span>
                     <input type="text" name="downtimeV2CardTitle" class="po-input" value="{{title}}" />
                   </label>
-                  <label class="po-field">
+                  <label class="po-field" title="Groups this card as training, crafting, social, research, or another downtime type.">
                     <span>Type</span>
                     <select name="downtimeV2CardType" class="po-select">
                       {{#each typeOptions}}
@@ -153,7 +150,7 @@
                       {{/each}}
                     </select>
                   </label>
-                  <label class="po-field">
+                  <label class="po-field" title="The ability used for the player roll when this card is submitted.">
                     <span>Roll</span>
                     <select name="downtimeV2CardAbility" class="po-select">
                       {{#each abilityOptions}}
@@ -161,19 +158,19 @@
                       {{/each}}
                     </select>
                   </label>
-                  <label class="po-field">
+                  <label class="po-field" title="Difficulty class for this card's downtime roll.">
                     <span>DC</span>
                     <input type="number" min="5" max="30" step="1" name="downtimeV2CardDc" class="po-input" value="{{dc}}" />
                   </label>
-                  <label class="po-field">
+                  <label class="po-field" title="Progress required to complete a persistent project. Use 0 for simple one-session outcomes.">
                     <span>Target</span>
                     <input type="number" min="0" max="999" step="1" name="downtimeV2CardProgressTarget" class="po-input" value="{{progressTarget}}" />
                   </label>
-                  <label class="po-field">
+                  <label class="po-field" title="Default gold cost used when drafting this card's result.">
                     <span>Cost GP</span>
                     <input type="number" min="0" max="999" step="1" name="downtimeV2CardCostGp" class="po-input" value="{{costGp}}" />
                   </label>
-                  <label class="po-check-row po-downtime-project-toggle">
+                  <label class="po-check-row po-downtime-project-toggle" title="Unchecked means this resolves as a one-time session result. Checked means it tracks progress as an ongoing actor project.">
                     <input type="checkbox" name="downtimeV2CardCreatesProject" {{#if createsProject}}checked{{/if}} />
                     <span>{{projectModeLabel}}</span>
                   </label>
@@ -185,16 +182,16 @@
                   </summary>
                   <div class="po-panel-disclosure-body">
                     <div class="po-grid po-grid-2">
-                      <label class="po-field">
+                      <label class="po-field" title="Text shown to players when they choose this card.">
                         <span>Prompt</span>
                         <textarea name="downtimeV2CardPrompt" rows="2" class="po-input">{{prompt}}</textarea>
                       </label>
-                      <label class="po-field">
+                      <label class="po-field" title="Default reward text copied into GM result drafts.">
                         <span>Reward Text</span>
                         <textarea name="downtimeV2CardRewardText" rows="2" class="po-input">{{rewardText}}</textarea>
                       </label>
                     </div>
-                    <label class="po-field">
+                    <label class="po-field" title="Default item, feature, contact, or project name created when the action completes.">
                       <span>Completion Item / Feature Name</span>
                       <input type="text" name="downtimeV2CardCompletionName" class="po-input" value="{{completionName}}" />
                     </label>

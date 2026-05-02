@@ -147,6 +147,7 @@ export function createGmLootPageApp(deps) {
     adjustLootPreviewCurrency,
     clearLootPreviewResult,
     publishLootPreviewToClaims,
+    depositAndArchiveLootClaimRun,
     clearLootClaimsPool,
     openLootItemFromElement,
     addLootPreviewItemFromDropEvent,
@@ -346,6 +347,13 @@ export function createGmLootPageApp(deps) {
             pending: "Publishing claim board…",
             success: "Claim board published to players.",
             failure: "Unable to publish claim board."
+          })
+        ),
+        "deposit-and-archive-loot": rerenderAlways(
+          withActionStatus((actionElement) => depositAndArchiveLootClaimRun(actionElement), {
+            pending: "Depositing loot...",
+            success: "Loot deposited and archived.",
+            failure: "Unable to deposit loot."
           })
         ),
         "clear-loot-claims": rerenderAlways(

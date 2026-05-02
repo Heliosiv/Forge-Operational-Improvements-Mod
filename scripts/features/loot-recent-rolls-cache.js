@@ -1,6 +1,6 @@
 /**
- * Manages a session-scoped cache of recently rolled loot items to prevent
- * repetition of the same items across multiple horde rolls within a scene.
+ * Manages a session-scoped cache of recently rolled loot items to reduce
+ * repetition of the same items across multiple loot rolls within a scene.
  *
  * This cache applies a 0.5x weight malus to items that have appeared in
  * the previous 2 horde rolls, helping maintain perceived diversity even
@@ -27,7 +27,7 @@ function getRecentItemsCache() {
 }
 
 /**
- * Record that an item was rolled in the current horde.
+ * Record that an item was rolled in the current loot run.
  * Tracks by item identity (name + type + rarity + source).
  */
 export function recordRecentlyRolledItem(entry = {}) {
@@ -35,16 +35,22 @@ export function recordRecentlyRolledItem(entry = {}) {
 
   const identity = buildItemIdentity(entry);
   if (!identity) return;
+  const nameIdentity = buildItemNameIdentity(entry);
 
   const cache = getRecentItemsCache();
   const now = Date.now();
 
   // Check if already recorded in current batch
-  const exists = cache.some((record) => record.identity === identity && now - record.timestamp < 500);
+  const exists = cache.some(
+    (record) =>
+      (record.identity === identity || (nameIdentity && record.nameIdentity === nameIdentity)) &&
+      now - record.timestamp < 500
+  );
 
   if (!exists) {
     cache.push({
       identity,
+      nameIdentity,
       timestamp: now,
       name: entry.name,
       sourceId: entry.sourceId
@@ -89,15 +95,19 @@ export function getRecentRollMalus(entry = {}) {
   // Accumulate recency pressure for matching entries.
   // Fresh repeats are penalized strongly; older repeats decay quickly.
   let repeatPressure = 0;
+  const nameIdentity = buildItemNameIdentity(entry);
   for (const record of cache) {
-    if (record.identity === identity) {
+    const exactMatch = record.identity === identity;
+    const nameMatch = Boolean(nameIdentity && record.nameIdentity === nameIdentity);
+    if (exactMatch || nameMatch) {
       const ageMs = Math.max(0, now - Number(record.timestamp ?? now));
+      const matchFactor = exactMatch ? 1 : 0.72;
       if (ageMs <= 30_000) {
-        repeatPressure += 1.25;
+        repeatPressure += 1.25 * matchFactor;
       } else if (ageMs <= 120_000) {
-        repeatPressure += 0.9;
+        repeatPressure += 0.9 * matchFactor;
       } else if (ageMs <= RECENT_ROLL_DECAY_MS) {
-        repeatPressure += 0.4;
+        repeatPressure += 0.4 * matchFactor;
       }
     }
   }
@@ -116,6 +126,10 @@ export function recordHordeRollItems(items = []) {
   for (const item of items) {
     recordRecentlyRolledItem(item);
   }
+}
+
+export function recordLootRollItems(items = []) {
+  recordHordeRollItems(items);
 }
 
 /**
@@ -154,6 +168,22 @@ function buildItemIdentity(entry = {}) {
   return `${name}|${itemType}|${rarity}|${sourceId}`;
 }
 
+function buildItemNameIdentity(entry = {}) {
+  const name = String(entry?.name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  const itemType = String(entry?.itemType ?? "")
+    .trim()
+    .toLowerCase();
+  const rarity = String(entry?.rarityBucket ?? entry?.rarity ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (!name) return "";
+  return `${name}|${itemType}|${rarity}`;
+}
+
 /**
  * Get readable cache state for debugging.
  */
@@ -165,6 +195,7 @@ export function debugGetRecentRollsCache() {
     count: cache.length,
     items: cache.map((rec) => ({
       identity: rec.identity,
+      nameIdentity: rec.nameIdentity,
       ageSeconds: ((now - rec.timestamp) / 1000).toFixed(1),
       name: rec.name
     }))

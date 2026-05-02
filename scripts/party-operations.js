@@ -47,7 +47,7 @@ import {
   buildLootItemOverrideRowsForEditor as buildLootItemOverrideRowsForEditorFeature,
   createLootItemOverrideEditorActions
 } from "./features/loot-item-override-editor.js";
-import { flushExpiredRecentRolls, recordHordeRollItems } from "./features/loot-recent-rolls-cache.js";
+import { flushExpiredRecentRolls, recordLootRollItems } from "./features/loot-recent-rolls-cache.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
@@ -344,7 +344,15 @@ import {
 import { aggregateLootEntriesForStacks } from "./features/loot-entry-stacking.js";
 import { buildLootCohesiveBundle } from "./features/loot-selection-cohesion.js";
 import { getLootSelectionIntelligenceWeight } from "./features/loot-selection-intelligence.js";
-import { getLootPracticalHoardScore, isLootPracticalHoardCandidate } from "./features/loot-practicality.js";
+import {
+  getLootPracticalHoardScore,
+  isLootAmmoLike,
+  isLootHealingConsumableLike,
+  isLootLowImpactFiller,
+  isLootPracticalEquipmentLike,
+  isLootPracticalHoardCandidate,
+  isLootUtilityConsumableLike
+} from "./features/loot-practicality.js";
 import {
   LOOT_PREVIEW_SORT_OPTIONS,
   normalizeLootPreviewSort,
@@ -775,6 +783,7 @@ const LOOT_PREVIEW_SCALE_OPTIONS = [
   { value: "medium", label: "Medium" },
   { value: "major", label: "Major" }
 ];
+const LOOT_PREVIEW_EMPHASIS_OPTIONS = Object.freeze(["balanced", "practical", "magical"]);
 const LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR = 100;
 const LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS = 180;
 const LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT = 80;
@@ -1459,6 +1468,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "post-rest-watch-summary",
   "set-resource",
   "call-gather-requests",
+  "plan-gather-checks",
   "gather-resource-check",
   "resend-gather-call",
   "run-gather-preset",
@@ -5500,10 +5510,16 @@ function buildReputationBuilderContext(draft = getReputationBuilderState()) {
   };
 }
 
+function escapeCssValue(value) {
+  const text = String(value ?? "");
+  if (globalThis.CSS?.escape) return globalThis.CSS.escape(text);
+  return text.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 function getReputationNoteLogSelect(root, factionIdInput) {
   const factionId = String(factionIdInput ?? "").trim();
   if (!root || !factionId) return null;
-  const escapedFactionId = typeof escapeCssValue === "function" ? escapeCssValue(factionId) : factionId;
+  const escapedFactionId = escapeCssValue(factionId);
   return (
     root.querySelector(`select[data-action='load-reputation-note-log'][data-faction='${escapedFactionId}']`) ??
     root.querySelector("select[data-action='load-reputation-note-log']")
@@ -6389,6 +6405,13 @@ function parseLootPreviewNumericInput(value, fallback = 0) {
   return safeFallback;
 }
 
+function normalizeLootPreviewEmphasis(value = "balanced") {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return LOOT_PREVIEW_EMPHASIS_OPTIONS.includes(normalized) ? normalized : "balanced";
+}
+
 function normalizeLootPreviewDraft(input = {}) {
   const mode = String(input?.mode ?? "horde")
     .trim()
@@ -6423,6 +6446,7 @@ function normalizeLootPreviewDraft(input = {}) {
   const deterministic = shouldUseDeterministicLootRng(input);
   const seed = String(input?.seed ?? "").trim();
   const dateBucket = String(input?.dateBucket ?? "").trim();
+  const emphasis = normalizeLootPreviewEmphasis(input?.emphasis);
   const fallbackDistributionMix = (() => {
     const legacyItem = Number.isFinite(itemScalarRaw) ? Math.max(1, Number(itemScalarRaw)) : 100;
     const legacyCurrency = Number.isFinite(currencyScalarRaw) ? Math.max(1, Number(currencyScalarRaw)) : 100;
@@ -6471,6 +6495,7 @@ function normalizeLootPreviewDraft(input = {}) {
     maxItems,
     maxItemValueGp,
     targetItemsValueGp,
+    emphasis,
     sort,
     deterministic,
     seed,
@@ -6687,12 +6712,6 @@ function applyUiState(app, state) {
   if (!state) return;
   const root = getAppRootElement(app);
   if (!root) return;
-
-  const escapeCssValue = (value) => {
-    const text = String(value ?? "");
-    if (globalThis.CSS?.escape) return CSS.escape(text);
-    return text.replace(/[^A-Za-z0-9_-]/g, "");
-  };
 
   const findElementByStatePath = (statePath) => {
     const key = String(statePath ?? "").trim();
@@ -8407,6 +8426,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const updated = await setMerchantAvailableNowFromElement(element);
             if (updated) this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "manage-merchant-session": async () => {
+            await promptMerchantSessionDialog();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "merchant-settlement": async () => {
             await setMerchantSettlementFromElement(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8627,6 +8650,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "gather-resource-check": async () => {
             triggerGatherResourceButtonAnimation(element);
             await runGatherResourceCheck();
+          },
+          "plan-gather-checks": async () => {
+            await promptGatherBatchDialog();
           },
           "call-gather-requests": async () => {
             const sent = await callGatherRequestsForActivePlayers();
@@ -8877,6 +8903,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await publishLootPreviewToClaims();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "deposit-and-archive-loot": async () => {
+            await depositAndArchiveLootClaimRun(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "play-audio-scene-preset": async () => {
             const played = await playAudioScenePresetFromElement(element);
             if (played) this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8984,6 +9014,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           },
           "gm-weather-set-location": async () => {
             await gmWeatherSetLocation(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-cockpit-weather-set-climate": async () => {
+            await gmCockpitWeatherSetClimate(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "gm-weather-set-forecast-days": async () => {
@@ -9214,8 +9248,7 @@ function buildGmCockpitContext(operations = {}, options = {}) {
   const gatherActivePlayerCount = count(gatherDelivery?.activePlayerCount ?? activePlayers.length);
   const gatherFood = count(resources?.summary?.pendingGatherFood ?? resources?.pendingGatherFood);
   const gatherWater = count(resources?.summary?.pendingGatherWater ?? resources?.pendingGatherWater);
-  const gatherPrimaryAction =
-    gatherPending > 0 && gatherActivePlayerCount > 0 ? "call-gather-requests" : "gather-resource-check";
+  const gatherCanCallPlayers = gatherPending > 0;
   if (gatherPending > 0) addWarning(`${gatherPending} gather request${gatherPending === 1 ? "" : "s"} pending.`);
 
   const downtimePending = count(downtime?.pendingCount);
@@ -9225,7 +9258,16 @@ function buildGmCockpitContext(operations = {}, options = {}) {
   if (!downtimePublished) addWarning("Downtime session is not open to players.");
 
   const weatherCalendar = operations?.weatherTools?.calendar ?? {};
-  const weatherCalendarSummary = [weatherCalendar?.climate, weatherCalendar?.season].filter(Boolean).join(" ");
+  const weatherClimate = normalizeGmScreenWeatherClimate(
+    weatherCalendar?.climate ?? weatherCalendar?.configuredClimate
+  );
+  const weatherClimateOptions = Array.isArray(weatherCalendar?.climateOptions)
+    ? weatherCalendar.climateOptions.map((option) => ({
+        ...option,
+        selected: String(option?.value ?? "") === weatherClimate
+      }))
+    : getGmScreenWeatherClimateOptions(weatherClimate);
+  const weatherCalendarSummary = [weatherClimate, weatherCalendar?.season].filter(Boolean).join(" ");
   const weatherLabel = String(weather?.currentLabel ?? "Not logged").trim() || "Not logged";
   const weatherModifier = formatSignedModifier(Number(weather?.currentVisibilityModifier ?? 0)) || "0";
   const weatherDarkness = Number(weather?.currentDarkness ?? 0);
@@ -9318,9 +9360,11 @@ function buildGmCockpitContext(operations = {}, options = {}) {
       water: gatherWater,
       activePlayerCount: gatherActivePlayerCount,
       activePlayerLabel: String(gatherDelivery?.activePlayerLabel ?? `${gatherActivePlayerCount} active players`),
-      primaryAction: gatherPrimaryAction,
-      primaryLabel: gatherPrimaryAction === "call-gather-requests" ? "Call Players" : "Assign Gather",
-      primaryDisabled: gatherPrimaryAction === "call-gather-requests" && gatherActivePlayerCount <= 0,
+      primaryAction: "plan-gather-checks",
+      primaryLabel: "Plan Gather",
+      primaryDisabled: false,
+      canCallPlayers: gatherCanCallPlayers,
+      callPlayersDisabled: gatherCanCallPlayers && gatherActivePlayerCount <= 0,
       statusLabel: gatherPending > 0 ? `${gatherPending} pending` : "Ready",
       summaryLabel: `Food ${gatherFood} | Water ${gatherWater}`
     },
@@ -9329,8 +9373,9 @@ function buildGmCockpitContext(operations = {}, options = {}) {
       weatherLabel,
       weatherModifier,
       weatherDarkness: Number.isFinite(weatherDarkness) ? weatherDarkness.toFixed(2) : "0.00",
+      climateOptions: weatherClimateOptions,
       primaryAction: "gm-weather-roll",
-      primaryLabel: "Roll Weather",
+      primaryLabel: "Roll Today's Weather",
       primaryDisabled: false,
       statusLabel: weatherLabel === "Not logged" ? "Not logged" : "Logged"
     },
@@ -9353,9 +9398,9 @@ function buildGmCockpitContext(operations = {}, options = {}) {
       featuredId: String(merchantFeatured?.id ?? "").trim(),
       featuredName: String(merchantFeatured?.name ?? "No merchant ready").trim() || "No merchant ready",
       featuredAvailableNow: Boolean(merchantFeatured?.availableNow),
-      primaryLabel: merchantFeatured?.availableNow ? "Hide Merchant" : "Make Available Now",
+      primaryLabel: "Manage Session",
       primaryAvailableValue: merchantFeatured?.availableNow ? "false" : "true",
-      primaryDisabled: !merchantFeatured
+      primaryDisabled: merchantTotalCount <= 0
     },
     loot: {
       builderItemCount: lootBuilderItemCount,
@@ -10466,6 +10511,7 @@ export const GmLootPageApp = createGmLootPageApp({
   adjustLootPreviewCurrency,
   clearLootPreviewResult,
   publishLootPreviewToClaims,
+  depositAndArchiveLootClaimRun,
   clearLootClaimsPool,
   openLootItemFromElement,
   addLootPreviewItemFromDropEvent,
@@ -10582,6 +10628,11 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
         }
         if (action === "claim-all-loot") {
           await claimAllLootForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "deposit-and-archive-loot") {
+          await depositAndArchiveLootClaimRun(actionElement);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
           return;
         }
@@ -19492,6 +19543,7 @@ function resolveLootSelectionSeed(draft = {}, budgetContext = {}) {
     String(draft?.profile ?? "standard"),
     String(draft?.challenge ?? "mid"),
     String(draft?.scale ?? "medium"),
+    String(getLootPreviewEmphasis(draft)),
     String(draft?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
     String(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
     String(draft?.distributionMix ?? 50),
@@ -20132,13 +20184,99 @@ function getLootChallengeAvailabilityWeight(draft = {}, entry = {}) {
   return 0.16;
 }
 
+function getLootPreviewEmphasis(draft = {}) {
+  return normalizeLootPreviewEmphasis(draft?.emphasis);
+}
+
+function getLootEmphasisRarityWeightModifier(draft = {}, rarity = "") {
+  const emphasis = getLootPreviewEmphasis(draft);
+  const bucket = getLootRarityBucket(rarity);
+  if (emphasis === "magical") {
+    if (bucket === "uncommon") return 1.55;
+    if (bucket === "rare") return 2.15;
+    if (bucket === "very-rare") return 2.65;
+    if (bucket === "legendary") return 3.1;
+    return 0.72;
+  }
+  if (emphasis === "practical") {
+    if (bucket === "uncommon") return 0.78;
+    if (bucket === "rare") return 0.42;
+    if (bucket === "very-rare") return 0.22;
+    if (bucket === "legendary") return 0.12;
+    return 1.35;
+  }
+  return 1;
+}
+
+function getLootEmphasisRarityCapModifier(draft = {}, bucket = "common") {
+  const emphasis = getLootPreviewEmphasis(draft);
+  const normalizedBucket = getLootRarityBucket(bucket);
+  if (emphasis === "magical") {
+    if (normalizedBucket === "uncommon") return 1.35;
+    if (normalizedBucket === "rare") return 1.65;
+    if (normalizedBucket === "very-rare") return 1.85;
+    if (normalizedBucket === "legendary") return 2.15;
+  }
+  if (emphasis === "practical") {
+    if (normalizedBucket === "uncommon") return 0.65;
+    if (normalizedBucket === "rare") return 0.4;
+    if (normalizedBucket === "very-rare") return 0.24;
+    if (normalizedBucket === "legendary") return 0.15;
+  }
+  return 1;
+}
+
+function getLootMagicalEmphasisRarityFloor(draft = {}, bucket = "common", count = 0) {
+  if (getLootPreviewEmphasis(draft) !== "magical") return 0;
+  const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+  if (safeCount <= 0) return 0;
+  const challenge = String(draft?.challenge ?? "mid")
+    .trim()
+    .toLowerCase();
+  const normalizedBucket = getLootRarityBucket(bucket);
+  if (normalizedBucket === "uncommon" && safeCount >= 3) return 1;
+  if (normalizedBucket === "rare" && challenge !== "low" && safeCount >= 7) return 1;
+  if (normalizedBucket === "very-rare" && (challenge === "high" || challenge === "epic") && safeCount >= 11) return 1;
+  if (normalizedBucket === "legendary" && challenge === "epic" && safeCount >= 20) return 1;
+  return 0;
+}
+
+function getLootEmphasisItemTypeWeightModifier(draft = {}, entry = {}) {
+  const emphasis = getLootPreviewEmphasis(draft);
+  if (emphasis === "balanced") return 1;
+  const itemType = String(entry?.itemType ?? "")
+    .trim()
+    .toLowerCase();
+  const rarityRank = getLootRarityBucketRank(entry?.rarity ?? entry?.rarityBucket ?? "");
+  if (emphasis === "practical") {
+    let weight = 1;
+    if (isLootAmmoLikeEntry(entry) || isLootAmmoLike(entry)) weight *= 2.15;
+    if (itemType === "consumable" || isLootHealingConsumableLike(entry) || isLootUtilityConsumableLike(entry)) {
+      weight *= 1.85;
+    }
+    if (isLootPracticalEquipmentLike(entry)) weight *= 1.3;
+    if (rarityRank <= 0) weight *= 1.22;
+    else if (rarityRank === 1) weight *= 0.88;
+    else weight *= Math.max(0.2, 0.62 - rarityRank * 0.1);
+    if (isLootLowImpactFiller(entry)) weight *= 0.6;
+    return Math.max(0.08, Math.min(5, Number(weight.toFixed(4))));
+  }
+  if (emphasis === "magical") {
+    let weight = rarityRank <= 0 ? 0.72 : 1.15 + rarityRank * 0.28;
+    if (isLootLowImpactFiller(entry) && rarityRank <= 0) weight *= 0.72;
+    return Math.max(0.08, Math.min(4, Number(weight.toFixed(4))));
+  }
+  return 1;
+}
+
 function getLootModeItemTypeWeightModifier(draft = {}, entry = {}) {
   const mode = String(draft?.mode ?? "horde")
     .trim()
     .toLowerCase();
-  if (mode !== "horde") return 1;
-  if (isLootAmmoLikeEntry(entry)) return 1.45;
-  return 1;
+  const emphasisWeight = getLootEmphasisItemTypeWeightModifier(draft, entry);
+  if (mode !== "horde") return emphasisWeight;
+  const hordeWeight = isLootAmmoLikeEntry(entry) ? 1.45 : 1;
+  return Math.max(0.01, hordeWeight * emphasisWeight);
 }
 
 function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
@@ -20173,7 +20311,10 @@ function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
   const byChallenge = byMode[challenge] ?? byMode.mid;
   const base = Number(byChallenge[bucket] ?? 1);
   const worldRarityRatio = getLootEngineRarityWeightRatio(bucket);
-  return Number.isFinite(base) ? Math.max(0, base * worldRarityRatio) : worldRarityRatio;
+  const emphasisRarityWeight = getLootEmphasisRarityWeightModifier(draft, bucket);
+  return Number.isFinite(base)
+    ? Math.max(0, base * worldRarityRatio * emphasisRarityWeight)
+    : worldRarityRatio * emphasisRarityWeight;
 }
 
 function getLootCombatantCount(draft = {}, mode = "horde") {
@@ -20316,6 +20457,12 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
   const veryRareRatioPenalty = Math.max(0.18, 1 - pressure * 0.07);
   const legendaryRatioPenalty = Math.max(0.1, 1 - pressure * 0.08);
   const scaleAdjustments = getLootScaleRarityCapAdjustments(draft, mode, challenge, count);
+  const emphasisCapModifier = {
+    uncommon: getLootEmphasisRarityCapModifier(draft, "uncommon"),
+    rare: getLootEmphasisRarityCapModifier(draft, "rare"),
+    "very-rare": getLootEmphasisRarityCapModifier(draft, "very-rare"),
+    legendary: getLootEmphasisRarityCapModifier(draft, "legendary")
+  };
   const caps = {
     uncommon: Math.max(
       0,
@@ -20325,7 +20472,8 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
           count *
             Number(byChallenge.uncommon ?? 0) *
             uncommonRatioBoost *
-            Number(scaleAdjustments?.ratio?.uncommon ?? 1)
+            Number(scaleAdjustments?.ratio?.uncommon ?? 1) *
+            Number(emphasisCapModifier.uncommon ?? 1)
         )
       )
     ),
@@ -20334,7 +20482,11 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
       Math.min(
         count,
         Math.floor(
-          count * Number(byChallenge.rare ?? 0) * rareRatioPenalty * Number(scaleAdjustments?.ratio?.rare ?? 1)
+          count *
+            Number(byChallenge.rare ?? 0) *
+            rareRatioPenalty *
+            Number(scaleAdjustments?.ratio?.rare ?? 1) *
+            Number(emphasisCapModifier.rare ?? 1)
         )
       )
     ),
@@ -20346,7 +20498,8 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
           count *
             Number(byChallenge["very-rare"] ?? 0) *
             veryRareRatioPenalty *
-            Number(scaleAdjustments?.ratio?.["very-rare"] ?? 1)
+            Number(scaleAdjustments?.ratio?.["very-rare"] ?? 1) *
+            Number(emphasisCapModifier["very-rare"] ?? 1)
         )
       )
     ),
@@ -20358,7 +20511,8 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
           count *
             Number(byChallenge.legendary ?? 0) *
             legendaryRatioPenalty *
-            Number(scaleAdjustments?.ratio?.legendary ?? 1)
+            Number(scaleAdjustments?.ratio?.legendary ?? 1) *
+            Number(emphasisCapModifier.legendary ?? 1)
         )
       )
     )
@@ -20374,6 +20528,7 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
   for (const bucket of ["uncommon", "rare", "very-rare", "legendary"]) {
     caps[bucket] = Math.max(
       Math.max(0, Number(scaleAdjustments?.floors?.[bucket] ?? 0) || 0),
+      getLootMagicalEmphasisRarityFloor(draft, bucket, count),
       Math.min(count, Math.max(0, Number(caps?.[bucket] ?? 0) || 0))
     );
   }
@@ -20394,6 +20549,13 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
     if (challenge === "epic" && (targetPerItemGp >= 520 || targetItemBudgetGp >= 4200)) {
       caps.legendary = Math.max(caps.legendary, Math.min(count, 1));
     }
+  }
+
+  if (getLootPreviewEmphasis(draft) === "practical") {
+    caps.uncommon = Math.max(0, Math.floor(caps.uncommon * 0.8));
+    caps.rare = Math.max(0, Math.floor(caps.rare * 0.55));
+    caps["very-rare"] = Math.max(0, Math.floor(caps["very-rare"] * 0.35));
+    caps.legendary = Math.max(0, Math.floor(caps.legendary * 0.25));
   }
 
   return caps;
@@ -22908,10 +23070,8 @@ async function generateLootPreviewPayload(draftInput = {}) {
       deterministic: resolvedSelectionMeta.deterministic,
       seed: resolvedSelectionMeta.seed
     });
-    // Record horde items to recent-rolls cache for next roll in same scene
-    if (draft.mode === "horde") {
-      recordHordeRollItems(items);
-    }
+    // Record generated items so repeated typical picks are down-weighted on the next roll in this scene.
+    recordLootRollItems(items);
     return {
       generatedAt: Date.now(),
       generatedBy: String(game.user?.name ?? "GM"),
@@ -23936,7 +24096,7 @@ function buildLootClaimsContext(user = game.user) {
     const actorImage = normalizeFoundryAssetImagePath(actor.img ?? actor.prototypeToken?.texture?.src, {
       fallback: "icons/svg/mystery-man.svg"
     });
-    const isStashLike = actorType !== "character";
+    const isStashLike = isLootClaimStashLikeActor(actor);
     const sys = actor.system?.currency ?? {};
     const cPp = Math.max(0, Math.floor(Number(sys.pp ?? 0) || 0));
     const cGp = Math.max(0, Math.floor(Number(sys.gp ?? 0) || 0));
@@ -24011,9 +24171,10 @@ function buildLootClaimsContext(user = game.user) {
     .filter((u) => !representedUserIds.has(String(u.id)))
     .map((u) => ({ name: String(u.name ?? "Player"), color: String(u.color ?? "#888888") }));
   const canChooseActor = actorOptions.length > 1;
-  const preferredActorId = storedActorId || String(getActiveActorForUser(user)?.id ?? "").trim();
-  const fallbackActorId = actorOptions[0]?.id ?? "";
-  const selectedActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
+  const selectedActorId = resolveDefaultLootClaimActorIdFromOptions(actorOptions, {
+    storedActorId,
+    activeActorId: String(getActiveActorForUser(user)?.id ?? "").trim()
+  });
   for (const option of actorOptions) option.selected = option.id === selectedActorId;
   if (!storedActorId || storedActorId !== selectedActorId) {
     setLootClaimActorSelection(selectedActorId);
@@ -24112,6 +24273,7 @@ function buildLootClaimsContext(user = game.user) {
     !displayRunIsArchived &&
     Boolean(selectedActorId) &&
     (selectedRunHasItems || hasCurrencyRemaining);
+  const canDepositAndArchiveSelectedRun = canManageClaims && canSendEverything;
   const singleVouchItems = displayItems.filter(
     (item) => Array.isArray(item?.vouchedByActorIds) && item.vouchedByActorIds.length === 1
   );
@@ -24157,6 +24319,7 @@ function buildLootClaimsContext(user = game.user) {
     splitEligibleActorCount: splitEligibleActors.length,
     canDepositAllItems,
     canSendEverything,
+    canDepositAndArchiveSelectedRun,
     currencyClaimedCount: claimedActorIds.size,
     tableRolls: foundry.utils.deepClone(displayTableRolls),
     canChooseActor,
@@ -24608,27 +24771,73 @@ function getPartyCharacterActors() {
   );
 }
 
+function isLootClaimStashLikeActor(actor) {
+  return String(actor?.type ?? "character") !== "character";
+}
+
+function canUserManageLootClaimActor(user, actor) {
+  return canUserOwnActor(user, actor, { requireCharacter: false });
+}
+
+function resolveDefaultLootClaimActorIdFromOptions(actorOptions = [], options = {}) {
+  const optionsList = Array.isArray(actorOptions) ? actorOptions : [];
+  const findById = (actorIdInput) => {
+    const actorId = String(actorIdInput ?? "").trim();
+    return actorId ? optionsList.find((entry) => String(entry?.id ?? "") === actorId) : null;
+  };
+  const stored = findById(options?.storedActorId);
+  if (stored) return String(stored.id ?? "");
+  const namedStash = optionsList.find((entry) => {
+    if (!entry?.isStashLike) return false;
+    return /\b(stash|party|loot|treasury|vault|chest)\b/i.test(String(entry?.name ?? ""));
+  });
+  if (namedStash) return String(namedStash.id ?? "");
+  const stash = optionsList.find((entry) => entry?.isStashLike);
+  if (stash) return String(stash.id ?? "");
+  const active = findById(options?.activeActorId);
+  if (active) return String(active.id ?? "");
+  return String(optionsList[0]?.id ?? "");
+}
+
+function resolveDefaultLootClaimActorIdForUser(user = game.user, options = {}) {
+  const actorOptions = getLootClaimSelectableActorsForUser(user).map((actor) => ({
+    id: String(actor?.id ?? "").trim(),
+    name: String(actor?.name ?? ""),
+    isStashLike: isLootClaimStashLikeActor(actor)
+  }));
+  return resolveDefaultLootClaimActorIdFromOptions(actorOptions, {
+    storedActorId: options?.includeStored ? getLootClaimActorSelection() : "",
+    activeActorId: String(user?.character?.id ?? getActiveActorForUser(user)?.id ?? "").trim()
+  });
+}
+
 function getLootClaimSelectableActorsForUser(user = game.user) {
   if (!user) return [];
   const isGmUser = canAccessAllPlayerOps(user);
   const unique = new Map();
   const addActor = (actor) => {
     if (!actor || !actor.id) return;
-    if (!canUserManageDowntimeActor(user, actor)) return;
+    if (!canUserManageLootClaimActor(user, actor)) return;
     unique.set(String(actor.id), actor);
   };
 
   if (!isGmUser && user.character?.id) addActor(user.character);
   for (const actor of getPartyCharacterActors()) addActor(actor);
   for (const actor of getOwnedPcActors()) addActor(actor);
-  if (!isGmUser) {
-    for (const actor of game.actors?.contents ?? []) addActor(actor);
+  for (const actor of game.actors?.contents ?? []) {
+    if (!actor?.id) continue;
+    if (isGmUser && actor.type === "character" && !actor.hasPlayerOwner) continue;
+    if (isGmUser && isLootClaimStashLikeActor(actor)) {
+      const name = String(actor.name ?? "");
+      if (!actor.hasPlayerOwner && !/\b(stash|party|loot|treasury|vault|chest)\b/i.test(name)) continue;
+    }
+    addActor(actor);
   }
 
   return Array.from(unique.values()).sort((left, right) => {
-    const leftIsCharacter = String(left?.type ?? "") === "character";
-    const rightIsCharacter = String(right?.type ?? "") === "character";
-    if (leftIsCharacter !== rightIsCharacter) return leftIsCharacter ? -1 : 1;
+    const leftIsStash = isLootClaimStashLikeActor(left);
+    const rightIsStash = isLootClaimStashLikeActor(right);
+    if (leftIsStash !== rightIsStash) return leftIsStash ? -1 : 1;
     return (left?.name ?? "").localeCompare(right?.name ?? "");
   });
 }
@@ -24891,9 +25100,11 @@ function buildDowntimeV2Context(downtimeState = {}, options = {}) {
   const rosterIds = new Set(session.rosterActorIds);
   const availableCardIds = new Set(session.availableCardIds);
   const visibleActorIds = new Set(selectableActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
-  const visibleResult = (entry) =>
+  const visiblePendingResult = (entry) =>
     canManageDowntime ||
     (visibleActorIds.has(String(entry?.actorId ?? "").trim()) && rosterIds.has(String(entry?.actorId ?? "").trim()));
+  const visibleDeliveredResult = (entry) =>
+    canManageDowntime || visibleActorIds.has(String(entry?.actorId ?? "").trim());
 
   const actorOptions = selectableActors.map((actor) => {
     const id = String(actor?.id ?? "").trim();
@@ -24930,18 +25141,36 @@ function buildDowntimeV2Context(downtimeState = {}, options = {}) {
     abilityOptions: abilityOptions.map((option) => ({ ...option, selected: option.value === card.ability })),
     projectModeLabel: card.createsProject ? "Persistent project" : "One-session outcome"
   }));
+  const uiDraft = getDowntimeUiDraft();
+  const submitDraft =
+    uiDraft?.submission && typeof uiDraft.submission === "object" && !Array.isArray(uiDraft.submission)
+      ? uiDraft.submission
+      : {};
+  const draftedCardId = String(options?.selectedCardId ?? submitDraft?.v2CardId ?? submitDraft?.cardId ?? "").trim();
   const availableCards = getDowntimeV2AvailableCards(downtime).map((card) => ({
     ...card,
-    typeLabel: getDowntimeV2CardTypeLabel(card.type)
+    typeLabel: getDowntimeV2CardTypeLabel(card.type),
+    selected: false
   }));
-  const selectedCard = availableCards[0] ?? null;
+  const selectedCard =
+    availableCards.find((card) => String(card.id ?? "") === draftedCardId) ?? availableCards[0] ?? null;
+  for (const card of availableCards) {
+    card.selected = Boolean(selectedCard) && String(card.id ?? "") === String(selectedCard.id ?? "");
+  }
 
   const pendingSubmissions = downtime.submissions.filter(
-    (entry) => entry.status !== "delivered" && visibleResult(entry)
+    (entry) => entry.status !== "delivered" && visiblePendingResult(entry)
   );
-  const deliveredResults = downtime.deliveredResults.filter(visibleResult);
+  const deliveredResults = downtime.deliveredResults.filter(visibleDeliveredResult);
   const hasAssignedActors = actorOptions.some((entry) => entry.selected);
-  const playerActorOptions = actorOptions.filter((entry) => entry.selected);
+  const draftedActorId = String(submitDraft?.v2ActorId ?? submitDraft?.actorId ?? "").trim();
+  const playerActorOptions = actorOptions.filter((entry) => entry.selected).map((entry) => ({ ...entry }));
+  const selectedPlayerActorId = playerActorOptions.some((entry) => entry.id === draftedActorId)
+    ? draftedActorId
+    : (playerActorOptions[0]?.id ?? "");
+  for (const option of playerActorOptions) {
+    option.selected = option.id === selectedPlayerActorId;
+  }
   const playerDeliveredResults = deliveredResults.map((entry) => ({
     ...entry,
     canAcknowledge: !entry.acknowledgedAt
@@ -25007,7 +25236,7 @@ function buildDowntimeV2Context(downtimeState = {}, options = {}) {
       actionOptions: availableCards,
       selectedActionKey: selectedCard?.id ?? "",
       selectedCard,
-      note: "",
+      note: String(submitDraft?.v2Note ?? submitDraft?.note ?? ""),
       disabledReason: launched
         ? hasAssignedActors
           ? availableCards.length > 0
@@ -32776,6 +33005,270 @@ async function refreshAllMerchantStocksFromElement(_element) {
   return refreshAllMerchantStocks();
 }
 
+function getMerchantSessionDialogStockCount(merchant = {}) {
+  const merchantActor = merchant?.actorId ? game.actors.get(merchant.actorId) : null;
+  if (!merchantActor) return 0;
+  return (merchantActor.items?.contents ?? [])
+    .filter((item) =>
+      MERCHANT_ALLOWED_ITEM_TYPES.has(
+        String(item?.type ?? "")
+          .trim()
+          .toLowerCase()
+      )
+    )
+    .reduce((sum, item) => sum + Math.max(0, Math.floor(getItemTrackedQuantity(item))), 0);
+}
+
+function buildMerchantSessionDialogPlayerRows(session = null) {
+  const players = getMerchantShopPlayerUsers();
+  const shopSession = normalizeMerchantShopSession(session ?? getMerchantShopSessionState(), { playerUsers: players });
+  const selectedUserIds = new Set(shopSession.allowedUserIds);
+  const openToAll = !shopSession.restrictToSelected;
+  return players
+    .map((user) => {
+      const userId = String(user?.id ?? "").trim();
+      const userName = String(user?.name ?? "Player").trim() || "Player";
+      const checked = openToAll || selectedUserIds.has(userId);
+      return `
+        <label class="po-merchant-session-choice ${user?.active ? "is-active" : "is-offline"}">
+          <input type="checkbox" name="merchantSessionPlayer" value="${poEscapeHtml(userId)}" ${checked ? "checked" : ""} ${openToAll ? "disabled" : ""} />
+          <span>${poEscapeHtml(userName)}${user?.active ? "" : " (Offline)"}</span>
+        </label>
+      `;
+    })
+    .join("");
+}
+
+function buildMerchantSessionDialogMerchantRows(definitions = []) {
+  const merchants = sortMerchantDefinitions(definitions);
+  return merchants
+    .map((merchant) => {
+      const merchantId = String(merchant?.id ?? "").trim();
+      const merchantName = String(merchant?.name ?? "Merchant").trim() || "Merchant";
+      const title = String(merchant?.title ?? "").trim();
+      const stockCount = getMerchantSessionDialogStockCount(merchant);
+      const selected = merchant?.shopTradable !== false;
+      const summary = [
+        title,
+        getMerchantSettlementLabel(merchant?.settlement ?? ""),
+        stockCount > 0 ? `${stockCount} stock` : "no stock"
+      ]
+        .filter(Boolean)
+        .join(" - ");
+      return `
+        <label class="po-merchant-session-choice">
+          <input type="checkbox" name="merchantSessionMerchant" value="${poEscapeHtml(merchantId)}" ${selected ? "checked" : ""} />
+          <span><strong>${poEscapeHtml(merchantName)}</strong><small>${poEscapeHtml(summary)}</small></span>
+        </label>
+      `;
+    })
+    .join("");
+}
+
+function wireMerchantSessionDialog(dialog) {
+  Hooks.once("renderDialog", (app, html) => {
+    if (app !== dialog) return;
+    const syncPlayerDisabledState = () => {
+      const openToAll = Boolean(html.find("input[name=openToAllPlayers]").is(":checked"));
+      const playerInputs = html.find("input[name=merchantSessionPlayer]");
+      playerInputs.prop("disabled", openToAll);
+      if (openToAll) playerInputs.prop("checked", true);
+    };
+    html.find("input[name=openToAllPlayers]").on("change", syncPlayerDisabledState);
+    html.find("[data-merchant-session-select='all-merchants']").on("click", () => {
+      html.find("input[name=merchantSessionMerchant]").prop("checked", true);
+    });
+    html.find("[data-merchant-session-select='no-merchants']").on("click", () => {
+      html.find("input[name=merchantSessionMerchant]").prop("checked", false);
+    });
+    html.find("[data-merchant-session-select='all-players']").on("click", () => {
+      html.find("input[name=openToAllPlayers]").prop("checked", false);
+      html.find("input[name=merchantSessionPlayer]").prop("disabled", false).prop("checked", true);
+    });
+    html.find("[data-merchant-session-select='no-players']").on("click", () => {
+      html.find("input[name=openToAllPlayers]").prop("checked", false);
+      html.find("input[name=merchantSessionPlayer]").prop("disabled", false).prop("checked", false);
+    });
+    syncPlayerDisabledState();
+  });
+}
+
+async function applyMerchantSessionDialogSelection({
+  merchantIds = [],
+  playerUserIds = [],
+  openToAll = true,
+  refreshStock = false
+} = {}) {
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("Only the GM can manage merchant sessions.");
+    return false;
+  }
+  const definitions = getMerchants();
+  const validMerchantIds = new Set(definitions.map((merchant) => String(merchant?.id ?? "").trim()).filter(Boolean));
+  const selectedMerchantIds = [
+    ...new Set((Array.isArray(merchantIds) ? merchantIds : []).map((id) => String(id ?? "").trim()))
+  ].filter((id) => validMerchantIds.has(id));
+  if (selectedMerchantIds.length <= 0) {
+    ui.notifications?.warn("Select at least one merchant for the session.");
+    return false;
+  }
+
+  const playerUsers = getMerchantShopPlayerUsers();
+  const validUserIds = new Set(playerUsers.map((user) => String(user?.id ?? "").trim()).filter(Boolean));
+  const selectedUserIds = [
+    ...new Set((Array.isArray(playerUserIds) ? playerUserIds : []).map((id) => String(id ?? "").trim()))
+  ].filter((id) => validUserIds.has(id));
+  const restrictToSelected = openToAll !== true;
+  if (restrictToSelected && selectedUserIds.length <= 0) {
+    ui.notifications?.warn("Select at least one player or open the session to all players.");
+    return false;
+  }
+
+  let refreshedCount = 0;
+  if (refreshStock) {
+    for (const merchantId of selectedMerchantIds) {
+      const result = await refreshMerchantStock(merchantId, { silent: true });
+      if (result?.ok !== false) refreshedCount += 1;
+    }
+  }
+
+  const selectedMerchantIdSet = new Set(selectedMerchantIds);
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    merchants.definitions = (Array.isArray(merchants.definitions) ? merchants.definitions : []).map((entry, index) =>
+      normalizeMerchantDefinition(
+        {
+          ...entry,
+          shopTradable: selectedMerchantIdSet.has(String(entry?.id ?? "").trim())
+        },
+        index
+      )
+    );
+  });
+
+  const openedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  const nextSession = await updateMerchantShopSessionState({
+    isOpen: true,
+    restrictToSelected,
+    allowedUserIds: restrictToSelected ? selectedUserIds : [],
+    lastOpenedAt: Date.now(),
+    lastOpenedBy: openedBy
+  });
+  const [soundPlayed] = await Promise.all([playMerchantShopBellSound(), postMerchantShopBellChatCard(nextSession)]);
+  const audienceLabel = getMerchantShopAudienceSummary(nextSession);
+  const refreshLabel = refreshStock ? ` Refreshed ${refreshedCount} stock list${refreshedCount === 1 ? "" : "s"}.` : "";
+  const soundSuffix = soundPlayed ? " Bell sounded for connected players." : "";
+  ui.notifications?.info(
+    `Merchant session opened for ${audienceLabel} with ${selectedMerchantIds.length} merchant${selectedMerchantIds.length === 1 ? "" : "s"}.${refreshLabel}${soundSuffix}`
+  );
+  await recordOperationsEvent({
+    category: "merchants",
+    title: "Merchant Session Opened",
+    summary: `${selectedMerchantIds.length} merchant${selectedMerchantIds.length === 1 ? "" : "s"} opened for ${audienceLabel}.`,
+    details: refreshStock ? `Stock refreshed for ${refreshedCount} selected merchant(s).` : "Stock refresh was skipped."
+  });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+  return true;
+}
+
+async function promptMerchantSessionDialog() {
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("Only the GM can manage merchant sessions.");
+    return { ok: false, blocked: true };
+  }
+  const ledger = getOperationsLedger();
+  const merchantsState = ensureMerchantsState(ledger);
+  const definitions = sortMerchantDefinitions(merchantsState.definitions ?? []);
+  if (definitions.length <= 0) {
+    ui.notifications?.warn("No merchants are configured.");
+    return { ok: false, blocked: true };
+  }
+  const session = normalizeMerchantShopSession(merchantsState.shopSession ?? {});
+  const playerRows = buildMerchantSessionDialogPlayerRows(session);
+  const merchantRows = buildMerchantSessionDialogMerchantRows(definitions);
+  const openToAll = !session.restrictToSelected;
+  const liveCount = definitions.filter((merchant) => merchant?.shopTradable !== false).length;
+  const content = `
+    <div class="po-merchant-session-dialog">
+      <div class="po-merchant-session-brief">
+        <strong>${session.isOpen ? "Session open" : "Session closed"}</strong>
+        <span>${liveCount} of ${definitions.length} merchants selected for live shopping.</span>
+      </div>
+      <label class="po-merchant-session-toggle">
+        <input type="checkbox" name="openToAllPlayers" ${openToAll ? "checked" : ""} />
+        <span>Open to all players</span>
+      </label>
+      <section>
+        <div class="po-merchant-session-section-head">
+          <strong>Players</strong>
+          <span>
+            <button type="button" data-merchant-session-select="all-players">All</button>
+            <button type="button" data-merchant-session-select="no-players">None</button>
+          </span>
+        </div>
+        <div class="po-merchant-session-grid">${playerRows || '<div class="po-op-summary">No non-GM players found.</div>'}</div>
+      </section>
+      <section>
+        <div class="po-merchant-session-section-head">
+          <strong>Merchants</strong>
+          <span>
+            <button type="button" data-merchant-session-select="all-merchants">All</button>
+            <button type="button" data-merchant-session-select="no-merchants">None</button>
+          </span>
+        </div>
+        <div class="po-merchant-session-grid po-merchant-session-merchant-grid">${merchantRows}</div>
+      </section>
+      <label class="po-merchant-session-toggle">
+        <input type="checkbox" name="refreshStockAtOpen" />
+        <span>Refresh selected stock before opening</span>
+      </label>
+    </div>
+  `;
+
+  const dialog = new Dialog(
+    {
+      title: "Merchant Session",
+      content,
+      buttons: {
+        open: {
+          label: session.isOpen ? "Update Open Session" : "Open Session",
+          callback: async (html) => {
+            const merchantIds = html
+              .find("input[name=merchantSessionMerchant]:checked")
+              .toArray()
+              .map((input) => String(input?.value ?? "").trim());
+            const playerUserIds = html
+              .find("input[name=merchantSessionPlayer]:checked")
+              .toArray()
+              .map((input) => String(input?.value ?? "").trim());
+            await applyMerchantSessionDialogSelection({
+              merchantIds,
+              playerUserIds,
+              openToAll: Boolean(html.find("input[name=openToAllPlayers]").is(":checked")),
+              refreshStock: Boolean(html.find("input[name=refreshStockAtOpen]").is(":checked"))
+            });
+          }
+        },
+        close: {
+          label: "Close Session",
+          callback: async () => {
+            await closeMerchantShopsFromElement(null);
+          }
+        },
+        cancel: { label: "Cancel" }
+      },
+      default: "open"
+    },
+    {
+      classes: ["party-operations"],
+      width: 720
+    }
+  );
+  wireMerchantSessionDialog(dialog);
+  dialog.render(true);
+  return { ok: true, prompted: true };
+}
+
 async function setMerchantAccessModeById(merchantIdInput, modeInput) {
   const merchantId = String(merchantIdInput ?? "").trim();
   if (!merchantId) return null;
@@ -33249,6 +33742,16 @@ async function postMerchantShopBellChatCard(sessionInput = {}) {
   const openedAtLabel = formatMerchantTimestampLabel(session.lastOpenedAt);
   const openedBy = String(session.lastOpenedBy ?? game.user?.name ?? "GM").trim() || "GM";
   const accessLabel = getMerchantShopAudienceSummary(session);
+  const liveMerchants = sortMerchantDefinitions(ensureMerchantsState(getOperationsLedger()).definitions ?? []).filter(
+    (merchant) => merchant?.shopTradable !== false
+  );
+  const liveMerchantNames = liveMerchants
+    .map((merchant) => String(merchant?.name ?? "Merchant").trim() || "Merchant")
+    .slice(0, 8);
+  const liveMerchantLabel =
+    liveMerchantNames.length > 0
+      ? `${liveMerchantNames.join(", ")}${liveMerchants.length > liveMerchantNames.length ? `, +${liveMerchants.length - liveMerchantNames.length} more` : ""}`
+      : "No merchants selected";
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
@@ -33256,6 +33759,7 @@ async function postMerchantShopBellChatCard(sessionInput = {}) {
         <h3>Shopping Window Open</h3>
         <p>The GM rang the dinner bell. Market stalls are now open.</p>
         <p><strong>Access:</strong> ${poEscapeHtml(accessLabel)}</p>
+        <p><strong>Live Merchants:</strong> ${poEscapeHtml(liveMerchantLabel)}</p>
         <p><strong>Opened By:</strong> ${poEscapeHtml(openedBy)} (${poEscapeHtml(openedAtLabel)})</p>
       </div>
     `
@@ -36406,10 +36910,7 @@ async function applyDowntimeV2SubmissionForUser(user, rawSubmission = {}) {
     cardTitle: card.title,
     submittedAt: Math.max(0, Number(rawSubmission?.submittedAt ?? Date.now()) || Date.now())
   };
-  submission.resultDraft =
-    rawSubmission?.resultDraft && typeof rawSubmission.resultDraft === "object"
-      ? rawSubmission.resultDraft
-      : buildDowntimeV2ResultDraft(submission, card, { hours: downtime.activeSession.hours });
+  submission.resultDraft = buildDowntimeV2ResultDraft(submission, card, { hours: downtime.activeSession.hours });
 
   let outcome = null;
   await updateOperationsLedger((nextLedger) => {
@@ -36504,6 +37005,23 @@ async function deliverDowntimeV2Result(element) {
   const submissionId = String(element?.dataset?.submissionId ?? "").trim();
   if (!submissionId) return { ok: false, message: "Submission id is required." };
   const deliveryDraft = readDowntimeV2DeliveryDraft(element);
+  const currentDowntime = ensureDowntimeState(getOperationsLedger());
+  const candidate = deliverDowntimeV2Submission(currentDowntime, submissionId, {
+    now: Date.now(),
+    deliveredBy: String(game.user?.name ?? "GM"),
+    resultDraft: deliveryDraft
+  });
+  if (!candidate?.ok || !candidate.result) {
+    ui.notifications?.warn(candidate?.message ?? "Downtime result could not be delivered.");
+    return { ok: false, message: candidate?.message ?? "Delivery failed." };
+  }
+  try {
+    await applyDowntimeV2DeliveredResultToActor(candidate.result);
+  } catch (error) {
+    ui.notifications?.warn("Downtime result was not delivered because the actor update failed.");
+    console.warn(`${MODULE_ID}: downtime v2 actor update failed`, error);
+    return { ok: false, message: "Actor update failed." };
+  }
   let delivered = null;
   await updateOperationsLedger((ledger) => {
     const downtime = ensureDowntimeState(ledger);
@@ -36518,7 +37036,6 @@ async function deliverDowntimeV2Result(element) {
     ui.notifications?.warn(delivered?.message ?? "Downtime result could not be delivered.");
     return { ok: false, message: delivered?.message ?? "Delivery failed." };
   }
-  await applyDowntimeV2DeliveredResultToActor(delivered.result);
   ui.notifications?.info(`Delivered downtime result for ${delivered.result.actorName || "actor"}.`);
   return { ok: true };
 }
@@ -41287,6 +41804,215 @@ function triggerGatherResourceButtonAnimation(element) {
   }, 520);
 }
 
+function buildGatherBatchActorRows(actors, resourceType, gatherMode) {
+  const resourceOptions = (selected) => `
+    <option value="food" ${selected === "food" ? "selected" : ""}>Food</option>
+    <option value="water" ${selected === "water" ? "selected" : ""}>Water</option>
+  `;
+  const modeOptions = (selected) => `
+    <option value="standard" ${selected === "standard" ? "selected" : ""}>Standard</option>
+    <option value="plant" ${selected === "plant" ? "selected" : ""}>Plants</option>
+  `;
+
+  return actors
+    .map((actor) => {
+      const actorId = String(actor?.id ?? "").trim();
+      const actorName = String(actor?.name ?? "Unknown Actor").trim() || "Unknown Actor";
+      return `
+        <tr data-gather-batch-row data-actor-id="${poEscapeHtml(actorId)}">
+          <td><input type="checkbox" name="gatherActor" value="${poEscapeHtml(actorId)}" checked /></td>
+          <th scope="row">${poEscapeHtml(actorName)}</th>
+          <td>
+            <select name="resourceType">${resourceOptions(resourceType)}</select>
+          </td>
+          <td>
+            <select name="gatherMode">${modeOptions(gatherMode)}</select>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function wireGatherBatchDialog(dialog) {
+  Hooks.once("renderDialog", (app, html) => {
+    if (app !== dialog) return;
+    html.find("[data-gather-batch-select='all']").on("click", () => {
+      html.find("input[name=gatherActor]").prop("checked", true);
+    });
+    html.find("[data-gather-batch-select='none']").on("click", () => {
+      html.find("input[name=gatherActor]").prop("checked", false);
+    });
+  });
+}
+
+async function promptGatherBatchDialog(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can plan gather checks.");
+    return { ok: false, blocked: true, reason: "GM only." };
+  }
+
+  const actors = getResourceSyncActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  if (actors.length === 0) {
+    ui.notifications?.warn("No eligible party actors found for gather checks.");
+    return { ok: false, blocked: true, reason: "No eligible actors." };
+  }
+
+  const config = getGatherResourceConfig();
+  if (!config.enabled) {
+    ui.notifications?.warn("Gather resources is disabled in module settings.");
+    return { ok: false, blocked: true, reason: "Gather resources disabled." };
+  }
+
+  const resourceType = normalizeGatherResourceType(options?.resourceType);
+  const travelTradeoff = normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault);
+  const gatherMode =
+    String(options?.gatherMode ?? "standard")
+      .trim()
+      .toLowerCase() === "plant"
+      ? "plant"
+      : "standard";
+  const environmentOptions = getGatherEnvironmentChoices(config)
+    .map(
+      (entry) =>
+        `<option value="${entry.value}" ${normalizeGatherEnvironmentKey(options?.environment ?? GATHER_ENVIRONMENT_KEYS[0]) === entry.value ? "selected" : ""}>${poEscapeHtml(entry.label)}</option>`
+    )
+    .join("");
+  const rows = buildGatherBatchActorRows(actors, resourceType, gatherMode);
+  const content = `
+    <div class="po-gather-batch-dialog">
+      <div class="po-gather-batch-controls">
+        <label>
+          Environment
+          <select name="environment">${environmentOptions}</select>
+        </label>
+        <label>
+          Hours
+          <input type="number" name="hoursSpent" value="${Math.max(1, Number(options?.hoursSpent ?? config.minimumHours) || config.minimumHours)}" min="1" max="24" step="1" />
+        </label>
+        <label>
+          Season
+          <input type="number" name="seasonMod" value="${clampGatherModifier(options?.seasonMod ?? config.seasonMod, config.seasonMod)}" min="-10" max="10" step="1" />
+        </label>
+        <label>
+          Weather
+          <input type="number" name="weatherMod" value="${clampGatherModifier(options?.weatherMod ?? config.weatherMod, config.weatherMod)}" min="-10" max="10" step="1" />
+        </label>
+        <label>
+          Corruption
+          <input type="number" name="corruptionMod" value="${clampGatherModifier(options?.corruptionMod ?? config.corruptionMod, config.corruptionMod)}" min="-10" max="10" step="1" />
+        </label>
+      </div>
+      <div class="po-gather-batch-flags">
+        <label><input type="checkbox" name="isCorruptedRegion" ${options?.isCorruptedRegion ? "checked" : ""} /> Corrupted</label>
+        <label><input type="checkbox" name="hostileTerrain" ${options?.hostileTerrain ? "checked" : ""} /> Hostile</label>
+        <label><input type="checkbox" name="waterAutoFound" ${(options?.waterAutoFound ?? config.waterAutoFoundEnabled) ? "checked" : ""} ${config.waterAutoFoundEnabled ? "" : "disabled"} /> Water visible</label>
+        <label><input type="checkbox" name="duringTravel" ${options?.duringTravel ? "checked" : ""} /> During travel</label>
+        <label><input type="checkbox" name="applyToLedger" ${(options?.applyToLedger ?? true) ? "checked" : ""} /> Apply to pools</label>
+        <label>
+          Travel tradeoff
+          <select name="travelTradeoff">
+            <option value="${GATHER_TRAVEL_CHOICES.PACE}" ${travelTradeoff === GATHER_TRAVEL_CHOICES.PACE ? "selected" : ""}>Reduce pace</option>
+            <option value="${GATHER_TRAVEL_CHOICES.FELL_BEHIND}" ${travelTradeoff === GATHER_TRAVEL_CHOICES.FELL_BEHIND ? "selected" : ""}>Fall behind</option>
+          </select>
+        </label>
+      </div>
+      <div class="po-gather-batch-toolbar">
+        <button type="button" data-gather-batch-select="all">All</button>
+        <button type="button" data-gather-batch-select="none">None</button>
+        <span><strong data-gather-dc-preview>-</strong></span>
+      </div>
+      <table class="po-gather-batch-table">
+        <thead>
+          <tr>
+            <th scope="col">Use</th>
+            <th scope="col">PC</th>
+            <th scope="col">Resource</th>
+            <th scope="col">Check</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+
+  const dialog = new Dialog(
+    {
+      title: "Plan Gather Checks",
+      content,
+      buttons: {
+        run: {
+          label: "Run Selected Checks",
+          callback: async (html) => {
+            const sharedPayload = {
+              environment: String(html.find("select[name=environment]").val() ?? GATHER_ENVIRONMENT_KEYS[0]),
+              hoursSpent: Number(html.find("input[name=hoursSpent]").val() ?? config.minimumHours),
+              seasonMod: Number(html.find("input[name=seasonMod]").val() ?? config.seasonMod),
+              weatherMod: Number(html.find("input[name=weatherMod]").val() ?? config.weatherMod),
+              corruptionMod: Number(html.find("input[name=corruptionMod]").val() ?? config.corruptionMod),
+              isCorruptedRegion: Boolean(html.find("input[name=isCorruptedRegion]").is(":checked")),
+              hostileTerrain: Boolean(html.find("input[name=hostileTerrain]").is(":checked")),
+              waterAutoFound: Boolean(html.find("input[name=waterAutoFound]").is(":checked")),
+              duringTravel: Boolean(html.find("input[name=duringTravel]").is(":checked")),
+              travelTradeoff: String(html.find("select[name=travelTradeoff]").val() ?? config.travelTradeoffDefault),
+              applyToLedger: Boolean(html.find("input[name=applyToLedger]").is(":checked")),
+              rollMode: isMonksTokenBarActive() ? "prefer-monks" : "native"
+            };
+            const selected = [];
+            html.find("[data-gather-batch-row]").each((_index, row) => {
+              if (!row.querySelector?.("input[name=gatherActor]")?.checked) return;
+              selected.push({
+                actorId: String(row.dataset.actorId ?? "").trim(),
+                resourceType: String(row.querySelector?.("select[name=resourceType]")?.value ?? "food"),
+                gatherMode: String(row.querySelector?.("select[name=gatherMode]")?.value ?? "standard")
+              });
+            });
+
+            if (selected.length <= 0) {
+              ui.notifications?.warn("Select at least one PC for gather checks.");
+              return;
+            }
+
+            let resolved = 0;
+            let blocked = 0;
+            for (const entry of selected) {
+              const result = await runGatherResourcesAction({
+                ...sharedPayload,
+                ...entry,
+                showDialog: false,
+                silent: true
+              });
+              if (result?.ok) resolved += 1;
+              else blocked += 1;
+            }
+
+            if (resolved > 0) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+            const summary = `Gather workflow complete: ${resolved} resolved${blocked ? `, ${blocked} blocked` : ""}.`;
+            if (blocked > 0) ui.notifications?.warn(summary);
+            else ui.notifications?.info(summary);
+          }
+        },
+        single: {
+          label: "Single Check",
+          callback: async () => {
+            await runGatherResourceCheck();
+          }
+        },
+        cancel: { label: "Cancel" }
+      },
+      default: "run"
+    },
+    {
+      classes: ["party-operations"],
+      width: 760
+    }
+  );
+  wireGatherDcPreview(dialog, config);
+  wireGatherBatchDialog(dialog);
+  dialog.render(true);
+  return { ok: true, blocked: false, prompted: true };
+}
+
 async function runGatherResourceCheck() {
   if (!game.user?.isGM) {
     ui.notifications?.warn("Only the GM can assign gather checks.");
@@ -43242,6 +43968,7 @@ function readLootPreviewDraftFromUi(element) {
       "targetItemsValueGp",
       current?.targetItemsValueGp ?? 0
     ),
+    emphasis: current?.emphasis ?? "balanced",
     sort: readFieldValue("lootPreviewSort", "sort", current?.sort ?? "generated")
   });
 }
@@ -43280,6 +44007,7 @@ async function applyLootPreviewQualityAction(element) {
       return normalizeLootPreviewDraft(draft);
     }
     if (action === "practical") {
+      draft.emphasis = "practical";
       draft.profile = "standard";
       draft.distributionMix = Math.max(65, Math.floor(Number(draft.distributionMix ?? 50) || 50));
       draft.valueStrictness = Math.max(140, Math.floor(Number(draft.valueStrictness ?? 100) || 100));
@@ -43287,6 +44015,7 @@ async function applyLootPreviewQualityAction(element) {
       return normalizeLootPreviewDraft(draft);
     }
     if (action === "magical") {
+      draft.emphasis = "magical";
       draft.profile = "well";
       draft.distributionMix = Math.max(75, Math.floor(Number(draft.distributionMix ?? 50) || 50));
       draft.tableScalar = Math.min(300, Math.max(125, Math.floor(Number(draft.tableScalar ?? 100) + 35)));
@@ -44471,20 +45200,23 @@ async function waitForLootClaimsPublished(expectedPublishedAtInput, timeoutMs = 
   });
 }
 
-async function publishLootPreviewToClaims() {
+async function publishLootPreviewToClaims(options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can publish loot claims.");
-    return;
+    return { ok: false, message: "Only the GM can publish loot claims." };
   }
+  const promptPlayers = options?.promptPlayers !== false;
+  const openBoard = options?.openBoard !== false;
+  const notify = options?.notify !== false;
   const result = getLootPreviewResult();
   if (!result || typeof result !== "object") {
     ui.notifications?.warn("Run loot builder first.");
-    return;
+    return { ok: false, message: "Run loot builder first." };
   }
   const items = aggregateLootEntriesForStacks(Array.isArray(result.items) ? result.items : []);
   if (items.length === 0) {
     ui.notifications?.warn("The builder has no items to publish.");
-    return;
+    return { ok: false, message: "The builder has no items to publish." };
   }
   const draft = normalizeLootPreviewDraft(result?.draft ?? getLootPreviewDraft());
   const publishBudgetContext = buildLootValueBudgetContext(
@@ -44501,7 +45233,7 @@ async function publishLootPreviewToClaims() {
     ui.notifications?.error(
       `Horde scale contract failed (${publishContractCheck.scale}): ${publishContractCheck.messages[0] ?? publishContractCheck.summary} — Re-roll before publishing.`
     );
-    return;
+    return { ok: false, message: "Horde scale contract failed." };
   }
   if (publishContractCheck.applies && publishContractCheck.status === "warning") {
     ui.notifications?.warn(
@@ -44585,8 +45317,8 @@ async function publishLootPreviewToClaims() {
     publishedRunId = String(board.id ?? "");
   });
   if (publishedRunId) setLootClaimRunSelection(publishedRunId);
-  const playerUsers = getConnectedNonGmUsers();
-  if (playerUsers.length === 0) {
+  const playerUsers = promptPlayers ? getConnectedNonGmUsers() : [];
+  if (promptPlayers && playerUsers.length === 0) {
     ui.notifications?.warn("No active non-GM players are connected to receive the loot claims popup.");
   }
   logUiDebug("loot-claims", "publishing loot claims to players", {
@@ -44596,31 +45328,42 @@ async function publishLootPreviewToClaims() {
     recipients: playerUsers.map((user) => ({
       id: String(user?.id ?? ""),
       name: String(user?.name ?? "Player"),
-      actorId: String(user?.character?.id ?? "").trim()
+      actorId: resolveDefaultLootClaimActorIdForUser(user)
     }))
   });
-  for (const user of playerUsers) {
-    const actorId = String(user?.character?.id ?? "").trim();
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: "players:openLootClaims",
-      userId: String(user?.id ?? ""),
-      actorId,
-      runId: publishedRunId,
-      publishedAt,
-      publishedBy: String(game.user?.name ?? "GM"),
-      itemCount: publishedItemCount,
-      currencyRemaining: {
-        pp: publishedCurrency.pp,
-        gp: publishedCurrency.gp,
-        sp: publishedCurrency.sp,
-        cp: publishedCurrency.cp
-      }
-    });
+  if (promptPlayers) {
+    for (const user of playerUsers) {
+      const actorId = resolveDefaultLootClaimActorIdForUser(user);
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "players:openLootClaims",
+        userId: String(user?.id ?? ""),
+        actorId,
+        runId: publishedRunId,
+        publishedAt,
+        publishedBy: String(game.user?.name ?? "GM"),
+        itemCount: publishedItemCount,
+        currencyRemaining: {
+          pp: publishedCurrency.pp,
+          gp: publishedCurrency.gp,
+          sp: publishedCurrency.sp,
+          cp: publishedCurrency.cp
+        }
+      });
+    }
   }
-  if (canAccessAllPlayerOps()) openGmLootClaimsBoard({ force: true, runId: publishedRunId });
-  ui.notifications?.info(
-    `Published ${publishedItemCount} loot item(s) to player claims${playerUsers.length > 0 ? ` and prompted ${playerUsers.length} player(s).` : "."}`
-  );
+  if (openBoard && canAccessAllPlayerOps()) openGmLootClaimsBoard({ force: true, runId: publishedRunId });
+  if (notify) {
+    ui.notifications?.info(
+      `Published ${publishedItemCount} loot item(s) to player claims${playerUsers.length > 0 ? ` and prompted ${playerUsers.length} player(s).` : "."}`
+    );
+  }
+  return {
+    ok: true,
+    runId: publishedRunId,
+    publishedAt,
+    itemCount: publishedItemCount,
+    promptedPlayerCount: playerUsers.length
+  };
 }
 
 function getLootClaimBoardFromState(claims, runIdInput = "", options = {}) {
@@ -44795,7 +45538,7 @@ function getLootClaimActorIdFromElement(element) {
   const isAccessibleActor = (actorId) => {
     if (!actorId) return false;
     const actor = game.actors.get(actorId);
-    return Boolean(actor) && canUserManageDowntimeActor(game.user, actor);
+    return Boolean(actor) && canUserManageLootClaimActor(game.user, actor);
   };
   if (selectedActorId && isAccessibleActor(selectedActorId)) {
     setLootClaimActorSelection(selectedActorId);
@@ -44805,7 +45548,7 @@ function getLootClaimActorIdFromElement(element) {
   if (storedActorId && isAccessibleActor(storedActorId)) {
     return storedActorId;
   }
-  return normalizeLootClaimActorId(String(getActiveActorForUser(game.user)?.id ?? ""));
+  return normalizeLootClaimActorId(resolveDefaultLootClaimActorIdForUser(game.user, { includeStored: false }));
 }
 
 function getLootClaimRunIdFromElement(element) {
@@ -44926,7 +45669,7 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
   const runId = normalizeLootClaimRunId(runIdInput);
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
-  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
+  if (!canUserManageLootClaimActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
   const eligibleActorIds = getLootClaimSelectableActorsForUser(user)
     .map((entry) => String(entry?.id ?? "").trim())
     .filter(Boolean);
@@ -45079,7 +45822,7 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput, runIdInput = ""
   const runId = normalizeLootClaimRunId(runIdInput);
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
-  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
+  if (!canUserManageLootClaimActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
   const eligibleActorIds = getLootClaimSelectableActorsForUser(user)
     .map((entry) => String(entry?.id ?? "").trim())
     .filter(Boolean);
@@ -45570,6 +46313,76 @@ async function claimAllLootItemsForPlayer(element) {
   ui.notifications?.info(`Sent ${itemIds.length} item claim request(s) to GM.`);
 }
 
+async function depositLootClaimRunToActorForGm(runIdInput, actorIdInput) {
+  const runId = normalizeLootClaimRunId(runIdInput);
+  const actorId = normalizeLootClaimActorId(actorIdInput);
+  if (!canAccessGmPage()) return { ok: false, message: "Only the GM can deposit and archive loot runs." };
+  if (!actorId) return { ok: false, message: "Select a destination before sending everything." };
+
+  const claims = ensureLootClaimsState(getOperationsLedger());
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) return { ok: false, message: "No open loot claim board is selected." };
+
+  const hasItems = Array.isArray(board.items) && board.items.length > 0;
+  const itemIds = hasItems ? board.items.map((entry) => String(entry?.id ?? "").trim()).filter(Boolean) : [];
+  const remainingCurrency = normalizeLootClaimCurrencyRecord(board.currencyRemaining ?? board.currency ?? {});
+  const hasCurrency =
+    remainingCurrency.pp > 0 || remainingCurrency.gp > 0 || remainingCurrency.sp > 0 || remainingCurrency.cp > 0;
+  if (!hasItems && !hasCurrency) {
+    return { ok: false, message: "This run has no remaining items or currency." };
+  }
+
+  let claimedItemCount = 0;
+  let claimedCurrency = null;
+  let completionSummary = null;
+
+  for (const itemId of itemIds) {
+    const outcome = await applyLootClaimForUser(game.user, actorId, itemId, runId);
+    if (!outcome.ok) continue;
+    claimedItemCount += 1;
+    await postLootItemClaimToChat(outcome);
+    if (outcome?.completion?.completed) completionSummary = outcome?.completion?.summary ?? completionSummary;
+  }
+
+  const refreshedClaims = ensureLootClaimsState(getOperationsLedger());
+  const refreshedBoard = getLootClaimBoardFromState(refreshedClaims, runId, { requireOpen: true });
+  const refreshedCurrency = normalizeLootClaimCurrencyRecord(
+    refreshedBoard?.currencyRemaining ?? refreshedBoard?.currency ?? {}
+  );
+  const hasRefreshedCurrency =
+    refreshedCurrency.pp > 0 || refreshedCurrency.gp > 0 || refreshedCurrency.sp > 0 || refreshedCurrency.cp > 0;
+  if (hasRefreshedCurrency) {
+    const currencyOutcome = await applyLootCurrencyClaimForUser(game.user, actorId, runId);
+    if (currencyOutcome.ok) {
+      claimedCurrency = currencyOutcome.share ?? { pp: 0, gp: 0, sp: 0, cp: 0 };
+      await postLootCurrencyClaimToChat(currencyOutcome);
+      if (currencyOutcome?.completion?.completed)
+        completionSummary = currencyOutcome?.completion?.summary ?? completionSummary;
+    }
+  }
+
+  const hasClaimedCurrency =
+    claimedCurrency &&
+    (Number(claimedCurrency.pp ?? 0) > 0 ||
+      Number(claimedCurrency.gp ?? 0) > 0 ||
+      Number(claimedCurrency.sp ?? 0) > 0 ||
+      Number(claimedCurrency.cp ?? 0) > 0);
+  if (claimedItemCount <= 0 && !hasClaimedCurrency) {
+    return { ok: false, message: "No loot was deposited." };
+  }
+
+  const actor = game.actors?.get?.(actorId);
+  return {
+    ok: true,
+    runId,
+    actorId,
+    actorName: String(actor?.name ?? "selected destination"),
+    claimedItemCount,
+    claimedCurrency,
+    completionSummary
+  };
+}
+
 async function claimAllLootForPlayer(element) {
   const runId = getLootClaimRunIdFromElement(element);
   const actorId = getLootClaimActorIdFromElement(element);
@@ -45686,6 +46499,72 @@ async function claimAllLootForPlayer(element) {
   }
 
   ui.notifications?.info("Deposit request sent to GM.");
+}
+
+async function depositAndArchiveLootClaimRun(element) {
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("Only the GM can deposit and archive loot runs.");
+    return;
+  }
+
+  const shouldPublishCurrentPreview =
+    String(element?.dataset?.source ?? "") === "builder" && Boolean(getLootPreviewResult());
+  let runId = getLootClaimRunIdFromElement(element);
+  let claims = ensureLootClaimsState(getOperationsLedger());
+  let board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (shouldPublishCurrentPreview || !board) {
+    const published = await publishLootPreviewToClaims({
+      promptPlayers: false,
+      openBoard: false,
+      notify: false
+    });
+    if (!published?.ok) return;
+    runId = normalizeLootClaimRunId(published.runId);
+    claims = ensureLootClaimsState(getOperationsLedger());
+    board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  }
+
+  if (!board) {
+    ui.notifications?.warn("No open loot claim board is available to deposit.");
+    return;
+  }
+
+  let actorId = getLootClaimActorIdFromElement(element);
+  if (!actorId) {
+    actorId = resolveDefaultLootClaimActorIdForUser(game.user, { includeStored: false });
+  }
+  if (!actorId) {
+    ui.notifications?.warn("No eligible destination actor is available for loot deposits.");
+    return;
+  }
+  setLootClaimActorSelection(actorId);
+
+  const result = await depositLootClaimRunToActorForGm(String(board.id ?? runId), actorId);
+  if (!result?.ok) {
+    ui.notifications?.warn(result?.message ?? "Loot deposit failed.");
+    return;
+  }
+
+  const refreshedClaims = ensureLootClaimsState(getOperationsLedger());
+  const refreshedBoard = getLootClaimBoardFromState(refreshedClaims, String(board.id ?? runId));
+  const archived = String(refreshedBoard?.status ?? "open") === "archived";
+  if (!archived) {
+    ui.notifications?.warn("Some loot could not be deposited. The run was left open.");
+    return;
+  }
+
+  const summaryParts = [];
+  if (result.claimedItemCount > 0) summaryParts.push(`${result.claimedItemCount} item(s)`);
+  const claimedCurrency = result.claimedCurrency ?? null;
+  const hasClaimedCurrency =
+    claimedCurrency &&
+    (Number(claimedCurrency.pp ?? 0) > 0 ||
+      Number(claimedCurrency.gp ?? 0) > 0 ||
+      Number(claimedCurrency.sp ?? 0) > 0 ||
+      Number(claimedCurrency.cp ?? 0) > 0);
+  if (hasClaimedCurrency) summaryParts.push(formatLootCurrencyBundleLabel(claimedCurrency));
+  ui.notifications?.info(`Deposited ${summaryParts.join(" and ")} to ${result.actorName}; run archived.`);
+  if (result.completionSummary) await showLootRunCompletionSummary(result.completionSummary);
 }
 
 async function autoAssignItemsByVouchForGm(element) {
@@ -46186,11 +47065,9 @@ function buildCalendarWeatherContext(weatherState = null) {
     dateLabel,
     dayKey
   });
-  const locationKey = normalizeGmScreenWeatherLocationKey(
-    weatherState?.calendarLocationKey || weatherState?.calendarClimate || "temperate-lowlands"
-  );
+  const locationKey = normalizeGmScreenWeatherLocationKey(weatherState?.calendarLocationKey || "temperate-lowlands");
   const locationProfile = getGmScreenWeatherLocationProfile(locationKey);
-  const configuredClimate = normalizeGmScreenWeatherClimate(locationProfile.climate);
+  const configuredClimate = normalizeGmScreenWeatherClimate(weatherState?.calendarClimate || locationProfile.climate);
   const terrainCounts = normalizeGmScreenWeatherTerrainCounts(locationProfile.terrainCounts);
   const terrainRows = getGmScreenWeatherTerrainRows(terrainCounts);
   const activeTerrainRows = terrainRows.filter((row) => row.active);
@@ -46447,6 +47324,20 @@ async function gmWeatherSetLocation(element) {
     weather.calendarTerrainCounts = normalizeGmScreenWeatherTerrainCounts(profile.terrainCounts);
   });
   ui.notifications?.info(`Weather location set to ${profile.label}.`);
+}
+
+async function gmCockpitWeatherSetClimate(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update calendar weather.");
+    return;
+  }
+  const climate = normalizeGmScreenWeatherClimate(element?.value ?? "Temperate");
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.calendarClimate = climate;
+    weather.calendarClimateAutoApply = false;
+  });
+  ui.notifications?.info(`Weather climate set to ${climate}.`);
 }
 
 async function gmWeatherSetForecastDays(element) {
@@ -53650,6 +54541,13 @@ export function onPartyOperationsInit() {
   runPartyOperationsInit(buildPartyOperationsInitConfig());
 }
 
+async function runPartyOperationsGmReadyTasks() {
+  // These migrations must be part of the real module ready path, not only the legacy ready export.
+  await runMerchantDataMigration();
+  await syncAllMerchantActorOwnerships();
+  await purgeLegacyManagedEffects();
+}
+
 export function buildPartyOperationsReadyConfig() {
   return buildPartyOperationsReadyConfigSurface({
     registerPartyOperationsApi,
@@ -53667,6 +54565,7 @@ export function buildPartyOperationsReadyConfig() {
     queueAudioLibraryMetadataWarmup,
     ensureOperationsJournalFolderTree,
     scheduleLootManifestCompendiumTypeFolderSync: null,
+    runGmReadyTasks: runPartyOperationsGmReadyTasks,
     registerModuleSocketHandler,
     socketChannel: SOCKET_CHANNEL,
     socketHandler: handlePartyOperationsSocketMessage,
@@ -53679,18 +54578,6 @@ export function buildPartyOperationsReadyConfig() {
 
 export function onPartyOperationsReady() {
   runPartyOperationsReady(buildPartyOperationsReadyConfig());
-  // Rework v1: run merchant data migration on ready
-  void runMerchantDataMigration().catch((error) => {
-    if (isModuleDebugEnabled()) {
-      console.warn(`${MODULE_ID}: merchant data migration error`, error);
-    }
-  });
-  void syncAllMerchantActorOwnerships().catch((error) => {
-    if (isModuleDebugEnabled()) {
-      console.warn(`${MODULE_ID}: merchant actor ownership sync error`, error);
-    }
-  });
-  if (game.user?.isGM) void purgeLegacyManagedEffects();
 }
 
 const {

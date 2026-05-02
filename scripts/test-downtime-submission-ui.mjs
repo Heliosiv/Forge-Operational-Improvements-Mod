@@ -41,8 +41,18 @@ assertMatch(
 );
 assertMatch(
   moduleSource,
-  /async function deliverDowntimeV2Result\(element\)[\s\S]*deliverDowntimeV2Submission[\s\S]*applyDowntimeV2DeliveredResultToActor/,
-  "GM delivery should persist the result and apply actor project writes."
+  /async function deliverDowntimeV2Result\(element\)[\s\S]*applyDowntimeV2DeliveredResultToActor\(candidate\.result\)[\s\S]*updateOperationsLedger/,
+  "GM delivery should apply actor project writes before marking the result delivered."
+);
+assertMatch(
+  moduleSource,
+  /async function applyDowntimeV2SubmissionForUser\(user,\s*rawSubmission = \{\}\)[\s\S]*submission\.resultDraft = buildDowntimeV2ResultDraft\(submission,\s*card,/,
+  "GM-side downtime v2 submissions should rebuild result drafts instead of trusting client payloads."
+);
+assertNoMatch(
+  moduleSource,
+  /rawSubmission\?\.resultDraft && typeof rawSubmission\.resultDraft === "object"[\s\S]*\? rawSubmission\.resultDraft/,
+  "Player-submitted downtime v2 result drafts should not be accepted verbatim."
 );
 assertMatch(
   moduleSource,
@@ -57,9 +67,29 @@ assertMatch(
 
 assertMatch(gmDowntimeTemplate, /class="[^"]*po-downtime-v2/, "GM downtime page should render the v2 surface.");
 assertMatch(gmDowntimeTemplate, /<main class="po-main">/, "GM downtime page should render inside the app scroll body.");
+assertNoMatch(
+  gmDowntimeTemplate,
+  /data-action="gm-downtime-page-refresh"/,
+  "GM downtime page should not show a bare R refresh button in the header."
+);
 assertMatch(gmDowntimeTemplate, /data-action="downtime-v2-launch-session"/, "GM page should expose one launch action.");
 assertMatch(gmDowntimeTemplate, /name="downtimeV2RosterActorIds"/, "GM page should assign a roster.");
 assertMatch(gmDowntimeTemplate, /data-downtime-v2-card-row/, "GM page should expose reusable action cards.");
+assertMatch(
+  gmDowntimeTemplate,
+  /Unchecked means this resolves as a one-time session result\. Checked means it tracks progress as an ongoing actor project\./,
+  "GM downtime project-mode toggle should explain one-session outcomes on hover."
+);
+assertMatch(
+  gmDowntimeTemplate,
+  /Progress required to complete a persistent project\. Use 0 for simple one-session outcomes\./,
+  "GM downtime target field should explain how project targets relate to one-session outcomes."
+);
+assertMatch(
+  gmDowntimeTemplate,
+  /Saves the current session roster, hours, and selected action cards without opening it to players\./,
+  "GM downtime setup controls should have hover explanations."
+);
 assertMatch(
   gmDowntimeTemplate,
   /data-action="downtime-v2-deliver-result"/,
@@ -88,6 +118,21 @@ assertMatch(
 );
 assertMatch(playerDowntimeTemplate, /name="downtimeV2ActorId"/, "Player panel should choose assigned actors.");
 assertMatch(playerDowntimeTemplate, /name="downtimeV2CardId"/, "Player panel should choose GM-selected action cards.");
+assertMatch(
+  playerDowntimeTemplate,
+  /name="downtimeV2CardId"[\s\S]*data-action="refresh-downtime-submit-selection"/,
+  "Changing the player downtime card should refresh the displayed card details."
+);
+assertMatch(
+  playerDowntimeTemplate,
+  /<option value="\{\{id\}\}" \{\{#if selected\}\}selected\{\{\/if\}\}>/,
+  "Player downtime card options should preserve the selected card across rerenders."
+);
+assertMatch(
+  playerDowntimeTemplate,
+  /Choose one of the action cards the GM opened for this downtime session\./,
+  "Player downtime action picker should explain the selected card on hover."
+);
 assertMatch(
   playerDowntimeTemplate,
   /data-action="ack-downtime-v2-result"/,

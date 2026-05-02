@@ -137,4 +137,22 @@ for (const [name, expectedValueGp] of armorValueExpectations) {
   );
 }
 
+{
+  const sentinelShield = lootManifestRows.find((entry) => entry?.name === "Sentinel Shield");
+  assert.ok(sentinelShield, "Sentinel Shield should exist in the loot manifest");
+  assert.equal(sentinelShield?.system?.price?.value, 450, "Sentinel Shield should stay priced at 450 gp");
+  assert.equal(sentinelShield?.system?.price?.denomination, "gp", "Sentinel Shield should stay priced in gp");
+  const effectChanges = (sentinelShield?.effects ?? []).flatMap((effect) => effect?.changes ?? []);
+  const effectKeys = effectChanges.map((change) => String(change?.key ?? ""));
+  assert.ok(
+    effectKeys.includes("flags.midi-qol.advantage.skill.prc"),
+    "Sentinel Shield should grant advantage on Perception checks"
+  );
+  assert.equal(
+    effectKeys.includes("flags.midi-qol.advantage.ability.check.dex"),
+    false,
+    "Sentinel Shield should not grant advantage on Dexterity checks"
+  );
+}
+
 process.stdout.write("loot compendium manifest source validation passed\n");

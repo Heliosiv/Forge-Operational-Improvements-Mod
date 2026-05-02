@@ -17,12 +17,7 @@ function defaultSearchNormalizer(value) {
 }
 
 function defaultQuickFilterNormalizer(value) {
-  const normalized = String(value ?? "")
-    .trim()
-    .toLowerCase();
-  return normalized === LOOT_ITEM_OVERRIDE_FILTERS.MODIFIED || normalized === LOOT_ITEM_OVERRIDE_FILTERS.DISABLED
-    ? normalized
-    : LOOT_ITEM_OVERRIDE_FILTERS.ALL;
+  return normalizeLootItemOverrideFilter(value, LOOT_ITEM_OVERRIDE_FILTERS.ALL);
 }
 
 function defaultAssetImageNormalizer(value, { fallback = DEFAULT_ITEM_IMAGE } = {}) {
@@ -80,6 +75,7 @@ export function buildLootItemOverrideRowsForEditor({
 
       return {
         overrideKey,
+        uuid: overrideKey,
         name,
         img: normalizeAssetImagePath(data?.img, { fallback: DEFAULT_ITEM_IMAGE }),
         itemType,
@@ -101,10 +97,12 @@ export function buildLootItemOverrideRowsForEditor({
 
   const modifiedCount = rows.filter((entry) => entry.modified).length;
   const disabledCount = rows.filter((entry) => entry.disabled).length;
+  const enabledCount = rows.filter((entry) => entry.enabled).length;
   const filteredRows = rows
     .filter((entry) => {
       if (filter === LOOT_ITEM_OVERRIDE_FILTERS.MODIFIED && !entry.modified) return false;
       if (filter === LOOT_ITEM_OVERRIDE_FILTERS.DISABLED && !entry.disabled) return false;
+      if (filter === LOOT_ITEM_OVERRIDE_FILTERS.ENABLED && !entry.enabled) return false;
       if (searchNeedle && !entry.searchBlob.includes(searchNeedle)) return false;
       return true;
     })
@@ -122,12 +120,14 @@ export function buildLootItemOverrideRowsForEditor({
     filterAll: filter === LOOT_ITEM_OVERRIDE_FILTERS.ALL,
     filterModified: filter === LOOT_ITEM_OVERRIDE_FILTERS.MODIFIED,
     filterDisabled: filter === LOOT_ITEM_OVERRIDE_FILTERS.DISABLED,
+    filterEnabled: filter === LOOT_ITEM_OVERRIDE_FILTERS.ENABLED,
     totalCount: rows.length,
     filteredCount: filteredRows.length,
     visibleCount: visibleRows.length,
     hiddenCount: Math.max(0, filteredRows.length - visibleRows.length),
     modifiedCount,
     disabledCount,
+    enabledCount,
     hasRows: visibleRows.length > 0
   };
 }

@@ -36,12 +36,10 @@ try {
   recordRecentlyRolledItem(arrow);
   let snapshot = debugGetRecentRollsCache();
   assert.equal(snapshot.count, 1);
+  assert.equal(snapshot.items[0].nameIdentity, "arrow|ammunition|common");
 
   let malus = getRecentRollMalus(arrow);
-  assert.ok(
-    malus <= 0.27 && malus >= 0.26,
-    `Fresh repeat malus should be strong; got ${malus}`
-  );
+  assert.ok(malus <= 0.27 && malus >= 0.26, `Fresh repeat malus should be strong; got ${malus}`);
 
   // Duplicate record within 500ms should be ignored.
   nowMs += 300;
@@ -55,25 +53,16 @@ try {
   snapshot = debugGetRecentRollsCache();
   assert.equal(snapshot.count, 2);
   malus = getRecentRollMalus(arrow);
-  assert.ok(
-    malus <= 0.16 && malus >= 0.15,
-    `Multiple fresh repeats should reduce weight further; got ${malus}`
-  );
+  assert.ok(malus <= 0.16 && malus >= 0.15, `Multiple fresh repeats should reduce weight further; got ${malus}`);
 
   // Pressure should decay as entries age.
   nowMs += 31_000;
   malus = getRecentRollMalus(arrow);
-  assert.ok(
-    malus <= 0.20 && malus >= 0.19,
-    `Aged repeats should soften penalty; got ${malus}`
-  );
+  assert.ok(malus <= 0.2 && malus >= 0.19, `Aged repeats should soften penalty; got ${malus}`);
 
   nowMs += 120_000;
   malus = getRecentRollMalus(arrow);
-  assert.ok(
-    malus <= 0.36 && malus >= 0.35,
-    `Older repeats should apply only a light penalty; got ${malus}`
-  );
+  assert.ok(malus <= 0.36 && malus >= 0.35, `Older repeats should apply only a light penalty; got ${malus}`);
 
   nowMs += 400_000;
   malus = getRecentRollMalus(arrow);
@@ -99,6 +88,25 @@ try {
 
   clearRecentRollsCache();
   assert.equal(debugGetRecentRollsCache().count, 0);
+
+  recordRecentlyRolledItem({
+    name: "Sentinel Shield",
+    itemType: "equipment",
+    rarity: "uncommon",
+    sourceId: "pack:usable-items"
+  });
+  const sameNameDifferentSourceMalus = getRecentRollMalus({
+    name: "Sentinel Shield",
+    itemType: "equipment",
+    rarity: "uncommon",
+    sourceId: "pack:other-usable-items"
+  });
+  assert.ok(
+    sameNameDifferentSourceMalus < 0.5,
+    `Same-name usable items should be penalized across source variants; got ${sameNameDifferentSourceMalus}`
+  );
+
+  clearRecentRollsCache();
 
   process.stdout.write("loot recent-rolls cache validation passed\n");
 } finally {

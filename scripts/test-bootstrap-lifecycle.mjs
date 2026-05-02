@@ -259,7 +259,8 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     autoRefreshTick: 0,
     queueAudioWarmup: [],
     ensureJournalTree: 0,
-    scheduleCompendiumSync: []
+    scheduleCompendiumSync: [],
+    gmReadyTasks: 0
   };
 
   runPartyOperationsReady({
@@ -304,6 +305,10 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
       calls.scheduleCompendiumSync.push(reason);
       return Promise.resolve();
     },
+    runGmReadyTasks() {
+      calls.gmReadyTasks += 1;
+      return Promise.resolve();
+    },
     registerModuleSocketHandler() {},
     socketChannel: "module.party-operations",
     socketHandler: "socket-handler",
@@ -321,6 +326,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   assert.deepEqual(calls.queueAudioWarmup, [{ delayMs: 0 }]);
   assert.equal(calls.ensureJournalTree, 1);
   assert.deepEqual(calls.scheduleCompendiumSync, ["ready"]);
+  assert.equal(calls.gmReadyTasks, 1);
   assert.deepEqual(scheduledDelays, [250, 1000, 3000, 4200, 450, 900]);
 }
 
@@ -455,6 +461,68 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   });
 
   assert.ok(warnings.some((entry) => entry.includes("failed to ensure settings are registered")));
+}
+
+{
+  const warnings = [];
+  const socketRegistrations = [];
+  let hookRegistrations = 0;
+
+  runPartyOperationsReady({
+    registerPartyOperationsApi() {},
+    ensureSettingsRegistered() {},
+    validatePartyOperationsTemplates() {
+      return Promise.resolve();
+    },
+    setupPartyOperationsUI() {
+      throw new Error("ui setup failed");
+    },
+    ensureLauncherUi() {},
+    forceLauncherRecovery() {
+      return Promise.resolve();
+    },
+    notifyDailyInjuryReminders() {},
+    syncManagedAudioMixPlaybackForCurrentUser() {
+      return Promise.resolve();
+    },
+    game: {
+      user: {
+        isGM: false
+      }
+    },
+    schedulePendingSopNoteSync() {},
+    scheduleIntegrationSync() {},
+    handleAutomaticMerchantAutoRefreshTick() {
+      return Promise.resolve();
+    },
+    queueAudioLibraryMetadataWarmup() {},
+    ensureOperationsJournalFolderTree() {
+      return Promise.resolve();
+    },
+    scheduleLootManifestCompendiumTypeFolderSync() {
+      return Promise.resolve();
+    },
+    registerModuleSocketHandler(payload) {
+      socketRegistrations.push(payload);
+    },
+    socketChannel: "module.party-operations",
+    socketHandler: "socket-handler",
+    registerPartyOpsHooks() {
+      hookRegistrations += 1;
+    },
+    setTimeoutFn(callback) {
+      callback();
+    },
+    logger: {
+      warn(message) {
+        warnings.push(String(message));
+      }
+    }
+  });
+
+  assert.deepEqual(socketRegistrations, [{ channel: "module.party-operations", handler: "socket-handler" }]);
+  assert.equal(hookRegistrations, 1);
+  assert.ok(warnings.some((entry) => entry.includes("failed to set up party operations UI")));
 }
 
 {

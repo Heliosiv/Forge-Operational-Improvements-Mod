@@ -1,4 +1,4 @@
-<section class="po-player-hub-panel po-player-downtime po-downtime-v2" aria-label="Downtime">
+<section class="po-player-hub-panel po-player-downtime po-downtime-v2 po-downtime-panel" aria-label="Downtime">
   <div class="po-op-role-row">
     <div>
       <h3>Downtime</h3>
@@ -11,19 +11,19 @@
     {{#if downtime.player.hasAssignedActors}}
       {{#if downtime.player.hasAvailableCards}}
       <div class="po-list-row">
-        <label class="po-field">
+        <label class="po-field" title="Choose which assigned actor is taking the downtime action.">
           <span>Character</span>
-          <select name="downtimeV2ActorId" class="po-select">
+          <select name="downtimeV2ActorId" class="po-select" data-action="refresh-downtime-submit-selection">
             {{#each downtime.player.actorOptions}}
-            <option value="{{id}}">{{name}}</option>
+            <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
             {{/each}}
           </select>
         </label>
-        <label class="po-field">
+        <label class="po-field" title="Choose one of the action cards the GM opened for this downtime session.">
           <span>Action</span>
-          <select name="downtimeV2CardId" class="po-select">
+          <select name="downtimeV2CardId" class="po-select" data-action="refresh-downtime-submit-selection">
             {{#each downtime.player.availableCards}}
-            <option value="{{id}}">{{typeLabel}} - {{title}}</option>
+            <option value="{{id}}" {{#if selected}}selected{{/if}}>{{typeLabel}} - {{title}}</option>
             {{/each}}
           </select>
         </label>
@@ -31,11 +31,11 @@
         <div class="po-op-summary"><strong>{{downtime.player.selectedCard.title}}</strong> | {{downtime.player.selectedCard.typeLabel}} | DC {{downtime.player.selectedCard.dc}}</div>
         <div class="po-op-summary">{{downtime.player.selectedCard.prompt}}</div>
         {{/if}}
-        <label class="po-field">
+        <label class="po-field" title="Optional note for the GM about what you are trying to accomplish.">
           <span>Player Note</span>
-          <textarea name="downtimeV2Note" rows="3" class="po-input" placeholder="What are you trying to accomplish?"></textarea>
+          <textarea name="downtimeV2Note" rows="3" class="po-input" placeholder="What are you trying to accomplish?">{{downtime.submit.note}}</textarea>
         </label>
-        <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-v2">Roll And Submit</button>
+        <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-v2" title="Rolls the selected action and sends it to the GM for review.">Roll And Submit</button>
       </div>
       {{else}}
       <div class="po-empty">The GM has not selected cards for this downtime session.</div>
@@ -94,7 +94,7 @@
             <div class="po-op-summary">Progress +{{resultDraft.progress}} | Reward: {{resultDraft.rewardText}}</div>
           </div>
           {{#if canAcknowledge}}
-          <button type="button" class="po-btn po-btn-sm" data-action="ack-downtime-v2-result" data-result-id="{{id}}">Acknowledge</button>
+          <button type="button" class="po-btn po-btn-sm" data-action="ack-downtime-v2-result" data-result-id="{{id}}" title="Marks this delivered result as seen.">Acknowledge</button>
           {{/if}}
         </div>
       </article>

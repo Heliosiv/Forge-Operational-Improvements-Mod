@@ -1391,108 +1391,254 @@
   display: flex;
   flex-wrap: wrap;
   grid-template-columns: none;
-  gap: 8px;
-  align-items: stretch;
-  border-radius: 14px;
+  gap: 6px;
+  align-items: center;
+  border-radius: 8px;
 }
 
 .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit {
-  gap: 12px;
+  gap: 10px;
 }
 
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-hero {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.35fr);
-  gap: 12px;
-  align-items: stretch;
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-header,
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alerts,
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table-wrap {
+  border: 1px solid color-mix(in srgb, var(--po-border) 78%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--po-bg) 88%, transparent);
 }
 
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-stat-grid {
-  align-self: stretch;
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-stat-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 14px;
+  font-size: 0.84rem;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-stat-line span {
+  white-space: nowrap;
 }
 
 .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alerts {
-  display: grid;
-  gap: 8px;
+  padding: 8px 10px;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alert-heading {
+  margin-bottom: 4px;
+  color: var(--po-text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alert-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  gap: 3px;
+  color: var(--po-warn-text, #7a5a11);
+  font-size: 0.88rem;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table-wrap {
+  overflow: auto;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table th,
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--po-border) 65%, transparent);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table thead th {
+  color: var(--po-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table tbody th {
+  width: 112px;
+  color: var(--po-text);
+  font-weight: 800;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table tbody td:nth-child(2) {
+  width: 108px;
+  color: var(--po-muted);
+  font-weight: 700;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table tr:last-child th,
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-actions {
+  width: 250px;
+  white-space: nowrap;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-actions .po-btn {
+  margin: 1px 2px 1px 0;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-climate-select {
+  width: 132px;
+  min-height: 26px;
+  margin: 1px 4px 1px 0;
+}
+
+.party-operations .po-gather-batch-dialog {
+  display: grid;
+  gap: 10px;
+}
+
+.party-operations .po-gather-batch-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) repeat(4, minmax(72px, 0.7fr));
   gap: 8px;
 }
 
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-alert-list .po-op-summary {
-  margin: 0;
-}
-
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-grid {
+.party-operations .po-gather-batch-controls label,
+.party-operations .po-gather-batch-flags label {
   display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
-  gap: 12px;
+  gap: 3px;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 210px;
-}
-
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-card-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-card-head .po-pill {
-  flex: 0 0 auto;
-}
-
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-metrics {
+.party-operations .po-gather-batch-flags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: auto;
+  gap: 8px 14px;
+  align-items: center;
 }
 
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-metrics span {
+.party-operations .po-gather-batch-flags label {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, var(--po-border) 80%, transparent);
-  border-radius: calc(var(--po-radius) - 2px);
-  background: color-mix(in srgb, var(--po-bg-alt) 82%, transparent);
-  font-size: 0.78rem;
-  font-weight: 600;
 }
 
-.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-manage {
+.party-operations .po-gather-batch-toolbar {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
 }
 
-@media (max-width: 1180px) {
-  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-grid {
-    grid-template-columns: repeat(2, minmax(240px, 1fr));
-  }
-
-  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-hero {
-    grid-template-columns: 1fr;
-  }
+.party-operations .po-gather-batch-table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
-@media (max-width: 720px) {
-  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-grid {
-    grid-template-columns: 1fr;
+.party-operations .po-gather-batch-table th,
+.party-operations .po-gather-batch-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--po-border) 65%, transparent);
+  text-align: left;
+}
+
+.party-operations .po-gather-batch-table select,
+.party-operations .po-gather-batch-controls select,
+.party-operations .po-gather-batch-controls input,
+.party-operations .po-gather-batch-flags select {
+  width: 100%;
+}
+
+.party-operations .po-merchant-session-dialog {
+  display: grid;
+  gap: 12px;
+}
+
+.party-operations .po-merchant-session-brief,
+.party-operations .po-merchant-session-section-head,
+.party-operations .po-merchant-session-toggle,
+.party-operations .po-merchant-session-choice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.party-operations .po-merchant-session-brief,
+.party-operations .po-merchant-session-section-head {
+  justify-content: space-between;
+}
+
+.party-operations .po-merchant-session-brief {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--po-border) 70%, transparent);
+  border-radius: calc(var(--po-radius) - 2px);
+  background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
+}
+
+.party-operations .po-merchant-session-section-head button {
+  min-height: 24px;
+  padding: 2px 8px;
+}
+
+.party-operations .po-merchant-session-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.party-operations .po-merchant-session-merchant-grid {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.party-operations .po-merchant-session-choice {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border) 65%, transparent);
+  border-radius: calc(var(--po-radius) - 2px);
+}
+
+.party-operations .po-merchant-session-choice span {
+  display: grid;
+  gap: 1px;
+}
+
+.party-operations .po-merchant-session-choice small {
+  color: var(--po-muted);
+  font-size: 0.74rem;
+}
+
+@media (max-width: 920px) {
+  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
-  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-manage {
-    align-items: stretch;
-    flex-direction: column;
+  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-stat-line {
+    justify-content: flex-start;
+  }
+
+  .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-actions {
+    width: auto;
+    white-space: normal;
+  }
+
+  .party-operations .po-gather-batch-controls {
+    grid-template-columns: 1fr 1fr;
   }
 }

@@ -51,6 +51,7 @@ assert.equal(overrides[ropeUuid].disabled, true, "disabled state is retained");
 assert.equal(normalizeLootItemOverridePrice(""), null, "blank price normalizes to source price");
 assert.equal(normalizeLootItemOverridePrice("-10"), null, "negative price is rejected");
 assert.equal(normalizeLootItemOverrideFilter("disabled"), "disabled", "disabled quick filter is supported");
+assert.equal(normalizeLootItemOverrideFilter("enabled"), "enabled", "enabled quick filter is supported");
 
 const overriddenDocs = applyLootItemOverridesToDocuments(sourceDocs, overrides, { sourceId: packId });
 assert.equal(overriddenDocs.length, 1, "disabled items are removed before candidate construction");
@@ -115,10 +116,26 @@ const overrideRows = buildLootItemOverrideRowsForEditor({
 assert.equal(overrideRows.totalCount, 2, "row builder should count every editable source document");
 assert.equal(overrideRows.filteredCount, 1, "row builder should apply explicit search text");
 assert.equal(overrideRows.rows[0].name, "Plate Armor", "row builder should expose item names");
+assert.equal(overrideRows.rows[0].uuid, plateUuid, "row builder should expose item UUIDs for opening sheets");
 assert.equal(overrideRows.rows[0].basePriceLabel, "1,500 gp", "row builder should format base GP values");
 assert.equal(overrideRows.rows[0].effectivePriceLabel, "2,000 gp", "row builder should format override GP values");
 assert.equal(overrideRows.rows[0].itemTypeLabel, "Equipment", "row builder should use provided item type labels");
 assert.equal(overrideRows.rows[0].rarityLabel, "COMMON", "row builder should use provided rarity labels");
+assert.equal(overrideRows.enabledCount, 1, "row builder should count enabled items for the filter badge");
+
+const enabledOverrideRows = buildLootItemOverrideRowsForEditor({
+  documents: sourceDocs,
+  overrides,
+  uiState: { filter: "enabled" },
+  sourceId: packId,
+  getLootItemGpValueFromData: (data) => data?.system?.price?.value,
+  getLootRarityFromData: (data) => data?.flags?.["party-operations"]?.rarity,
+  getLootKeywordsFromData: (data) => data?.flags?.["party-operations"]?.keywords ?? []
+});
+
+assert.equal(enabledOverrideRows.filterEnabled, true, "row builder should mark the enabled quick filter active");
+assert.equal(enabledOverrideRows.filteredCount, 1, "enabled quick filter should hide disabled items");
+assert.equal(enabledOverrideRows.rows[0].name, "Plate Armor", "enabled quick filter should keep enabled items");
 
 const actionWarnings = [];
 const statePatches = [];
@@ -214,8 +231,13 @@ for (const marker of [
   "enable-selected-loot-item-overrides",
   "disable-selected-loot-item-overrides",
   "reset-selected-loot-item-overrides",
+  'data-action="open-loot-item"',
+  'data-uuid="{{uuid}}"',
+  'data-filter="enabled"',
+  "filterEnabled",
   "modifiedCount",
-  "disabledCount"
+  "disabledCount",
+  "enabledCount"
 ]) {
   assert.ok(template.includes(marker), `template includes ${marker}`);
 }

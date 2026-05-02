@@ -48,13 +48,32 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
 
 {
   const gmWeatherTemplate = readFileSync("templates/gm-weather.hbs", "utf8");
+  const moduleManifest = JSON.parse(readFileSync("module.json", "utf8"));
   const gmPanelNavPartial = readFileSync("templates/partials/gm-panel-nav.hbs", "utf8");
   const weatherUiSource = readFileSync("scripts/features/weather-ui.js", "utf8");
+  const pageActionHelpersSource = readFileSync("scripts/features/page-action-helpers.js", "utf8");
   const partyOperationsSource = readFileSync("scripts/party-operations.js", "utf8");
 
   assert.ok(gmPanelNavPartial.includes('role="tablist"'), "GM workspace nav should expose tablist semantics.");
   assert.ok(gmPanelNavPartial.includes('role="tab"'), "GM workspace nav buttons should expose tab semantics.");
   assert.ok(gmPanelNavPartial.includes("aria-selected"), "GM workspace nav should sync selected tab state.");
+  assert.ok(
+    !gmPanelNavPartial.trimStart().startsWith("{{#if isCockpit}}"),
+    "GM workspace nav should render for every GM panel partial include, not only cockpit."
+  );
+  assert.ok(
+    !moduleManifest.templates.includes("templates/party-operations-app.hbs"),
+    "Dead legacy app template should not be preloaded by module.json."
+  );
+  assert.match(
+    pageActionHelpersSource,
+    /await app\.close\?\.\(\);[\s\S]*openPanelByKey\(panelKey,\s*\{\s*force:\s*true\s*\}\)/,
+    "GM panel tab switching should close the current sibling page before opening another panel."
+  );
+  assert.ok(!gmPanelNavPartial.includes("po-gm-nav-more"), "GM workspace nav should not hide panels behind More.");
+  assert.ok(!gmPanelNavPartial.includes("<details"), "GM workspace nav should keep panels as direct buttons.");
+  assert.ok(gmPanelNavPartial.includes('data-panel="faction"'), "GM workspace nav should expose Reputation directly.");
+  assert.ok(gmPanelNavPartial.includes('data-panel="settings"'), "GM workspace nav should expose Settings directly.");
 
   for (const requiredText of [
     "Weather",

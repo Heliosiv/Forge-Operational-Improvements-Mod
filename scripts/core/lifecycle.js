@@ -75,7 +75,12 @@ export function runPartyOperationsInit({
     invokeSafely(logger, moduleId, "failed to register data settings", () => {
       registerPartyOpsDataSettings?.(dataSettingsConfig);
     });
-    invokeSafely(logger, moduleId, "failed to sync audio library draft from settings", syncAudioLibraryDraftFromSettings);
+    invokeSafely(
+      logger,
+      moduleId,
+      "failed to sync audio library draft from settings",
+      syncAudioLibraryDraftFromSettings
+    );
     invokeSafely(logger, moduleId, "failed to register feature settings", () => {
       registerPartyOpsFeatureSettings?.(featureSettingsConfig);
     });
@@ -102,6 +107,7 @@ export function runPartyOperationsReady({
   queueAudioLibraryMetadataWarmup,
   ensureOperationsJournalFolderTree,
   scheduleLootManifestCompendiumTypeFolderSync,
+  runGmReadyTasks,
   registerModuleSocketHandler,
   socketChannel,
   socketHandler,
@@ -114,16 +120,18 @@ export function runPartyOperationsReady({
   return perfTracker.time("run-ready", () => {
     registerPartyOperationsApi?.();
     invokeSafely(logger, moduleId, "failed to ensure settings are registered", ensureSettingsRegistered);
+    registerModuleSocketHandler?.({ channel: socketChannel, handler: socketHandler });
+    registerPartyOpsHooks?.();
     void validatePartyOperationsTemplates?.();
-    setupPartyOperationsUI?.();
+    invokeSafely(logger, moduleId, "failed to set up party operations UI", setupPartyOperationsUI);
     perfTracker.increment("launcher.ensure", 1, { reason: "ready-initial" });
-    ensureLauncherUi?.();
+    invokeSafely(logger, moduleId, "failed to ensure launcher UI", ensureLauncherUi);
 
     for (const delay of launcherWarmupDelaysMs) {
       perfTracker.record("launcher.warmup-delay-ms", delay, { reason: "ready-warmup" });
       schedule(setTimeoutFn, delay, () => {
         perfTracker.increment("launcher.ensure", 1, { reason: "ready-warmup", delayMs: delay });
-        ensureLauncherUi?.();
+        invokeSafely(logger, moduleId, "failed to ensure launcher UI during warmup", ensureLauncherUi);
       });
     }
 
@@ -159,9 +167,9 @@ export function runPartyOperationsReady({
       scheduleLootManifestCompendiumTypeFolderSync?.("ready")?.catch?.((error) => {
         warn(logger, moduleId, "failed to sync loot manifest compendium folders", error);
       });
+      runGmReadyTasks?.()?.catch?.((error) => {
+        warn(logger, moduleId, "failed to run GM ready tasks", error);
+      });
     }
-
-    registerModuleSocketHandler?.({ channel: socketChannel, handler: socketHandler });
-    registerPartyOpsHooks?.();
   });
 }

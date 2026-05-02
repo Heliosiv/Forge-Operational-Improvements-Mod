@@ -45,38 +45,47 @@ class FakeElement {
   assert.equal(drafts.getDowntimeUiDraftStorageKey(), "party-operations.downtimeUiDraft.alpha.gm-user");
   assert.deepEqual(drafts.getDowntimeUiDraft(), {});
 
-  assert.deepEqual(drafts.setDowntimeUiDraftSection("submission", {
-    actorId: "actor-a",
-    note: "Scout the road"
-  }), {
-    submission: {
+  assert.deepEqual(
+    drafts.setDowntimeUiDraftSection("submission", {
       actorId: "actor-a",
       note: "Scout the road"
+    }),
+    {
+      submission: {
+        actorId: "actor-a",
+        note: "Scout the road"
+      }
     }
-  });
+  );
 
-  assert.deepEqual(drafts.setDowntimeUiDraftSection("submission", {
-    hours: "4"
-  }), {
-    submission: {
-      actorId: "actor-a",
-      note: "Scout the road",
+  assert.deepEqual(
+    drafts.setDowntimeUiDraftSection("submission", {
       hours: "4"
+    }),
+    {
+      submission: {
+        actorId: "actor-a",
+        note: "Scout the road",
+        hours: "4"
+      }
     }
-  });
+  );
 
-  assert.deepEqual(drafts.replaceDowntimeUiDraftSection("resolution", {
-    actorId: "actor-b"
-  }), {
-    submission: {
-      actorId: "actor-a",
-      note: "Scout the road",
-      hours: "4"
-    },
-    resolution: {
+  assert.deepEqual(
+    drafts.replaceDowntimeUiDraftSection("resolution", {
       actorId: "actor-b"
+    }),
+    {
+      submission: {
+        actorId: "actor-a",
+        note: "Scout the road",
+        hours: "4"
+      },
+      resolution: {
+        actorId: "actor-b"
+      }
     }
-  });
+  );
 
   assert.deepEqual(drafts.clearDowntimeUiDraft("submission"), {
     resolution: {
@@ -93,7 +102,10 @@ class FakeElement {
     "select[name='downtimeCraftItemId']": "",
     "select[name='downtimeCraftMaterialsOwned']": "yes",
     "input[name='downtimeCraftMaterialDrops']": "[]",
-    "select[name='downtimeProfessionId']": "baker"
+    "select[name='downtimeProfessionId']": "baker",
+    "select[name='downtimeV2ActorId']": "actor-v2",
+    "select[name='downtimeV2CardId']": "card-v2",
+    "textarea[name='downtimeV2Note']": "Continue the social thread"
   });
   drafts.syncDowntimeSubmissionDraftFromRoot(submissionRoot);
   assert.deepEqual(drafts.getDowntimeUiDraft().submission, {
@@ -106,7 +118,10 @@ class FakeElement {
     craftItemId: "",
     materialsOwned: "yes",
     materialDropsJson: "[]",
-    professionId: "baker"
+    professionId: "baker",
+    v2ActorId: "actor-v2",
+    v2CardId: "card-v2",
+    v2Note: "Continue the social thread"
   });
 
   const resolverRoot = new FakeElement({
@@ -135,10 +150,13 @@ class FakeElement {
     gmNotes: "Handled cleanly"
   });
 
-  const combinedElement = new FakeElement({}, {
-    ".po-downtime-panel": submissionRoot,
-    ".po-downtime-resolver": resolverRoot
-  });
+  const combinedElement = new FakeElement(
+    {},
+    {
+      ".po-downtime-panel": submissionRoot,
+      ".po-downtime-resolver": resolverRoot
+    }
+  );
   assert.deepEqual(drafts.syncDowntimeUiDraftFromElement(combinedElement), drafts.getDowntimeUiDraft());
 
   assert.deepEqual(drafts.clearDowntimeUiDraft(), {});

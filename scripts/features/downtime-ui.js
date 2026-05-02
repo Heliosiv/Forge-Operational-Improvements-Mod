@@ -138,9 +138,6 @@ export function createGmDowntimePageApp(deps) {
           this.close();
           openMainTab("gm", { force: true });
         },
-        "gm-downtime-page-refresh": async () => {
-          rerender();
-        },
         "gm-panel-tab": openPanelTab("downtime", openGmPanelByKey),
         "set-downtime-entry-sort": async (actionElement) => {
           setGmDowntimeViewState({ entriesSort: String(actionElement?.value ?? "") });

@@ -3425,26 +3425,27 @@
   flex-wrap: wrap;
   overflow-x: visible;
   white-space: normal;
-  gap: var(--po-space-1);
+  gap: 6px;
   position: relative;
   z-index: 1;
-  padding: var(--po-space-1);
+  padding: 6px;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 36%, var(--po-border));
-  border-radius: var(--po-radius);
+  border-radius: 8px;
   background: color-mix(in srgb, var(--po-bg-alt) 90%, transparent);
 }
 
 .party-operations .po-gm-ops-tabs .po-tab {
-  flex: 1 1 180px;
-  min-height: 40px;
-  padding: 4px 8px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 10px;
   font-size: 0.74rem;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
   justify-content: center;
-  text-align: left;
-  gap: 1px;
+  text-align: center;
+  gap: 0;
+  white-space: nowrap;
 }
 
 .party-operations .po-gm-ops-tabs .po-gm-tab-title {
@@ -3466,40 +3467,6 @@
 
 .party-operations .po-gm-ops-tabs .po-tab.is-active .po-gm-tab-sub {
   color: color-mix(in srgb, var(--po-accent-contrast) 82%, var(--po-text));
-}
-
-.party-operations .po-gm-ops-tabs .po-gm-nav-more {
-  position: relative;
-  flex: 1 1 120px;
-  margin: 0;
-}
-
-.party-operations .po-gm-ops-tabs .po-gm-nav-more > summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.party-operations .po-gm-ops-tabs .po-gm-nav-more > summary::-webkit-details-marker {
-  display: none;
-}
-
-.party-operations .po-gm-ops-tabs .po-gm-nav-more-menu {
-  position: absolute;
-  right: 0;
-  z-index: 30;
-  display: grid;
-  gap: var(--po-space-1);
-  min-width: 160px;
-  margin-top: var(--po-space-1);
-  padding: var(--po-space-1);
-  border: 1px solid color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
-  border-radius: var(--po-radius);
-  background: color-mix(in srgb, var(--po-bg-alt) 96%, var(--po-bg));
-  box-shadow: var(--po-shadow);
-}
-
-.party-operations .po-gm-ops-tabs .po-gm-nav-more-menu .po-tab {
-  width: 100%;
 }
 
 .party-operations .po-gm-quick-actions .po-op-action-row {
@@ -8439,6 +8406,19 @@
   gap: 8px;
   align-items: center;
   min-width: 220px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-item-cell:hover span,
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-override-item-cell:focus-visible span {
+  text-decoration: underline;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-override-item-cell img {
