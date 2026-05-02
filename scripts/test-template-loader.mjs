@@ -51,6 +51,7 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   const moduleManifest = JSON.parse(readFileSync("module.json", "utf8"));
   const gmPanelNavPartial = readFileSync("templates/partials/gm-panel-nav.hbs", "utf8");
   const weatherUiSource = readFileSync("scripts/features/weather-ui.js", "utf8");
+  const gmMerchantsTemplate = readFileSync("templates/gm-merchants.hbs", "utf8");
   const pageActionHelpersSource = readFileSync("scripts/features/page-action-helpers.js", "utf8");
   const settingsHubSource = readFileSync("scripts/core/settings-hub.js", "utf8");
   const settingsHubTemplate = readFileSync("templates/settings-hub.hbs", "utf8");
@@ -88,6 +89,28 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   assert.ok(!gmPanelNavPartial.includes("<details"), "GM workspace nav should keep panels as direct buttons.");
   assert.ok(gmPanelNavPartial.includes('data-panel="faction"'), "GM workspace nav should expose Reputation directly.");
   assert.ok(gmPanelNavPartial.includes('data-panel="settings"'), "GM workspace nav should expose Settings directly.");
+  assert.ok(
+    !gmMerchantsTemplate.includes(">Live Shop</button>"),
+    "GM merchants should not expose a separate redundant Live Shop tab."
+  );
+  assert.ok(
+    gmMerchantsTemplate.includes("po-merchant-definition-list"),
+    "Configured merchants should render as compact rows instead of tall collapsible cards."
+  );
+  assert.ok(
+    !gmMerchantsTemplate.includes('<details class="po-op-role-row po-merchant-definition-card'),
+    "Configured merchant rows should not require expanding each merchant card."
+  );
+  assert.ok(
+    gmMerchantsTemplate.includes('data-action="merchant-refresh-stock" data-merchant-id="{{id}}"'),
+    "Configured merchant rows should expose per-merchant stock refresh."
+  );
+  assert.ok(
+    gmMerchantsTemplate.includes(
+      'data-action="merchant-shop-bell" title="Ring dinner bell for the current live shop list"'
+    ),
+    "Configured merchant rows should expose the dinner bell action."
+  );
 
   for (const requiredText of [
     "Weather",

@@ -29907,7 +29907,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const gmViewTab =
     gmViewTabStored === MERCHANT_GM_VIEW_TABS.SETTINGS || gmViewTabStored === MERCHANT_GM_VIEW_TABS.CITY
       ? MERCHANT_GM_VIEW_TABS.EDITOR
-      : gmViewTabStored;
+      : gmViewTabStored === MERCHANT_GM_VIEW_TABS.SHOP
+        ? MERCHANT_GM_VIEW_TABS.CONFIGURED
+        : gmViewTabStored;
   if (gmViewTab !== gmViewTabStored) setMerchantGmViewTab(gmViewTab);
   const editorAccessMode = normalizeMerchantAccessMode(editorDraft?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
   const editorBuyMarkup = Math.max(

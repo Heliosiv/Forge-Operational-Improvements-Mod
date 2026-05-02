@@ -469,7 +469,14 @@ export function createGmMerchantsPageApp(deps) {
             rerender();
           }
         },
-        "merchant-save": rerenderAlways(saveMerchantFromElement),
+        "merchant-save": async (actionElement) => {
+          const saved = await saveMerchantFromElement(actionElement);
+          if (saved?.id) {
+            setMerchantGmViewTab?.("configured-merchants");
+            setMerchantEditorSelectionFromElement({ dataset: { merchantId: saved.id } });
+          }
+          rerender();
+        },
         "merchant-delete": rerenderAlways(deleteMerchantFromElement),
         "merchant-refresh-stock": rerenderAlways(refreshMerchantStockFromElement),
         "merchant-refresh-all-stock": rerenderAlways(refreshAllMerchantStocksFromElement),

@@ -75,7 +75,6 @@
           <div class="po-tabs po-tabs-sub po-merchant-view-tabs po-gm-subtabs" aria-label="Merchant view toggle">
             <button type="button" class="po-tab {{#if merchants.gm.viewTabWorkspace}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="editor">Build</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabConfiguredMerchants}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="configured-merchants">Merchants</button>
-            <button type="button" class="po-tab {{#if merchants.gm.viewTabShopSession}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="shop-session">Live Shop</button>
           </div>
 
           <div class="po-merchant-view-panel">
@@ -463,68 +462,57 @@
         </div>
         {{/if}}
 
-        {{#if merchants.gm.viewTabShopSession}}
-        <details class="po-panel-disclosure po-gm-advanced-disclosure">
-          <summary class="po-panel-disclosure-summary">
-            <span class="po-section-title">Shop Session</span>
-            <span class="po-op-summary">{{merchants.gm.shopSession.statusLabel}} - {{merchants.gm.shopSession.accessSummary}}</span>
-          </summary>
-          <div class="po-panel-disclosure-body">
-            <div class="po-merchant-session-stats">
-              <div class="po-op-summary">Current Status: <strong>{{merchants.gm.shopSession.statusLabel}}</strong></div>
-              <div class="po-op-summary">Allowed Buyers: {{merchants.gm.shopSession.selectedSummary}}</div>
-              <div class="po-op-summary">Last Opened: {{merchants.gm.shopSession.lastOpenedAtLabel}} by {{merchants.gm.shopSession.lastOpenedBy}}</div>
-              <div class="po-op-summary">Last Closed: {{merchants.gm.shopSession.lastClosedAtLabel}} by {{merchants.gm.shopSession.lastClosedBy}}</div>
-            </div>
-            <label class="po-resource-row">
-              <span>Restrict To Selected Players</span>
-              <input type="checkbox" data-action="merchant-shop-restrict-toggle" {{#if merchants.gm.shopSession.restrictToSelected}}checked{{/if}} />
-            </label>
-            {{#if merchants.gm.shopSession.hasPlayerRows}}
-            <div class="po-op-summary">Selected Players: {{merchants.gm.shopSession.selectedCount}} / {{merchants.gm.shopSession.totalCount}}</div>
-            <div class="po-op-action-row po-merchant-session-actions">
-              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-player-all">Select All Players</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-player-none">Clear Player Selection</button>
-            </div>
-            <div class="po-merchant-shop-player-grid">
-              {{#each merchants.gm.shopSession.playerRows}}
-              <div class="po-merchant-shop-player-row">
-                <label class="po-merchant-shop-player-toggle">
-                  <input type="checkbox" data-action="merchant-shop-player-toggle" data-user-id="{{userId}}" {{#if selected}}checked{{/if}} />
-                  <span>{{userName}}{{#unless isActive}} (Offline){{/unless}}</span>
-                </label>
-                <label class="po-resource-row po-merchant-shop-player-location">
-                  <span>Location</span>
-                  <select class="po-select" data-action="merchant-shop-player-location" data-user-id="{{userId}}">
-                    {{#each locationOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-              </div>
-              {{/each}}
-            </div>
-            {{else}}
-            <div class="po-op-summary">No non-GM players found in this world.</div>
-            {{/if}}
-            <div class="po-controls po-merchant-session-toolbar">
-              <button type="button" class="po-btn is-primary po-merchant-shop-bell-btn" data-action="merchant-shop-bell">
-                <i class="fa-solid fa-bell"></i>
-                <span>Ring Dinner Bell - Open Shops</span>
-              </button>
-              <button type="button" class="po-btn" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close Shops</button>
-            </div>
-          </div>
-        </details>
-        {{/if}}
-
         {{#if merchants.gm.viewTabConfiguredMerchants}}
-        <details class="po-panel-disclosure po-gm-advanced-disclosure">
-          <summary class="po-panel-disclosure-summary">
+        <section class="po-panel-disclosure po-gm-advanced-disclosure po-merchant-configured-section">
+          <div class="po-panel-disclosure-summary">
             <span class="po-section-title">Configured Merchants</span>
             <span class="po-op-summary">{{merchants.gm.filteredDefinitionCount}} shown / {{merchants.gm.totalDefinitionCount}} total</span>
-          </summary>
+          </div>
           <div class="po-panel-disclosure-body">
+            <div class="po-merchant-session-inline">
+              <div class="po-merchant-session-brief-row">
+                <div class="po-op-summary">Workspace: <strong>{{merchants.gm.shopSession.statusLabel}}</strong></div>
+                <div class="po-op-summary">Audience: {{merchants.gm.shopSession.selectedSummary}}</div>
+                <div class="po-op-summary">Live merchants: {{merchants.gm.shopSession.tradableCount}} / {{merchants.gm.shopSession.totalMerchantCount}}</div>
+                <div class="po-op-action-row po-merchant-session-toolbar">
+                  <button type="button" class="po-btn po-btn-sm is-primary" data-action="merchant-shop-bell">
+                    <i class="fa-solid fa-bell"></i>
+                    <span>Ring Bell</span>
+                  </button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close</button>
+                </div>
+              </div>
+              <label class="po-merchant-shop-player-toggle po-merchant-restrict-toggle">
+                <input type="checkbox" data-action="merchant-shop-restrict-toggle" {{#if merchants.gm.shopSession.restrictToSelected}}checked{{/if}} />
+                <span>Restrict to selected players</span>
+              </label>
+              {{#if merchants.gm.shopSession.hasPlayerRows}}
+              <div class="po-op-action-row po-merchant-session-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-player-all">All Players</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-player-none">Clear Players</button>
+              </div>
+              <div class="po-merchant-shop-player-grid po-merchant-shop-player-grid-inline">
+                {{#each merchants.gm.shopSession.playerRows}}
+                <div class="po-merchant-shop-player-row">
+                  <label class="po-merchant-shop-player-toggle">
+                    <input type="checkbox" data-action="merchant-shop-player-toggle" data-user-id="{{userId}}" {{#if selected}}checked{{/if}} />
+                    <span>{{userName}}{{#unless isActive}} (Offline){{/unless}}</span>
+                  </label>
+                  <label class="po-resource-row po-merchant-shop-player-location">
+                    <span>Location</span>
+                    <select class="po-select" data-action="merchant-shop-player-location" data-user-id="{{userId}}">
+                      {{#each locationOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                </div>
+                {{/each}}
+              </div>
+              {{else}}
+              <div class="po-op-summary">No non-GM players found in this world.</div>
+              {{/if}}
+            </div>
             <div class="po-merchant-collection-filters po-merchant-filter-grid">
               <label class="po-resource-row">
                 <span>Search</span>
@@ -556,8 +544,7 @@
             </div>
             <div class="po-op-action-row po-merchant-filter-reset-row">
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-gm-filter-reset">Reset Filters</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-bell">Open Merchant Workspace</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close Workspace</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-all-stock">Refresh All Stock</button>
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-tradable-none">Deselect All Merchants</button>
             </div>
             <div class="po-gm-loot-summary-grid po-merchant-availability-dashboard" role="list" aria-label="Merchant availability dashboard">
@@ -570,95 +557,46 @@
             <div class="po-op-summary">{{merchants.gm.availabilityDashboard.summaryLabel}}</div>
             {{#if merchants.gm.hasDefinitions}}
             {{#if merchants.gm.hasFilteredDefinitions}}
-            <div class="po-roles-grid po-merchant-definition-grid">
+            <div class="po-merchant-definition-list">
               {{#each merchants.gm.definitions}}
-              <details class="po-op-role-row po-merchant-definition-card {{#if selectedForEdit}}is-editing{{/if}}" data-merchant-id="{{id}}">
-                <summary class="po-merchant-definition-summary">
-                  <div class="po-merchant-definition-summary-head">
-                    <div class="po-merchant-definition-summary-copy">
-                      <div class="po-op-role-name po-merchant-definition-summary-name">{{name}}</div>
-                      {{#if title}}<div class="po-merchant-definition-summary-title">{{title}}</div>{{/if}}
-                    </div>
-                    {{#if selectedForEdit}}<span class="po-pill po-merchant-definition-summary-editing">Editing</span>{{/if}}
-                  </div>
-                  <div class="po-merchant-definition-summary-meta">
-                    <span class="po-pill po-merchant-definition-summary-status {{#if shopTradable}}is-tradable{{else}}is-disabled{{/if}}">Shop {{shopTradableLabel}}</span>
-                    <span class="po-pill">{{accessModeLabel}}</span>
-                  </div>
-                  {{#if hasCompactPills}}
-                  <div class="po-merchant-definition-summary-pills">
-                    {{#each compactPills}}
-                    <span class="po-pill po-merchant-definition-summary-pill {{#if isWarn}}is-warn{{/if}}">{{label}}</span>
-                    {{/each}}
-                  </div>
-                  {{/if}}
-                </summary>
-                <div class="po-merchant-definition-body">
-                  <div class="po-merchant-definition-head-actions">
-                    <button
-                      type="button"
-                      class="po-btn po-btn-sm {{#if availableNow}}is-primary{{/if}}"
-                      data-action="merchant-make-available-now"
-                      data-merchant-id="{{id}}"
-                      data-available="{{#if availableNow}}false{{else}}true{{/if}}"
-                      title="{{availabilityActionHint}}"
-                    >
-                      {{#if availableNow}}Hide from Workspace{{else}}Deploy to Workspace{{/if}}
-                    </button>
-                    <button
-                      type="button"
-                      class="po-btn po-btn-sm {{#if shopTradable}}is-primary{{/if}}"
-                      data-action="merchant-toggle-shop-tradable"
-                      data-merchant-id="{{id}}"
-                      data-tradable="{{#if shopTradable}}false{{else}}true{{/if}}"
-                      title="{{#if shopTradable}}Remove from tradable merchants while shops are open{{else}}Mark as tradable while shops are open{{/if}}"
-                    >
-                      {{#if shopTradable}}Shop Trade: On{{else}}Shop Trade: Off{{/if}}
-                    </button>
-                    <div class="po-op-role-status {{#if selectedForEdit}}is-ready{{else}}is-missing{{/if}}">{{#if selectedForEdit}}Editing{{else}}Stored{{/if}}</div>
-                  </div>
-                  <div class="po-merchant-definition-metadata">
-                    <div class="po-op-summary">Profile: {{raceLabel}} | Access: {{accessModeLabel}}</div>
-                    <div class="po-op-summary">Availability: {{availabilityStatusLabel}}</div>
-                    <div class="po-op-summary">Allowed Types: {{offerTagSummary}}</div>
-                    <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
-                    <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>
-                    <div class="po-op-summary">Sellback: {{#if sellEnabled}}Enabled {{sellRatePercentLabel}}{{else}}Disabled{{/if}} | Cash: {{cashOnHandLabel}}</div>
-                    <div class="po-op-summary">Barter: {{#if barterEnabled}}Enabled{{else}}Disabled{{/if}} | Buyback: {{buybackTypeSummary}}</div>
-                    <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | <span class="{{stockFreshnessToneClass}}">{{stockFreshnessLabel}}</span> | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
-                  </div>
-                  <div class="po-merchant-access-panel">
-                    <div class="po-section-head-row">
-                      <div>
-                        <div class="po-section-title">Who Can Trade</div>
-                        <div class="po-hint">Check the PC-owned actors that can use this merchant, then deploy it to the live workspace.</div>
-                      </div>
-                      <div class="po-pill">{{assignedCount}} selected</div>
-                    </div>
-                    <div class="po-op-action-row po-merchant-assign-toolbar">
-                      <button type="button" class="po-btn po-btn-sm {{#if accessModeIsAll}}is-primary{{/if}}" data-action="merchant-set-access-mode" data-merchant-id="{{id}}" data-access-mode="all">All PC Actors</button>
-                      <button type="button" class="po-btn po-btn-sm {{#if accessModeIsAssigned}}is-primary{{/if}}" data-action="merchant-set-access-mode" data-merchant-id="{{id}}" data-access-mode="assigned">Selected Only</button>
-                      <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-none" data-merchant-id="{{id}}">Clear</button>
-                    </div>
-                  {{#if hasAssignmentRows}}
-                  <div class="po-op-action-row po-merchant-assign-grid">
-                    {{#each assignmentRows}}
-                    <label class="po-merchant-check-option">
-                      <input type="checkbox" data-action="merchant-assign-toggle" data-merchant-id="{{../id}}" data-actor-id="{{actorId}}" {{#if assigned}}checked{{/if}} />
-                      <span>{{actorName}}</span>
-                    </label>
-                    {{/each}}
-                  </div>
-                  {{/if}}
-                  </div>
-                  <div class="po-controls po-merchant-definition-toolbar">
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-edit" data-merchant-id="{{id}}">Edit</button>
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh Stock</button>
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-open-actor" data-merchant-id="{{id}}">Open Actor</button>
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-delete" data-merchant-id="{{id}}">Delete</button>
-                  </div>
+              <article class="po-merchant-row {{#if selectedForEdit}}is-editing{{/if}}" data-merchant-id="{{id}}">
+                <button type="button" class="po-merchant-row-main" data-action="merchant-edit" data-merchant-id="{{id}}">
+                  <span class="po-merchant-row-name">{{name}}</span>
+                  <span class="po-merchant-row-subtitle">{{#if title}}{{title}} | {{/if}}{{archetypeLabel}} | {{raceLabel}}</span>
+                </button>
+                <div class="po-merchant-row-metrics">
+                  <span class="po-pill po-merchant-definition-summary-status {{#if shopTradable}}is-tradable{{else}}is-disabled{{/if}}">Shop {{shopTradableLabel}}</span>
+                  <span class="po-pill">{{availabilityStatusLabel}}</span>
+                  <span class="po-pill {{stockFreshnessToneClass}}">{{stockItemCount}} stock - {{stockFreshnessLabel}}</span>
+                  <span class="po-pill">{{accessModeLabel}}</span>
+                  <span class="po-pill">{{offerTagSummary}}</span>
                 </div>
-              </details>
+                <div class="po-merchant-row-actions">
+                  <button
+                    type="button"
+                    class="po-btn po-btn-sm {{#if shopTradable}}is-primary{{/if}}"
+                    data-action="merchant-toggle-shop-tradable"
+                    data-merchant-id="{{id}}"
+                    data-tradable="{{#if shopTradable}}false{{else}}true{{/if}}"
+                  >
+                    {{#if shopTradable}}Shop On{{else}}Shop Off{{/if}}
+                  </button>
+                  <button
+                    type="button"
+                    class="po-btn po-btn-sm {{#if availableNow}}is-primary{{/if}}"
+                    data-action="merchant-make-available-now"
+                    data-merchant-id="{{id}}"
+                    data-available="{{#if availableNow}}false{{else}}true{{/if}}"
+                    title="{{availabilityActionHint}}"
+                  >
+                    {{#if availableNow}}Hide{{else}}Open{{/if}}
+                  </button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-bell" title="Ring dinner bell for the current live shop list"><i class="fa-solid fa-bell"></i></button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-open-actor" data-merchant-id="{{id}}">Actor</button>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-delete" data-merchant-id="{{id}}">Delete</button>
+                </div>
+              </article>
               {{/each}}
             </div>
             {{else}}
@@ -668,7 +606,7 @@
             <div class="po-op-summary">No merchants configured yet.</div>
             {{/if}}
           </div>
-        </details>
+        </section>
         {{/if}}
           </div>
         </div>
