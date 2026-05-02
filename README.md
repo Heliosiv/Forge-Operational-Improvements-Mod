@@ -91,6 +91,12 @@ npm run publish:foundry
 
 The Foundry package version entry should use the version-specific manifest URL, for example `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/download/v2.2.13/module.json`.
 
+After publishing, verify the public release chain. The Forge-required check polls GitHub release manifests, the Foundry package page, and Forge Bazaar, then fails if Forge still shows the previous version:
+
+```powershell
+npm run check:release-publication:forge
+```
+
 ## Repository Release Flow
 
 Every deployment must update this README before publishing:
@@ -118,4 +124,4 @@ Create a release with the helper script:
 ./scripts/release.ps1 -Version 2.2.9 -Message "Release"
 ```
 
-GitHub Actions runs full validation on pull requests to `main`. Tagged stable releases matching `v*.*.*` rebuild `release/module.zip` and publish the GitHub Release assets used by the manifest URLs above. Pushes to `main` still validate and package, but they no longer publish test-channel artifacts as the stable release.
+GitHub Actions runs full validation on pull requests to `main`. Tagged stable releases matching `v*.*.*` rebuild `release/module.zip`, publish the GitHub Release assets used by the manifest URLs above, publish the same version to Foundry, and then require Forge Bazaar to report the new version before the release job can pass. Pushes to `main` still validate and package, but they no longer publish test-channel artifacts as the stable release.

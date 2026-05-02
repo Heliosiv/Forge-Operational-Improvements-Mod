@@ -110,3 +110,12 @@ jobs:
             exit 1
           fi
           npm run publish:foundry
+
+      - name: 13) Verify public release publication
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_foundry == 'true')
+        run: >
+          node scripts/verify-release-publication.mjs
+          --version "${{ steps.module_meta.outputs.version }}"
+          --require-forge
+          --timeout-ms 900000
+          --interval-ms 60000
