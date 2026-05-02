@@ -46,21 +46,23 @@
         </div>
 
         <section class="po-op-role-row po-downtime-session-editor">
-          <div>
+          <div class="po-downtime-session-main">
             <h3>Current Session</h3>
-            <label class="po-field">
-              <span>Session Name</span>
-              <input type="text" name="downtimeV2SessionTitle" class="po-input" value="{{downtime.activeSession.title}}" />
-            </label>
-            <label class="po-field">
-              <span>Hours</span>
-              <input type="number" min="1" max="24" step="1" name="downtimeV2Hours" class="po-input" value="{{downtime.activeSession.hours}}" />
-            </label>
+            <div class="po-downtime-session-fields">
+              <label class="po-field">
+                <span>Session Name</span>
+                <input type="text" name="downtimeV2SessionTitle" class="po-input" value="{{downtime.activeSession.title}}" />
+              </label>
+              <label class="po-field po-downtime-hours-field">
+                <span>Hours</span>
+                <input type="number" min="1" max="24" step="1" name="downtimeV2Hours" class="po-input" value="{{downtime.activeSession.hours}}" />
+              </label>
+            </div>
           </div>
           <div>
             <h3>Assigned Actors</h3>
             {{#if downtime.hasActors}}
-            <div class="po-checkbox-grid">
+            <div class="po-checkbox-grid po-downtime-roster-grid">
               {{#each downtime.actorOptions}}
               <label class="po-check-row">
                 <input type="checkbox" name="downtimeV2RosterActorIds" value="{{id}}" {{#if selected}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
@@ -73,81 +75,6 @@
             <div class="po-empty">No eligible actors found.</div>
             {{/if}}
           </div>
-        </section>
-
-        <section class="po-downtime-card-library">
-          <div class="po-op-role-row po-gm-page-section-heading">
-            <div>
-              <h3>Reusable Action Cards</h3>
-              <div class="po-op-summary">Select cards into the current session. Learn and Craft create persistent projects by default.</div>
-            </div>
-            <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-add-card">Add Card</button>
-          </div>
-
-          {{#if downtime.hasCards}}
-          <div class="po-list po-downtime-card-list">
-            {{#each downtime.cardLibrary}}
-            <article class="po-list-row po-downtime-card-row" data-downtime-v2-card-row data-card-id="{{id}}">
-              <label class="po-check-row">
-                <input type="checkbox" name="downtimeV2AvailableCardIds" value="{{id}}" {{#if selected}}checked{{/if}} />
-                <strong>Use in session</strong>
-              </label>
-              <div class="po-grid po-grid-3">
-                <label class="po-field">
-                  <span>Title</span>
-                  <input type="text" name="downtimeV2CardTitle" class="po-input" value="{{title}}" />
-                </label>
-                <label class="po-field">
-                  <span>Type</span>
-                  <select name="downtimeV2CardType" class="po-select">
-                    {{#each typeOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                <label class="po-field">
-                  <span>Roll Ability</span>
-                  <select name="downtimeV2CardAbility" class="po-select">
-                    {{#each abilityOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                <label class="po-field">
-                  <span>DC</span>
-                  <input type="number" min="5" max="30" step="1" name="downtimeV2CardDc" class="po-input" value="{{dc}}" />
-                </label>
-                <label class="po-field">
-                  <span>Progress Target</span>
-                  <input type="number" min="0" max="999" step="1" name="downtimeV2CardProgressTarget" class="po-input" value="{{progressTarget}}" />
-                </label>
-                <label class="po-field">
-                  <span>Cost GP</span>
-                  <input type="number" min="0" max="999" step="1" name="downtimeV2CardCostGp" class="po-input" value="{{costGp}}" />
-                </label>
-              </div>
-              <label class="po-check-row">
-                <input type="checkbox" name="downtimeV2CardCreatesProject" {{#if createsProject}}checked{{/if}} />
-                <span>{{projectModeLabel}}</span>
-              </label>
-              <label class="po-field">
-                <span>Prompt</span>
-                <textarea name="downtimeV2CardPrompt" rows="2" class="po-input">{{prompt}}</textarea>
-              </label>
-              <label class="po-field">
-                <span>Reward Text</span>
-                <textarea name="downtimeV2CardRewardText" rows="2" class="po-input">{{rewardText}}</textarea>
-              </label>
-              <label class="po-field">
-                <span>Completion Item / Feature Name</span>
-                <input type="text" name="downtimeV2CardCompletionName" class="po-input" value="{{completionName}}" />
-              </label>
-            </article>
-            {{/each}}
-          </div>
-          {{else}}
-          <div class="po-empty">No action cards configured.</div>
-          {{/if}}
         </section>
 
         <section class="po-downtime-submissions">
@@ -194,8 +121,100 @@
           {{/if}}
         </section>
 
-        <section class="po-downtime-delivered">
-          <h3>Delivered Results</h3>
+        <details class="po-panel-disclosure po-downtime-card-library" {{#unless downtime.activeSession.availableCardCount}}open{{/unless}}>
+          <summary class="po-panel-disclosure-summary">
+            <span class="po-section-title">Reusable Action Cards</span>
+            <span class="po-op-summary">{{downtime.activeSession.availableCardCount}} selected for launch</span>
+          </summary>
+          <div class="po-panel-disclosure-body">
+            <div class="po-op-role-row po-downtime-library-head">
+              <div class="po-op-summary">Card templates stay reusable. Open a card only when its prompt, reward, or completion item needs editing.</div>
+              <button type="button" class="po-btn po-btn-sm" data-action="downtime-v2-add-card">Add Card</button>
+            </div>
+
+            {{#if downtime.hasCards}}
+            <div class="po-list po-downtime-card-list">
+              {{#each downtime.cardLibrary}}
+              <article class="po-list-row po-downtime-card-row" data-downtime-v2-card-row data-card-id="{{id}}">
+                <div class="po-downtime-card-quick">
+                  <label class="po-check-row po-downtime-card-use">
+                    <input type="checkbox" name="downtimeV2AvailableCardIds" value="{{id}}" {{#if selected}}checked{{/if}} />
+                    <strong>Use</strong>
+                  </label>
+                  <label class="po-field po-downtime-card-title">
+                    <span>Title</span>
+                    <input type="text" name="downtimeV2CardTitle" class="po-input" value="{{title}}" />
+                  </label>
+                  <label class="po-field">
+                    <span>Type</span>
+                    <select name="downtimeV2CardType" class="po-select">
+                      {{#each typeOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="po-field">
+                    <span>Roll</span>
+                    <select name="downtimeV2CardAbility" class="po-select">
+                      {{#each abilityOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="po-field">
+                    <span>DC</span>
+                    <input type="number" min="5" max="30" step="1" name="downtimeV2CardDc" class="po-input" value="{{dc}}" />
+                  </label>
+                  <label class="po-field">
+                    <span>Target</span>
+                    <input type="number" min="0" max="999" step="1" name="downtimeV2CardProgressTarget" class="po-input" value="{{progressTarget}}" />
+                  </label>
+                  <label class="po-field">
+                    <span>Cost GP</span>
+                    <input type="number" min="0" max="999" step="1" name="downtimeV2CardCostGp" class="po-input" value="{{costGp}}" />
+                  </label>
+                  <label class="po-check-row po-downtime-project-toggle">
+                    <input type="checkbox" name="downtimeV2CardCreatesProject" {{#if createsProject}}checked{{/if}} />
+                    <span>{{projectModeLabel}}</span>
+                  </label>
+                </div>
+                <details class="po-panel-disclosure po-downtime-card-details">
+                  <summary class="po-panel-disclosure-summary">
+                    <span>Player-facing text and completion</span>
+                    <span class="po-op-summary">{{completionName}}</span>
+                  </summary>
+                  <div class="po-panel-disclosure-body">
+                    <div class="po-grid po-grid-2">
+                      <label class="po-field">
+                        <span>Prompt</span>
+                        <textarea name="downtimeV2CardPrompt" rows="2" class="po-input">{{prompt}}</textarea>
+                      </label>
+                      <label class="po-field">
+                        <span>Reward Text</span>
+                        <textarea name="downtimeV2CardRewardText" rows="2" class="po-input">{{rewardText}}</textarea>
+                      </label>
+                    </div>
+                    <label class="po-field">
+                      <span>Completion Item / Feature Name</span>
+                      <input type="text" name="downtimeV2CardCompletionName" class="po-input" value="{{completionName}}" />
+                    </label>
+                  </div>
+                </details>
+              </article>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="po-empty">No action cards configured.</div>
+            {{/if}}
+          </div>
+        </details>
+
+        <details class="po-panel-disclosure po-downtime-delivered">
+          <summary class="po-panel-disclosure-summary">
+            <span class="po-section-title">Delivered Results</span>
+            <span class="po-op-summary">{{downtime.resolvedCount}} saved</span>
+          </summary>
+          <div class="po-panel-disclosure-body">
           {{#if downtime.hasDeliveredResults}}
           <div class="po-list">
             {{#each downtime.deliveredResults}}
@@ -209,13 +228,19 @@
           {{else}}
           <div class="po-empty">No delivered downtime results yet.</div>
           {{/if}}
-        </section>
+          </div>
+        </details>
 
         {{#if downtime.hasLegacyArchive}}
-        <section class="po-downtime-legacy-archive">
-          <h3>Legacy Archive</h3>
-          <div class="po-op-summary">Old downtime data was archived into the v2 ledger for read-only reference.</div>
-        </section>
+        <details class="po-panel-disclosure po-downtime-legacy-archive">
+          <summary class="po-panel-disclosure-summary">
+            <span class="po-section-title">Legacy Archive</span>
+            <span class="po-op-summary">Read-only old downtime data</span>
+          </summary>
+          <div class="po-panel-disclosure-body">
+            <div class="po-op-summary">Old downtime data was archived into the v2 ledger for read-only reference.</div>
+          </div>
+        </details>
         {{/if}}
       </div>
     </section>
