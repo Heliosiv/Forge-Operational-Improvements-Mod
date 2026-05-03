@@ -831,6 +831,7 @@ class FakeElement {
     }
   };
   const refreshes = [];
+  const tokenMoves = [];
   const spacingToken = new FakeElement({
     dataset: { actorId: "actor-a" },
     classes: ["po-march-spacing-token"]
@@ -881,6 +882,7 @@ class FakeElement {
           state.rankPlacements[rankId][actorId] = rawCell;
         }
       },
+      moveActorTokenToSpacingCell: async (request) => tokenMoves.push(request),
       refreshSingleAppPreservingView: (value) => refreshes.push(value),
       getAppInstance: () => "march-app",
       appInstanceKeys: { MARCHING_ORDER: "march" }
@@ -903,6 +905,7 @@ class FakeElement {
   assert.deepEqual(state.ranks.front, ["actor-a"]);
   assert.deepEqual(state.ranks.middle, []);
   assert.deepEqual(state.rankPlacements.front, { "actor-a": 2 });
+  assert.deepEqual(tokenMoves, [{ actorId: "actor-a", cellIndex: 2, rankId: "front", insertIndex: 0 }]);
   assert.deepEqual(refreshes, ["march-app"]);
 }
 
@@ -925,6 +928,7 @@ class FakeElement {
     }
   };
   const refreshes = [];
+  const tokenMoves = [];
   const boardCard = new FakeElement({
     dataset: { actorId: "actor-a" },
     classes: ["po-march-board-card"]
@@ -1010,6 +1014,7 @@ class FakeElement {
           state.rankPlacements[rankId][actorId] = rawCell;
         }
       },
+      moveActorTokenToSpacingCell: async (request) => tokenMoves.push(request),
       refreshSingleAppPreservingView: (value) => refreshes.push(value),
       getAppInstance: () => "march-app",
       appInstanceKeys: { MARCHING_ORDER: "march" }
@@ -1030,6 +1035,7 @@ class FakeElement {
   });
   assert.deepEqual(state.ranks.front, ["actor-a"]);
   assert.deepEqual(state.rankPlacements.front, { "actor-a": 2 });
+  assert.deepEqual(tokenMoves.at(-1), { actorId: "actor-a", cellIndex: 2, rankId: "front", insertIndex: 0 });
   assert.equal(boardCard.classList.contains("is-click-selected"), false);
 
   await spacingTokenA.dispatch("click", {

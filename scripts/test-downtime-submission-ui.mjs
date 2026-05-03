@@ -12,6 +12,7 @@ const playerDowntimeTemplate = readFileSync(
   "utf8"
 );
 const playerShellTemplate = readFileSync(new URL("../templates/rest-watch-player.hbs", import.meta.url), "utf8");
+const restWatchTemplate = readFileSync(new URL("../templates/rest-watch.hbs", import.meta.url), "utf8");
 
 function assertMatch(source, pattern, message) {
   assert.match(source, pattern, message);
@@ -147,6 +148,16 @@ assertMatch(
   playerShellTemplate,
   /\{\{#if playerHubDowntime\}\}[\s\S]*simple-downtime\.hbs[\s\S]*\{\{else\}\}[\s\S]*classic\.hbs/,
   "Opening Operations for players should render the downtime form even when the player hub is in advanced/classic mode."
+);
+assertMatch(
+  restWatchTemplate,
+  /\{\{#unless isGM\}\}[\s\S]*\{\{#if mainTabOperations\}\}[\s\S]*data-action="open-player-downtime"[\s\S]*Downtime/,
+  "The player Operations shell should expose a direct Downtime button."
+);
+assertMatch(
+  moduleSource,
+  /"open-player-downtime": async \(\) => \{[\s\S]*setPlayerHubTab\("downtime"\);[\s\S]*openRestWatchPlayerApp\(\{\s*hubTab: "downtime"\s*\}\);/,
+  "The player Operations downtime button should open the player hub on the downtime tab."
 );
 assertMatch(playerDowntimeTemplate, /name="downtimeV2ActorId"/, "Player panel should choose assigned actors.");
 assertMatch(playerDowntimeTemplate, /name="downtimeV2CardId"/, "Player panel should choose GM-selected action cards.");

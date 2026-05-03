@@ -1061,6 +1061,24 @@
       </aside>
       {{/if}}
       {{/if}}
+
+      {{#unless isGM}}
+      {{#if mainTabOperations}}
+      <section class="po-gm-panel is-operations-full po-player-operations-panel" aria-label="Player operations">
+        <div class="po-gm-section po-gm-section-compact">
+          <div class="po-section-head-row">
+            <div>
+              <div class="po-section-title">Player Operations</div>
+              <div class="po-hint">Open the player workflow for downtime actions, rewards, and submitted results.</div>
+            </div>
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-player-downtime">
+              Downtime
+            </button>
+          </div>
+        </div>
+      </section>
+      {{/if}}
+      {{/unless}}
     </div>
   </section>
   </div>

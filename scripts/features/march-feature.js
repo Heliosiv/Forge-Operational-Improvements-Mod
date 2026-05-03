@@ -746,6 +746,7 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
     isLockedForUser,
     notifyUiWarnThrottled,
     updateMarchingOrderState,
+    moveActorTokenToSpacingCell,
     refreshSingleAppPreservingView,
     getAppInstance,
     appInstanceKeys
@@ -906,6 +907,14 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
     const saved = await updateMarchingOrderState(request, { skipLocalRefresh: true });
 
     if (saved !== false) {
+      if (Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0) {
+        await moveActorTokenToSpacingCell?.({
+          actorId,
+          cellIndex: requestedCellIndex,
+          rankId,
+          insertIndex
+        });
+      }
       clearClickSelection();
       refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
     }
@@ -962,6 +971,14 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
       const saved = await updateMarchingOrderState(request, { skipLocalRefresh: true });
 
       if (saved !== false) {
+        if (Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0) {
+          await moveActorTokenToSpacingCell?.({
+            actorId,
+            cellIndex: requestedCellIndex,
+            rankId,
+            insertIndex
+          });
+        }
         refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
       }
     });
