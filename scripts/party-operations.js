@@ -1811,6 +1811,7 @@ function appHasFocusedTypingInput(appOrElement) {
 }
 
 const throttledUiNoticeCache = new Map();
+const THROTTLED_UI_NOTICE_CACHE_MAX = 200;
 
 function shouldEmitThrottledUiNotice(cacheKey, ttlMs) {
   const key = String(cacheKey ?? "").trim() || "notice";
@@ -1818,6 +1819,7 @@ function shouldEmitThrottledUiNotice(cacheKey, ttlMs) {
   const now = Date.now();
   const last = Number(throttledUiNoticeCache.get(key) ?? 0);
   if (now - last < ttl) return false;
+  if (throttledUiNoticeCache.size >= THROTTLED_UI_NOTICE_CACHE_MAX) throttledUiNoticeCache.clear();
   throttledUiNoticeCache.set(key, now);
   return true;
 }
@@ -4150,6 +4152,10 @@ function getDaeModifierCatalog() {
   return daeModifierCatalogCache;
 }
 
+function clearDaeModifierCatalogCache() {
+  daeModifierCatalogCache = null;
+}
+
 function buildEnvironmentDaeChangeKeyCatalog() {
   return getDaeModifierCatalog();
 }
@@ -4598,7 +4604,7 @@ function ensureEnvironmentState(ledger) {
         createdBy: String(entry?.createdBy ?? "GM")
       };
     })
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()));
   if (!Array.isArray(ledger.environment.checkResults)) ledger.environment.checkResults = [];
   ledger.environment.checkResults = ledger.environment.checkResults
     .map((entry) => {
@@ -4622,7 +4628,7 @@ function ensureEnvironmentState(ledger) {
         createdBy: String(entry?.createdBy ?? "GM")
       };
     })
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
     .slice(0, 100);
   return ledger.environment;
 }
@@ -15973,7 +15979,7 @@ async function importLootManifestCompendiumToWorld() {
 function getAvailableLootItemPackSources() {
   const manifestSource = buildLootManifestSourceEntry({ enabled: true });
   return [manifestSource]
-    .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
+    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
@@ -26269,7 +26275,7 @@ function ensureReputationState(ledger) {
   }
   ledger.reputation.factions = ledger.reputation.factions
     .map((entry) => normalizeReputationFaction(entry))
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()));
   return ledger.reputation;
 }
 
@@ -27488,7 +27494,7 @@ function ensureMerchantsState(ledger) {
   merchants.stockStateById = normalizedStockState;
   merchants.accessLog = merchants.accessLog
     .map((entry) => normalizeMerchantAccessLogEntry(entry))
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
     .sort((a, b) => Number(b.viewedAt ?? 0) - Number(a.viewedAt ?? 0))
     .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
   return merchants;
@@ -34618,7 +34624,7 @@ function normalizeLootClaimItemsList(values = []) {
         eligibleActorIds: normalizeLootClaimActorIdList(entry?.eligibleActorIds ?? entry?.eligibilityActorIds)
       };
     })
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()));
 }
 
 function normalizeLootClaimTableRolls(values = []) {
@@ -36539,7 +36545,7 @@ function ensureWeatherState(ledger) {
   if (!Array.isArray(ledger.weather.logs)) ledger.weather.logs = [];
   ledger.weather.logs = ledger.weather.logs
     .map((entry) => normalizeWeatherSnapshot(entry))
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
     .slice(0, 100);
 
   const current = ledger.weather.current;
@@ -54854,6 +54860,7 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   clearAutoInventorySnapshot,
   clearLootItemSourceCaches,
   clearLootOverrideIndexLoadRequests,
+  clearDaeModifierCatalogCache,
   gameRef: game,
   foundryRef: foundry
 });

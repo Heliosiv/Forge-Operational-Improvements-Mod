@@ -163,7 +163,7 @@ export function createModulePerfTracker(scope = "core", {
     },
     snapshot() {
       const scopeState = getScopeState(root, resolvedScope);
-      return JSON.parse(JSON.stringify(scopeState));
+      return structuredClone(scopeState);
     },
     summarize() {
       const scopeState = getScopeState(root, resolvedScope);

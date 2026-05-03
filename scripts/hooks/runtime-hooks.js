@@ -75,6 +75,7 @@ export function buildPartyOpsRuntimeHookModules({
   clearAutoInventorySnapshot,
   clearLootItemSourceCaches,
   clearLootOverrideIndexLoadRequests,
+  clearDaeModifierCatalogCache,
   gameRef = globalThis.game,
   foundryRef = globalThis.foundry,
   perfTracker = createModulePerfTracker("runtime-hooks")
@@ -162,6 +163,12 @@ export function buildPartyOpsRuntimeHookModules({
               }
             ]
           ]
+        }
+      : null,
+    typeof clearDaeModifierCatalogCache === "function"
+      ? {
+          id: "dae-modifier-catalog-cache",
+          registrations: [["createActor", () => clearDaeModifierCatalogCache()]]
         }
       : null
   ].filter(Boolean);

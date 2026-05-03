@@ -75,6 +75,24 @@ function countCategoryOverlap(candidateCategories = [], selectedEntry = {}) {
   return overlap;
 }
 
+const _normalizedSelectedCache = new WeakMap();
+function getCachedNormalizedSelected(entry) {
+  if (_normalizedSelectedCache.has(entry)) return _normalizedSelectedCache.get(entry);
+  const categories = normalizeList(entry?.merchantCategories);
+  const normalized = {
+    identity: getEntryIdentity(entry),
+    type: normalizeText(entry?.itemType),
+    source: normalizeText(entry?.sourceId ?? entry?.sourceLabel),
+    kind: normalizeVariableTreasureKind(entry?.variableTreasureKind),
+    categories,
+    primaryCategory: categories[0] ?? "",
+    sourceClass: normalizeSourceClass(entry?.sourceClass),
+    sourcePolicy: normalizeSourcePolicy(entry?.sourcePolicy)
+  };
+  _normalizedSelectedCache.set(entry, normalized);
+  return normalized;
+}
+
 export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase = "spend") {
   const selected = Array.isArray(state?.selected) ? state.selected : [];
   const recentRollMalus = getRecentRollMalus(entry);
@@ -108,14 +126,15 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   let samePrimaryCategoryCount = 0;
 
   for (const selectedEntry of selected) {
-    const selectedIdentity = getEntryIdentity(selectedEntry);
-    const selectedType = normalizeText(selectedEntry?.itemType);
-    const selectedSource = normalizeText(selectedEntry?.sourceId ?? selectedEntry?.sourceLabel);
-    const selectedKind = normalizeVariableTreasureKind(selectedEntry?.variableTreasureKind);
-    const selectedEntryCategories = normalizeList(selectedEntry?.merchantCategories);
-    const selectedPrimaryCategory = selectedEntryCategories[0] ?? "";
-    const selectedSourceClass = normalizeSourceClass(selectedEntry?.sourceClass);
-    const selectedSourcePolicy = normalizeSourcePolicy(selectedEntry?.sourcePolicy);
+    const sel = getCachedNormalizedSelected(selectedEntry);
+    const selectedIdentity = sel.identity;
+    const selectedType = sel.type;
+    const selectedSource = sel.source;
+    const selectedKind = sel.kind;
+    const selectedEntryCategories = sel.categories;
+    const selectedPrimaryCategory = sel.primaryCategory;
+    const selectedSourceClass = sel.sourceClass;
+    const selectedSourcePolicy = sel.sourcePolicy;
 
     if (selectedType) selectedTypes.add(selectedType);
     for (const category of selectedEntryCategories) selectedCategories.add(category);
