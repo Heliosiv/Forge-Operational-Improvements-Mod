@@ -72,6 +72,8 @@ export function buildPartyOpsRuntimeHookModules({
   isManagedAudioMixPlaylist,
   queueManagedAudioMixPlaybackResync,
   autoInventoryPackIndexCache,
+  clearAutoInventorySnapshot,
+  clearLootItemSourceCaches,
   gameRef = globalThis.game,
   foundryRef = globalThis.foundry,
   perfTracker = createModulePerfTracker("runtime-hooks")
@@ -131,10 +133,31 @@ export function buildPartyOpsRuntimeHookModules({
       perfTracker
     }),
     buildLootRecentRollsCacheHookModule(),
-    autoInventoryPackIndexCache instanceof Map
+    autoInventoryPackIndexCache instanceof Map || typeof clearLootItemSourceCaches === "function"
       ? {
-          id: "auto-inventory-pack-index-cache",
-          registrations: [["updateCompendium", () => autoInventoryPackIndexCache.clear()]]
+          id: "compendium-invalidation-hooks",
+          registrations: [
+            [
+              "updateCompendium",
+              () => {
+                if (autoInventoryPackIndexCache instanceof Map) autoInventoryPackIndexCache.clear();
+                clearLootItemSourceCaches?.();
+              }
+            ]
+          ]
+        }
+      : null,
+    typeof clearAutoInventorySnapshot === "function"
+      ? {
+          id: "auto-inventory-snapshot-cache",
+          registrations: [
+            [
+              "updateSetting",
+              (setting) => {
+                if (String(setting?.key ?? "").includes("autoInventory")) clearAutoInventorySnapshot();
+              }
+            ]
+          ]
         }
       : null
   ].filter(Boolean);

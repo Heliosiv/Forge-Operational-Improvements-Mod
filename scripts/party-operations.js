@@ -115,7 +115,10 @@ import {
   SOCKET_CHANNEL,
   INTEGRATION_MODES,
   LOOT_SCARCITY_LEVELS,
-  INVENTORY_HOOK_MODES
+  INVENTORY_HOOK_MODES,
+  LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
+  PARTY_OPS_LOOT_RARITIES,
+  DEFAULT_PARTY_OPS_CONFIG
 } from "./core/constants.js";
 import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
@@ -588,26 +591,7 @@ function getEconomyPriceMultiplier() {
   }
 }
 
-const LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES = Object.freeze({
-  STANDARD: "standard",
-  BOOSTED: "boosted",
-  HIGH: "high",
-  GUARANTEED: "guaranteed"
-});
-
-const PARTY_OPS_LOOT_RARITIES = ["common", "uncommon", "rare", "veryRare", "legendary"];
-const DEFAULT_PARTY_OPS_CONFIG = Object.freeze({
-  debugEnabled: false,
-  lootScarcity: LOOT_SCARCITY_LEVELS.NORMAL,
-  rarityWeights: {
-    common: 50,
-    uncommon: 30,
-    rare: 12,
-    veryRare: 6,
-    legendary: 2
-  },
-  crGoldMultiplier: 1
-});
+// LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES, PARTY_OPS_LOOT_RARITIES, DEFAULT_PARTY_OPS_CONFIG imported from ./core/constants.js
 
 
 
@@ -636,8 +620,8 @@ const SCROLL_STATE_MAIN_SELECTOR = ".window-content";
 const SCROLL_STATE_BODY_SELECTOR = ".po-body";
 const SCROLL_STATE_PRESERVE_SELECTOR = "[data-po-scroll-preserve]";
 
-const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
-const STEWARD_POOL_KEYS = ["food", "water", "torches"];
+const RESOURCE_TRACK_KEYS = Object.freeze(["food", "water", "torches"]);
+const STEWARD_POOL_KEYS = RESOURCE_TRACK_KEYS;
 const STEWARD_POOL_MODES = Object.freeze({
   NONE: "none",
   FINITE: "finite",
@@ -16682,8 +16666,13 @@ function resolveAutoInventoryPackId(packIdValue) {
   return fallback || requested;
 }
 
+let _autoInvSnapshot = null;
+function clearAutoInventorySnapshot() {
+  _autoInvSnapshot = null;
+}
 function getAutoInventorySettingsSnapshot() {
-  return {
+  if (_autoInvSnapshot) return _autoInvSnapshot;
+  _autoInvSnapshot = {
     enabled: Boolean(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_ENABLED) ?? true),
     currencyEnabled: Boolean(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_ENABLED) ?? true),
     weaponPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_WEAPON_PACK)),
@@ -16710,6 +16699,7 @@ function getAutoInventorySettingsSnapshot() {
       )
     )
   };
+  return _autoInvSnapshot;
 }
 
 function isAutoInventoryArmorIndexRow(row) {
@@ -17107,14 +17097,15 @@ async function resolveAutoInventoryPlanToItemData(plan = []) {
     else merged.get(key).quantity += quantity;
   }
 
-  const itemDataRows = [];
-  for (const entry of merged.values()) {
-    const itemData = await resolveAutoInventoryItemData(entry.packId, entry.name, entry.category);
-    if (!itemData) continue;
-    setAutoInventoryItemQuantity(itemData, entry.quantity);
-    itemDataRows.push(itemData);
-  }
-  return itemDataRows;
+  const resolved = await Promise.all(
+    Array.from(merged.values()).map(async (entry) => {
+      const itemData = await resolveAutoInventoryItemData(entry.packId, entry.name, entry.category);
+      if (!itemData) return null;
+      setAutoInventoryItemQuantity(itemData, entry.quantity);
+      return itemData;
+    })
+  );
+  return resolved.filter(Boolean);
 }
 
 async function applyAutoInventoryToUnlinkedToken(tokenDoc, options = {}, userId = null) {
@@ -23533,14 +23524,7 @@ function getMerchantWorldRarityPriceMultiplier(rarity = "", overrides = null) {
 
 function buildWorldRarityWeightContext() {
   const weights = getLootEngineRarityWeights();
-  const rows = [
-    ["common", "Common"],
-    ["uncommon", "Uncommon"],
-    ["rare", "Rare"],
-    ["very-rare", "Very Rare"],
-    ["legendary", "Legendary"]
-  ];
-  return rows.map(([value, label]) => {
+  return LOOT_RARITY_OPTIONS.filter((entry) => entry.value).map(({ value, label }) => {
     const key = value === "very-rare" ? "veryRare" : value;
     const weight = Math.max(0, Math.min(100, Math.round(Number(weights[value] ?? weights[key] ?? 0) || 0)));
     return {
@@ -31012,11 +30996,10 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
 async function refreshAllMerchantStocks(options = {}) {
   if (!canAccessGmPage()) return { ok: false, refreshed: 0, failed: 0, results: [] };
   const merchants = getMerchants();
-  const results = [];
-  for (const merchant of merchants) {
-    const result = await refreshMerchantStock(merchant.id, { silent: true });
-    results.push(result);
-  }
+  const settled = await Promise.allSettled(
+    merchants.map((merchant) => refreshMerchantStock(merchant.id, { silent: true }))
+  );
+  const results = settled.map((r) => (r.status === "fulfilled" ? r.value : { ok: false }));
   const refreshed = results.filter((entry) => entry?.ok).length;
   const failed = results.length - refreshed;
   if (!options?.silent) {
@@ -54922,6 +54905,8 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   isManagedAudioMixPlaylist,
   queueManagedAudioMixPlaybackResync,
   autoInventoryPackIndexCache,
+  clearAutoInventorySnapshot,
+  clearLootItemSourceCaches,
   gameRef: game,
   foundryRef: foundry
 });
