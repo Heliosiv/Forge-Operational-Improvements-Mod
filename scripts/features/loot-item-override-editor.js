@@ -95,9 +95,12 @@ export function buildLootItemOverrideRowsForEditor({
     })
     .filter(Boolean);
 
-  const modifiedCount = rows.filter((entry) => entry.modified).length;
-  const disabledCount = rows.filter((entry) => entry.disabled).length;
-  const enabledCount = rows.filter((entry) => entry.enabled).length;
+  let modifiedCount = 0, disabledCount = 0, enabledCount = 0;
+  for (const entry of rows) {
+    if (entry.modified) modifiedCount++;
+    if (entry.disabled) disabledCount++;
+    if (entry.enabled) enabledCount++;
+  }
   const filteredRows = rows
     .filter((entry) => {
       if (filter === LOOT_ITEM_OVERRIDE_FILTERS.MODIFIED && !entry.modified) return false;

@@ -12046,7 +12046,12 @@ function normalizeAudioLibraryTag(value) {
 
 function normalizeAudioLibraryTagList(values = []) {
   const source = Array.isArray(values) ? values : String(values ?? "").split(/[,\n;]+/g);
-  return Array.from(new Set(source.map((entry) => normalizeAudioLibraryTag(entry)).filter(Boolean)));
+  const seen = new Set();
+  for (const entry of source) {
+    const v = normalizeAudioLibraryTag(entry);
+    if (v) seen.add(v);
+  }
+  return [...seen];
 }
 
 function buildAudioLibraryFilterToken(type = "tag", value = "") {
@@ -14092,7 +14097,7 @@ function matchesAudioLibraryItemFilters(
   item = {},
   filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters)
 ) {
-  const normalizedFilters = normalizeAudioLibraryFilters(filters);
+  const normalizedFilters = filters;
   if (normalizedFilters.kind !== "all" && item.kind !== normalizedFilters.kind) return false;
   if (normalizedFilters.usage !== "all" && item.usage !== normalizedFilters.usage) return false;
   if (normalizedFilters.selectedTags.length > 0) {
@@ -50207,8 +50212,11 @@ async function promptPlayerActorSelection(actors = [], options = {}) {
 }
 
 function getOrderedMarchingActors(state) {
-  const ordered = getMarchBoardRankIds().flatMap((rankId) => state.ranks?.[rankId] ?? []);
-  return Array.from(new Set(ordered));
+  const seen = new Set();
+  for (const rankId of getMarchBoardRankIds()) {
+    for (const id of state.ranks?.[rankId] ?? []) seen.add(id);
+  }
+  return [...seen];
 }
 
 async function applyMarchingFormation({ front, middle, type }) {
@@ -53350,8 +53358,11 @@ function buildNotesView(state, ranks, isGM) {
 
 function buildLightToggles(state, ranks, isGM) {
   const lockedForUser = isLockedForUser(state, isGM);
-  const actorIds = ranks.flatMap((rank) => rank.entries.map((entry) => entry.actorId));
-  const uniqueIds = Array.from(new Set(actorIds));
+  const seen = new Set();
+  for (const rank of ranks) {
+    for (const entry of rank.entries) seen.add(entry.actorId);
+  }
+  const uniqueIds = [...seen];
   return uniqueIds
     .map((actorId) => {
       const actor = game.actors.get(actorId);
