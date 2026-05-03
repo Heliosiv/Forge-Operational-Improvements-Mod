@@ -1,6 +1,6 @@
 # Default State And Audio Runtime
 
-Source: legacy/party-operations-monolith.js:10811-14030
+Source: legacy/party-operations-monolith.js:10811-14046
 Feature IDs: audio, loot, rest-watch
 Target Modules: scripts/runtime/state, scripts/features/audio-*, scripts/features/loot-*
 
@@ -244,6 +244,7 @@ const AUDIO_MIX_TRACK_BROWSER_PAGE_SIZE = 40;
 const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
 const AUDIO_MIX_TRANSPORT_LABEL = "Party Operations Shared Mix";
+const AUDIO_MIX_PLAYLIST_SOUND_LIMIT = 24;
 const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
 const AUDIO_MIX_PRESET_STORE_VERSION = 1;
 const AUDIO_MIX_CHANNEL_LABELS = Object.freeze({
@@ -2108,7 +2109,7 @@ async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
 }
 
 async function syncAudioMixPlaylistSounds(playlist, preset, candidates) {
-  const rows = candidates.slice(0, 24);
+  const rows = candidates.slice(0, AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
   const existingIds = Array.from(playlist?.sounds?.contents ?? [])
     .map((sound) => sound.id)
     .filter(Boolean);
@@ -2169,6 +2170,17 @@ function buildOrderedAudioMixCandidates(candidates, options = {}) {
     }
   }
   return ordered;
+}
+
+function buildAudioMixPlaylistWindow(candidates = [], preferredTrackId = "") {
+  const rows = Array.isArray(candidates) ? candidates.slice() : [];
+  if (rows.length <= AUDIO_MIX_PLAYLIST_SOUND_LIMIT) return rows;
+  const normalizedPreferredTrackId = String(preferredTrackId ?? "").trim();
+  if (!normalizedPreferredTrackId) return rows.slice(0, AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
+  const preferredIndex = rows.findIndex(({ item }) => String(item?.id ?? "").trim() === normalizedPreferredTrackId);
+  if (preferredIndex < 0) return rows.slice(0, AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
+  const startIndex = Math.max(0, Math.min(preferredIndex, Math.max(0, rows.length - AUDIO_MIX_PLAYLIST_SOUND_LIMIT)));
+  return rows.slice(startIndex, startIndex + AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
 }
 
 async function stopManagedAudioMixPlaylist(playlist) {
@@ -2356,12 +2368,15 @@ async function playAudioMixPresetById(presetId, options = {}) {
   const preset = getAudioMixPresetById(presetId);
   const catalog = getAudioLibraryCatalog();
   const queuedTrackIds = normalizeAudioMixPresetTrackIds(options.queueTrackIds ?? preset?.trackIds ?? []);
-  const candidates = buildAudioMixAssignedCandidates(catalog, {
-    ...preset,
-    trackIds: queuedTrackIds
-  });
+  const candidates =
+    queuedTrackIds.length > 0
+      ? buildAudioMixAssignedCandidates(catalog, {
+          ...preset,
+          trackIds: queuedTrackIds
+        })
+      : buildAudioMixCandidates(catalog, preset);
   if (candidates.length <= 0) {
-    throw new Error(`Add tracks from the Track Browser to the ${preset.label} queue before playing it.`);
+    throw new Error(`No playable tracks matched the ${preset.label} mix. Scan the library or adjust this preset.`);
   }
 
   const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
@@ -2377,11 +2392,12 @@ async function playAudioMixPresetById(presetId, options = {}) {
   await stopManagedAudioMixPlaylist(playlist);
   const orderedCandidates = buildOrderedAudioMixCandidates(candidates, options);
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
+  const playlistCandidates = buildAudioMixPlaylistWindow(orderedCandidates, preferredTrackId);
   const chosenCandidate = preferredTrackId
-    ? (orderedCandidates.find(({ item }) => item.id === preferredTrackId) ??
-      pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId))
-    : pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId);
-  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, orderedCandidates);
+    ? (playlistCandidates.find(({ item }) => item.id === preferredTrackId) ??
+      pickAudioMixCandidate(playlistCandidates, options.excludeTrackId ?? priorState.activeTrackId))
+    : pickAudioMixCandidate(playlistCandidates, options.excludeTrackId ?? priorState.activeTrackId);
+  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, playlistCandidates);
   const chosenSound =
     Array.from(createdSounds ?? []).find(
       (sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id
@@ -2392,7 +2408,7 @@ async function playAudioMixPresetById(presetId, options = {}) {
     throw new Error(`Failed to prepare playback for the ${preset.label} mix.`);
   }
 
-  const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
+  const queueTrackIds = playlistCandidates.map(({ item }) => item.id);
   const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
   const playbackId = foundry.utils.randomID();
   const nextState = await setAudioMixStateFlag(playlist, {

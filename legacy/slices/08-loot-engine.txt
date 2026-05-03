@@ -1,6 +1,6 @@
 # Loot Generation Engine
 
-Source: legacy/party-operations-monolith.js:16205-22964
+Source: legacy/party-operations-monolith.js:16221-22980
 Feature IDs: loot
 Target Modules: scripts/features/loot-engine-*
 

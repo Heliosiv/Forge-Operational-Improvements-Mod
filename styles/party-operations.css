@@ -251,14 +251,16 @@
 }
 
 .party-operations .po-tabs-sub.po-planning-tabs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--po-space-2);
-  align-items: stretch;
+  align-items: center;
+  align-content: flex-start;
 }
 
 .party-operations .po-tabs-sub.po-planning-tabs .po-tab {
-  width: 100%;
+  width: auto;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: none;
 }
@@ -6457,14 +6459,17 @@
    GM Merchants Density Overrides
    ========================================================= */
 .party-operations :is([data-tool="gm-merchants"], [data-tool="gm-loot"]) .po-gm-panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px;
+  align-items: center;
+  align-content: flex-start;
 }
 
 .party-operations :is([data-tool="gm-merchants"], [data-tool="gm-loot"]) .po-gm-panel-tabs .po-tab {
-  width: 100%;
+  width: auto;
+  flex: 0 0 auto;
   min-height: 30px;
   padding: 2px 10px;
   font-size: 0.78rem;
@@ -6603,7 +6608,6 @@
 }
 
 @media (max-width: 760px) {
-  .party-operations :is([data-tool="gm-merchants"], [data-tool="gm-loot"]) .po-gm-panel-tabs,
   .party-operations [data-tool="gm-merchants"] .po-merchant-view-tabs,
   .party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters.po-merchant-filter-grid {
     grid-template-columns: 1fr;
@@ -6618,14 +6622,17 @@
    GM Merchants Density Overrides (runtime host: marching-order-app)
    ========================================================= */
 .party-operations #marching-order-app .po-gm-panel-tabs {
-  display: grid !important;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  display: flex !important;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px;
+  align-items: center;
+  align-content: flex-start;
 }
 
 .party-operations #marching-order-app .po-gm-panel-tabs .po-tab {
-  width: 100% !important;
+  width: auto !important;
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 28px;
   padding: 2px 8px;
@@ -6693,10 +6700,6 @@
 }
 
 @media (max-width: 1220px) {
-  .party-operations #marching-order-app .po-gm-panel-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .party-operations #marching-order-app .po-merchant-view-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -6707,7 +6710,6 @@
 }
 
 @media (max-width: 760px) {
-  .party-operations #marching-order-app .po-gm-panel-tabs,
   .party-operations #marching-order-app .po-merchant-view-tabs,
   .party-operations #marching-order-app .po-merchant-collection-filters.po-merchant-filter-grid {
     grid-template-columns: 1fr;
@@ -6831,11 +6833,6 @@
 }
 
 @media (max-width: 1400px) {
-  .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs,
-  .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -6848,8 +6845,6 @@
 }
 
 @media (max-width: 640px) {
-  .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs,
-  .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs,
   .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs,
   .party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters.po-merchant-filter-grid {
     grid-template-columns: 1fr;
@@ -7445,9 +7440,6 @@
     grid-template-columns: 1fr;
   }
 
-  .party-operations [data-tool="gm-audio"] .po-tabs.po-gm-panel-tabs .po-tab,
-  .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs .po-tab,
-  .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs .po-tab,
   .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs .po-tab {
     flex: 1 1 calc(50% - 6px);
     justify-content: center;
@@ -7472,9 +7464,6 @@
     flex-direction: column;
   }
 
-  .party-operations [data-tool="gm-audio"] .po-tabs.po-gm-panel-tabs .po-tab,
-  .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs .po-tab,
-  .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs .po-tab,
   .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs .po-tab {
     flex-basis: 100%;
   }
@@ -7741,6 +7730,49 @@
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-accepted-types {
   padding: 8px 14px 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-search-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 170px);
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-sort,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-destination-card select {
+  min-height: 32px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-currency-tender {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-currency-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-currency-grid label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-currency-grid label span {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--po-muted) 82%, var(--po-text));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-currency-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-featured,

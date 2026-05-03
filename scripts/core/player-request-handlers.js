@@ -151,9 +151,12 @@ export function createPlayerRequestHandlers(options = {}) {
     const tradePayload = {
       merchantId,
       actorId,
+      buyTargetActorId: sanitizeSocketIdentifier(message?.buyTargetActorId, { maxLength: 64 }) || actorId,
       settlement,
       buyItems: normalizeTradeLines(message?.buyItems),
-      sellItems: normalizeTradeLines(message?.sellItems)
+      sellItems: normalizeTradeLines(message?.sellItems),
+      currencyTender:
+        message?.currencyTender && typeof message.currencyTender === "object" ? message.currencyTender : {}
     };
     const barterKey = getMerchantBarterResolutionKey({
       userId: String(requester?.id ?? "").trim(),

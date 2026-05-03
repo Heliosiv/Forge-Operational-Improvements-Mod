@@ -44,7 +44,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "state-defaults-audio",
     label: "Default State And Audio Runtime",
-    lines: { start: 10811, end: 14030 },
+    lines: { start: 10811, end: 14046 },
     featureIds: ["audio", "loot", "rest-watch"],
     targetModules: ["scripts/runtime/state", "scripts/features/audio-*", "scripts/features/loot-*"],
     notes:
@@ -53,7 +53,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "loot-source-registry",
     label: "Loot Source Registry",
-    lines: { start: 14031, end: 16204 },
+    lines: { start: 14047, end: 16220 },
     featureIds: ["loot"],
     targetModules: ["scripts/features/loot-source-*"],
     notes: "Loot source normalization, manifest compendium folders, source documents, and source registry context."
@@ -61,7 +61,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "loot-engine",
     label: "Loot Generation Engine",
-    lines: { start: 16205, end: 22964 },
+    lines: { start: 16221, end: 22980 },
     featureIds: ["loot"],
     targetModules: ["scripts/features/loot-engine-*"],
     notes:
@@ -70,7 +70,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "operations-ledger-loot-claims",
     label: "Operations Ledger And Loot Claim State",
-    lines: { start: 22965, end: 25737 },
+    lines: { start: 22981, end: 25753 },
     featureIds: ["operations", "loot", "journal"],
     targetModules: ["scripts/features/operations-*", "scripts/features/loot-claims-*"],
     notes:
@@ -79,7 +79,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "merchants",
     label: "Merchant Domain And Workflows",
-    lines: { start: 25738, end: 33107 },
+    lines: { start: 25754, end: 33396 },
     featureIds: ["merchants"],
     targetModules: ["scripts/features/merchant-domain.js", "scripts/features/merchants-ui.js"],
     notes:
@@ -88,7 +88,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "downtime-operations-actions",
     label: "Downtime And Operations Actions",
-    lines: { start: 33108, end: 41508 },
+    lines: { start: 33397, end: 41797 },
     featureIds: ["downtime", "operations", "loot"],
     targetModules: ["scripts/features/downtime-*", "scripts/features/operations-*"],
     notes:
@@ -97,7 +97,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "loot-runtime-actions",
     label: "Loot Runtime Actions",
-    lines: { start: 41509, end: 44586 },
+    lines: { start: 41798, end: 44875 },
     featureIds: ["loot", "merchants"],
     targetModules: ["scripts/features/loot-runtime-*"],
     notes:
@@ -106,7 +106,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "weather-upkeep-autopilot",
     label: "Weather, Upkeep, And Session Autopilot",
-    lines: { start: 44587, end: 45617 },
+    lines: { start: 44876, end: 45907 },
     featureIds: ["operations", "gm-pages"],
     targetModules: ["scripts/features/weather-*", "scripts/features/upkeep-*"],
     notes:
@@ -115,7 +115,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "injury-recovery",
     label: "Injury Recovery",
-    lines: { start: 45618, end: 46907 },
+    lines: { start: 45908, end: 47197 },
     featureIds: ["operations", "gm-pages"],
     targetModules: ["scripts/features/injury-*"],
     notes:
@@ -124,7 +124,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "rest-march-runtime",
     label: "Rest Watch And March Runtime",
-    lines: { start: 46908, end: 51045 },
+    lines: { start: 47198, end: 51335 },
     featureIds: ["rest-watch", "march"],
     targetModules: ["scripts/features/rest-feature.js", "scripts/features/march-feature.js", "scripts/apps"],
     notes:
@@ -133,7 +133,7 @@ const LEGACY_SOURCE_SLICES = Object.freeze([
   {
     id: "api-socket-bootstrap",
     label: "API, Socket Handler, And Runtime Bootstrap",
-    lines: { start: 51046, end: 51675 },
+    lines: { start: 51336, end: 51965 },
     featureIds: ["runtime-shell", "sockets", "hooks", "rest-watch"],
     targetModules: ["scripts/runtime", "scripts/core/socket-*", "scripts/bootstrap"],
     notes:

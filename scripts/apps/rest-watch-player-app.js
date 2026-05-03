@@ -87,12 +87,23 @@ export function createRestWatchPlayerAppClass(deps = {}) {
     const openLootRuns = Math.max(0, Number(lootClaims.openRunCount ?? 0) || 0);
     const lootItemCount = Math.max(0, Number(lootClaims.itemCount ?? 0) || 0);
     const downtimePendingCount = Math.max(0, Number(downtime.pendingCount ?? 0) || 0);
-    const downtimeCollectCount = Array.isArray(downtime.entries)
+    const downtimePlayerDeliveredResults = Array.isArray(downtime?.player?.deliveredResults)
+      ? downtime.player.deliveredResults
+      : Array.isArray(downtime.deliveredResults)
+        ? downtime.deliveredResults
+        : [];
+    const downtimeV2CollectCount = downtimePlayerDeliveredResults.filter((entry) =>
+      Object.hasOwn(entry ?? {}, "canAcknowledge") ? Boolean(entry?.canAcknowledge) : !entry?.acknowledgedAt
+    ).length;
+    const downtimeLegacyCollectCount = Array.isArray(downtime.entries)
       ? downtime.entries.filter((entry) => entry?.canCollect).length
       : 0;
+    const downtimeCollectCount = downtimeV2CollectCount + downtimeLegacyCollectCount;
     const downtimeQueuedCount = Array.isArray(downtime.entries)
       ? downtime.entries.reduce((sum, entry) => sum + Math.max(0, Number(entry?.queueCount ?? 0) || 0), 0)
       : 0;
+    const downtimeDisabledReason =
+      downtimeCollectCount > 0 || downtime?.submit?.canSubmit ? "" : String(downtime?.submit?.disabledReason ?? "");
 
     const cards = [
       {
@@ -133,17 +144,19 @@ export function createRestWatchPlayerAppClass(deps = {}) {
         label: "Downtime",
         value: downtimeCollectCount > 0 ? `${downtimeCollectCount} collect` : `${downtimePendingCount} pending`,
         detail:
-          downtimeQueuedCount > 0
-            ? `${downtimeQueuedCount} queued`
-            : (downtime?.publication?.statusLabel ?? "Not published"),
+          downtimeCollectCount > 0
+            ? `${downtimePlayerDeliveredResults.length} delivered`
+            : downtimeQueuedCount > 0
+              ? `${downtimeQueuedCount} queued`
+              : (downtime?.publication?.statusLabel ?? "Not published"),
         nextActionLabel:
           downtimeCollectCount > 0
             ? "Collect rewards"
             : downtime?.submit?.canSubmit
               ? "Submit downtime"
               : "Check status",
-        blockedReason: downtime?.submit?.canSubmit ? "" : String(downtime?.submit?.disabledReason ?? ""),
-        hasBlockedReason: !downtime?.submit?.canSubmit,
+        blockedReason: downtimeDisabledReason,
+        hasBlockedReason: downtimeDisabledReason.length > 0,
         selected: playerHubTab === "downtime",
         toneClass: downtimeCollectCount > 0 ? "is-alert" : downtime?.submit?.canSubmit ? "" : "is-muted"
       }

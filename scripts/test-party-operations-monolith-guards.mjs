@@ -208,6 +208,21 @@ assert.match(
   /Choose player-owned actor target items for food, water, and torches\./,
   "Resource target helper copy should describe actor-owned targets, not character-only targets."
 );
+assert.match(
+  restWatchTemplate,
+  /Upkeep Time[\s\S]*upkeepScheduleLabel[\s\S]*Last Applied[\s\S]*upkeepLastAppliedLabel[\s\S]*Next Due[\s\S]*upkeepNextDueLabel/,
+  "Resource planning should show the Simple Calendar upkeep time and due state beside pending resource drains."
+);
+assert.match(
+  source,
+  /const UPKEEP_EVENING_END_LABEL\s*=\s*"18:00 Simple Calendar";/,
+  "Automatic resource upkeep should expose the 18:00 Simple Calendar schedule label to the resource UI."
+);
+assert.match(
+  source,
+  /function buildUpkeepScheduleSummary[\s\S]*lastAppliedLabel[\s\S]*nextDueLabel/,
+  "Automatic resource upkeep should build scannable last-applied and next-due labels for the resource UI."
+);
 
 assert.match(
   source,
@@ -217,6 +232,11 @@ assert.match(
 
 {
   const fn = getFunctionSource("handleAutomaticOperationalUpkeepTick");
+  assert.match(
+    fn,
+    /isPrimaryActiveGmClient\(\)/,
+    "Automatic resource upkeep should only run on the primary active GM client so multiple GM browsers do not double-apply daily drains."
+  );
   assert.match(
     fn,
     /hasPendingGatherRequests\(ledger\.resources\)[\s\S]*AUTO_UPKEEP_PROMPT_STATES\.AWAITING_GATHER/,

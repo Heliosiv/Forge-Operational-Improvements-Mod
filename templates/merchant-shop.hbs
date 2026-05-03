@@ -8,6 +8,7 @@
   data-base-sell-rate="{{baseSellRate}}"
   data-stock-pressure-multiplier="{{stockPressureMultiplier}}"
   data-tax-fee-factor="{{taxFeeFactor}}"
+  data-actor-currency-cp="{{actorCurrencyCp}}"
 >
   <div class="po-merchant-trade-shell">
     <section class="po-merchant-trade-hero">
@@ -118,8 +119,16 @@
             type="search"
             placeholder="Filter wares…"
             aria-label="Filter merchant wares"
-            data-merchant-search
+            data-merchant-search="buy"
           />
+          <select class="po-input po-merchant-trade-sort" aria-label="Sort merchant wares" data-merchant-sort="buy">
+            <option value="name-asc">Name A-Z</option>
+            <option value="name-desc">Name Z-A</option>
+            <option value="unit-asc">Price Low</option>
+            <option value="unit-desc">Price High</option>
+            <option value="qty-desc">Stock High</option>
+            <option value="qty-asc">Stock Low</option>
+          </select>
         </div>
         {{#if hasFeaturedSections}}
         <div class="po-merchant-trade-featured">
@@ -156,7 +165,7 @@
             <tbody>
               {{#if hasBuyRows}}
               {{#each buyRows}}
-              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}" data-price-kind="buy" data-base-gp="{{baseGp}}" data-rarity-mult="{{rarityMult}}" data-search="{{itemName}}">
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}" data-price-kind="buy" data-base-gp="{{baseGp}}" data-rarity-mult="{{rarityMult}}" data-search="{{searchText}}" data-sort-name="{{itemName}}" data-sort-type="{{stockSectionLabel}}" data-sort-unit-cp="{{unitCp}}" data-sort-qty="{{qty}}">
                 <td>
                   <div class="po-merchant-trade-item">
                     <img src="{{img}}" alt="{{itemName}}" title="{{itemName}}" />
@@ -211,6 +220,24 @@
           <div class="po-op-summary">{{sellCountLabel}}</div>
         </header>
         <div class="po-op-summary po-merchant-trade-accepted-types">Accepted Types: {{buybackTypeSummary}}</div>
+        <div class="po-merchant-trade-search-wrap">
+          <input
+            class="po-input po-merchant-trade-search"
+            type="search"
+            placeholder="Filter inventory..."
+            aria-label="Filter sellable inventory"
+            data-merchant-search="sell"
+          />
+          <select class="po-input po-merchant-trade-sort" aria-label="Sort sellable inventory" data-merchant-sort="sell">
+            <option value="name-asc">Name A-Z</option>
+            <option value="name-desc">Name Z-A</option>
+            <option value="type-asc">Type A-Z</option>
+            <option value="unit-desc">Value High</option>
+            <option value="unit-asc">Value Low</option>
+            <option value="qty-desc">Owned High</option>
+            <option value="qty-asc">Owned Low</option>
+          </select>
+        </div>
         <div class="po-merchant-trade-table-wrap">
           <table class="po-table po-table-sm po-merchant-trade-table">
             <thead>
@@ -225,7 +252,7 @@
             <tbody>
               {{#if hasSellRows}}
               {{#each sellRows}}
-              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../actorId}}" data-price-kind="sell" data-base-gp="{{baseGp}}">
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../actorId}}" data-price-kind="sell" data-base-gp="{{baseGp}}" data-search="{{searchText}}" data-sort-name="{{itemName}}" data-sort-type="{{itemTypeLabel}}" data-sort-unit-cp="{{unitCp}}" data-sort-qty="{{qty}}">
                 <td>
                   <div class="po-merchant-trade-item">
                     <img src="{{img}}" alt="{{itemName}}" title="{{itemName}}" />
@@ -269,10 +296,32 @@
             </tbody>
           </table>
         </div>
+        <div class="po-merchant-trade-currency-tender">
+          <div class="po-merchant-trade-section-label">Coins Added To Sell Side</div>
+          <div class="po-merchant-trade-currency-grid">
+            <label><span>PP</span><input class="po-input" type="number" min="0" step="1" value="0" data-merchant-currency-tender="pp" /></label>
+            <label><span>GP</span><input class="po-input" type="number" min="0" step="1" value="0" data-merchant-currency-tender="gp" /></label>
+            <label><span>SP</span><input class="po-input" type="number" min="0" step="1" value="0" data-merchant-currency-tender="sp" /></label>
+            <label><span>CP</span><input class="po-input" type="number" min="0" step="1" value="0" data-merchant-currency-tender="cp" /></label>
+          </div>
+          <div class="po-merchant-trade-currency-actions">
+            <button type="button" class="po-btn po-btn-sm" data-merchant-fill-tender-balance>Fill Balance</button>
+            <button type="button" class="po-btn po-btn-sm po-btn-ghost" data-merchant-clear-tender>Clear Coins</button>
+          </div>
+          <div class="po-op-summary">Coin tender counts toward the sell total and is deducted from {{actorName}} when finalized.</div>
+        </div>
       </section>
     </section>
 
     <section class="po-merchant-trade-totals">
+      <div class="po-merchant-trade-total-card po-merchant-trade-destination-card">
+        <span>Bought Items To</span>
+        <select class="po-input" data-merchant-buy-target>
+          {{#each buyTargetOptions}}
+          <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+          {{/each}}
+        </select>
+      </div>
       <div class="po-merchant-trade-total-card">
         <span>Buy Total</span>
         <strong data-merchant-buy-total>0.00 gp</strong>

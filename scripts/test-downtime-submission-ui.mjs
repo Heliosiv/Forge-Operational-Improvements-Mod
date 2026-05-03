@@ -4,12 +4,14 @@ import { readFileSync } from "node:fs";
 const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
 const socketRoutes = readFileSync(new URL("./core/socket-gm-requester-routes.js", import.meta.url), "utf8");
 const socketHandlers = readFileSync(new URL("./core/socket-route-handlers.js", import.meta.url), "utf8");
+const playerAppSource = readFileSync(new URL("./apps/rest-watch-player-app.js", import.meta.url), "utf8");
 const stylesSource = readFileSync(new URL("../styles/party-operations.css", import.meta.url), "utf8");
 const gmDowntimeTemplate = readFileSync(new URL("../templates/gm-downtime.hbs", import.meta.url), "utf8");
 const playerDowntimeTemplate = readFileSync(
   new URL("../templates/partials/rest-watch-player/simple-downtime.hbs", import.meta.url),
   "utf8"
 );
+const playerShellTemplate = readFileSync(new URL("../templates/rest-watch-player.hbs", import.meta.url), "utf8");
 
 function assertMatch(source, pattern, message) {
   assert.match(source, pattern, message);
@@ -115,6 +117,36 @@ assertMatch(
   playerDowntimeTemplate,
   /data-action="submit-downtime-v2"/,
   "Player downtime panel should submit through the v2 action."
+);
+assertMatch(
+  playerDowntimeTemplate,
+  /id="po-player-hub-panel-downtime"[\s\S]*role="tabpanel"/,
+  "Player downtime panel should be addressable by the player hub tablist."
+);
+assertMatch(
+  playerDowntimeTemplate,
+  /class="po-player-hub-panel-head"[\s\S]*class="po-player-hub-focus-card"/,
+  "Player downtime panel should use the same compact header and focus-card structure as the other hub panels."
+);
+assertMatch(
+  playerDowntimeTemplate,
+  /{{downtime\.activeSession\.statusLabel}}[\s\S]*{{downtime\.activeSession\.availableCardCount}}/,
+  "Player downtime panel should show the current session status and available action count."
+);
+assertMatch(
+  playerAppSource,
+  /const downtimePlayerDeliveredResults = Array\.isArray\(downtime\?\.player\?\.deliveredResults\)[\s\S]*const downtimeV2CollectCount = downtimePlayerDeliveredResults\.filter/,
+  "Player hub downtime card should read v2 delivered results when deciding whether players have rewards to collect."
+);
+assertMatch(
+  playerAppSource,
+  /const downtimeDisabledReason =[\s\S]*downtimeCollectCount > 0[\s\S]*hasBlockedReason: downtimeDisabledReason\.length > 0/,
+  "Player hub downtime card should not show a blocked state when v2 results are ready to acknowledge."
+);
+assertMatch(
+  playerShellTemplate,
+  /\{\{#if playerHubDowntime\}\}[\s\S]*simple-downtime\.hbs[\s\S]*\{\{else\}\}[\s\S]*classic\.hbs/,
+  "Opening Operations for players should render the downtime form even when the player hub is in advanced/classic mode."
 );
 assertMatch(playerDowntimeTemplate, /name="downtimeV2ActorId"/, "Player panel should choose assigned actors.");
 assertMatch(playerDowntimeTemplate, /name="downtimeV2CardId"/, "Player panel should choose GM-selected action cards.");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   computeMerchantBarterAdjustment,
@@ -17,6 +18,14 @@ import {
   normalizeMerchantRarityPriceMultipliers,
   selectMerchantStockRows
 } from "./features/merchant-domain.js";
+
+const merchantDomainSource = readFileSync("scripts/features/merchant-domain.js", "utf8");
+
+assert.match(
+  merchantDomainSource,
+  /const resolvedMerchantActorId = findExistingMerchantActor\(merchant\)\?\.id \?\? merchant\.actorId[\s\S]*const stockState = normalizeMerchantStockStateEntry/,
+  "Merchant auto-refresh should initialize stock state through the shared stock actor resolver."
+);
 
 assert.equal(
   normalizeFoundryAssetImagePath(
@@ -495,6 +504,66 @@ const archetypeSelection = selectMerchantStockRows(
 assert.ok(archetypeSelection.some((entry) => (entry.sourceKey ?? entry.key) === "Item.weapon.longsword"));
 assert.ok(archetypeSelection.some((entry) => String(entry?.merchantSectionLabel ?? "").length > 0));
 assert.ok(archetypeSelection.some((entry) => entry?.merchantStockRole === "core"));
+
+const makeSequenceRandom = (values) => {
+  let index = 0;
+  return () => {
+    const value = values[index % values.length];
+    index += 1;
+    return value;
+  };
+};
+
+const repeatRefreshCandidates = [
+  "Lantern Oil",
+  "Candle",
+  "Rope",
+  "Chalk",
+  "Torch",
+  "Blanket",
+  "Iron Spike",
+  "Rations"
+].map((name, index) => ({
+  key: `Item.general.${index}`,
+  name,
+  gpValue: 1,
+  rarityBucket: "common",
+  data: { name, type: index % 2 === 0 ? "equipment" : "consumable" },
+  keywords: ["general", "supply"]
+}));
+
+const repeatRefreshMerchant = {
+  archetype: "general-goods",
+  stock: {
+    maxItems: 4,
+    targetValueGp: 0,
+    duplicateChance: 0,
+    maxStackSize: 20,
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1
+    }
+  }
+};
+
+const lowRollRefreshSelection = selectMerchantStockRows(repeatRefreshCandidates, repeatRefreshMerchant, {
+  randomFn: makeSequenceRandom([0.02, 0.08, 0.14, 0.2]),
+  shuffleRows: (rows) => rows
+}).map((entry) => entry.sourceKey ?? entry.key);
+
+const highRollRefreshSelection = selectMerchantStockRows(repeatRefreshCandidates, repeatRefreshMerchant, {
+  randomFn: makeSequenceRandom([0.98, 0.92, 0.86, 0.8]),
+  shuffleRows: (rows) => rows
+}).map((entry) => entry.sourceKey ?? entry.key);
+
+assert.notDeepEqual(
+  lowRollRefreshSelection.toSorted(),
+  highRollRefreshSelection.toSorted(),
+  "merchant refresh should randomize the core stock instead of repeating the same top-scored items"
+);
 
 const presetModeIgnoresManualCuratedSelection = selectMerchantStockRows(
   [

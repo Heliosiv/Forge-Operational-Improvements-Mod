@@ -68,7 +68,13 @@
       {{/if}}
     </section>
     {{else}}
+    {{#if playerHubDowntime}}
+    <section class="po-content po-player-hub-shell">
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-downtime.hbs"}}
+    </section>
+    {{else}}
     {{> "modules/party-operations/templates/partials/rest-watch-player/classic.hbs"}}
+    {{/if}}
     {{/if}}
   </div>
 

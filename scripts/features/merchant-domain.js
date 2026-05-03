@@ -2683,19 +2683,30 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     }
   }
 
-  const deterministicCorePool = shuffled
-    .filter((entry) => !selectedBaseKeys.has(String(entry?.key ?? "").trim()))
-    .sort((left, right) => {
-      const rightScore = Number(right?.merchantArchetypeScore ?? 0) + (right?.isCurated ? 0.4 : 0);
-      const leftScore = Number(left?.merchantArchetypeScore ?? 0) + (left?.isCurated ? 0.4 : 0);
-      if (rightScore !== leftScore) return rightScore - leftScore;
-      const sectionDiff =
-        getMerchantSectionPriority(left?.merchantSectionKey) - getMerchantSectionPriority(right?.merchantSectionKey);
-      if (sectionDiff !== 0) return sectionDiff;
-      return String(left?.key ?? "").localeCompare(String(right?.key ?? ""));
-    });
-  for (const candidate of deterministicCorePool) {
-    if (selected.length >= coreTarget) break;
+  const coreCandidatePool = shuffled.filter((entry) => !selectedBaseKeys.has(String(entry?.key ?? "").trim()));
+  const removeCoreCandidate = (candidate) => {
+    const baseKey = String(candidate?.key ?? "").trim();
+    const index = coreCandidatePool.findIndex((entry) => String(entry?.key ?? "").trim() === baseKey);
+    if (index >= 0) coreCandidatePool.splice(index, 1);
+  };
+  let coreSafety = 0;
+  const coreSafetyLimit = Math.max(coreTarget * 12, coreCandidatePool.length * 2, 24);
+  while (selected.length < coreTarget && coreCandidatePool.length > 0 && coreSafety < coreSafetyLimit) {
+    coreSafety += 1;
+    const affordableCoreCandidates = coreCandidatePool.filter((entry) =>
+      canAffordCandidate(entry, getRollQuantity(entry))
+    );
+    if (affordableCoreCandidates.length <= 0) break;
+    const candidate = chooseWeightedRow(
+      affordableCoreCandidates,
+      (entry) => {
+        const sectionPriority = Math.max(0, getMerchantSectionPriority(entry?.merchantSectionKey));
+        return getSelectionWeight(entry) * (1 + Math.min(0.25, 1 / (sectionPriority + 1)));
+      },
+      random
+    );
+    if (!candidate) break;
+    removeCoreCandidate(candidate);
     addSelection(candidate, getRollQuantity(candidate), { stockRole: "core" });
   }
 
@@ -3208,20 +3219,85 @@ async function _syncAllMerchantActorOwnerships() {
   }
 }
 
+function getMerchantStockActorName(merchant = {}) {
+  const actorName = String(merchant?.name ?? "Merchant").trim() || "Merchant";
+  return `Merchant Stock: ${actorName}`;
+}
+
+function getMerchantActorFlagMerchantId(actor) {
+  return String(actor?.getFlag?.(MODULE_ID, "merchantId") ?? actor?.flags?.[MODULE_ID]?.merchantId ?? "").trim();
+}
+
+function getMerchantLinkedActorIds(merchant = {}) {
+  const merchantId = String(merchant?.id ?? "").trim();
+  const ledger = getOperationsLedger();
+  const stockActorId = merchantId
+    ? String(ensureMerchantsState(ledger).stockStateById?.[merchantId]?.actorId ?? "").trim()
+    : "";
+  return [merchant?.actorId, stockActorId].map((entry) => String(entry ?? "").trim()).filter(Boolean);
+}
+
+function findExistingMerchantActor(merchant = {}) {
+  const merchantId = String(merchant?.id ?? "").trim();
+  if (!merchantId) return null;
+  for (const actorId of getMerchantLinkedActorIds(merchant)) {
+    const actor = game.actors?.get?.(actorId) ?? null;
+    if (actor) return actor;
+  }
+  const actors = Array.from(game.actors?.contents ?? []);
+  return (
+    actors.find((actor) => getMerchantActorFlagMerchantId(actor) === merchantId) ??
+    actors.find((actor) => String(actor?.name ?? "").trim() === getMerchantStockActorName(merchant)) ??
+    null
+  );
+}
+
+async function syncMerchantActorLink(actor, merchant = {}) {
+  if (!actor || !game.user?.isGM) return actor;
+  const merchantId = String(merchant?.id ?? "").trim();
+  const currentFlagMerchantId = getMerchantActorFlagMerchantId(actor);
+  if (merchantId && currentFlagMerchantId !== merchantId) {
+    await actor.setFlag?.(MODULE_ID, "merchantId", merchantId);
+  }
+  const currentName = String(actor?.name ?? "").trim();
+  const shouldSyncIdentity = currentFlagMerchantId === merchantId || currentName.startsWith("Merchant Stock:");
+  if (shouldSyncIdentity) {
+    const actorUpdates = {};
+    const nextName = getMerchantStockActorName(merchant);
+    if (nextName && currentName !== nextName) actorUpdates.name = nextName;
+    const currentImg = String(actor?.img ?? "").trim();
+    const nextImg = normalizeFoundryAssetImagePath(merchant?.img, { fallback: "icons/svg/item-bag.svg" });
+    if (nextImg && (!currentImg || currentImg === "icons/svg/item-bag.svg")) actorUpdates.img = nextImg;
+    if (Object.keys(actorUpdates).length > 0) await actor.update(actorUpdates);
+  }
+  await syncMerchantActorOwnership(actor);
+  return actor;
+}
+
 async function ensureMerchantActor(merchantInput, options = {}) {
   const merchant = merchantInput && typeof merchantInput === "object" ? merchantInput : getMerchantById(merchantInput);
   if (!merchant) return null;
-  const existing = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const existing = findExistingMerchantActor(merchant);
   if (existing) {
-    await syncMerchantActorOwnership(existing);
+    await syncMerchantActorLink(existing, merchant);
+    if (options?.skipLedgerUpdate !== true) {
+      await updateOperationsLedger((ledger) => {
+        const merchants = ensureMerchantsState(ledger);
+        const entry = merchants.definitions.find((row) => String(row?.id ?? "") === String(merchant.id ?? ""));
+        if (entry) entry.actorId = String(existing.id ?? "");
+        merchants.stockStateById[String(merchant.id ?? "")] = normalizeMerchantStockStateEntry(
+          merchants.stockStateById?.[String(merchant.id ?? "")],
+          String(existing.id ?? "")
+        );
+      });
+    }
     return existing;
   }
   if (!canAccessGmPage()) return null;
 
-  const actorName = String(merchant.name ?? "Merchant").trim() || "Merchant";
   const actorImg = normalizeFoundryAssetImagePath(merchant.img, { fallback: "icons/svg/item-bag.svg" });
   const actorData = {
-    name: `Merchant Stock: ${actorName}`,
+    name: getMerchantStockActorName(merchant),
     type: "npc",
     img: actorImg,
     ownership: createMerchantOwnershipDefaults(),
@@ -3233,7 +3309,7 @@ async function ensureMerchantActor(merchantInput, options = {}) {
   };
   const created = await Actor.create(actorData, { renderSheet: false });
   if (!created) return null;
-  await syncMerchantActorOwnership(created);
+  await syncMerchantActorLink(created, merchant);
 
   if (options?.skipLedgerUpdate !== true) {
     await updateOperationsLedger((ledger) => {
@@ -3431,9 +3507,10 @@ export async function handleAutomaticMerchantAutoRefreshTick() {
         MERCHANT_DEFAULTS.stock.autoRefresh
       );
       if (!autoRefresh.enabled || Number(autoRefresh.intervalDays ?? 0) <= 0) continue;
+      const resolvedMerchantActorId = findExistingMerchantActor(merchant)?.id ?? merchant.actorId;
       const stockState = normalizeMerchantStockStateEntry(
         merchantsState.stockStateById?.[merchantId],
-        merchant.actorId
+        resolvedMerchantActorId
       );
       const lastRefreshedWorldTs = Number(stockState?.lastRefreshedWorldTs ?? 0);
       if (!Number.isFinite(lastRefreshedWorldTs) || lastRefreshedWorldTs <= 0) {
@@ -3451,9 +3528,10 @@ export async function handleAutomaticMerchantAutoRefreshTick() {
           const merchants = ensureMerchantsState(nextLedger);
           for (const merchantId of initializeMerchantIds) {
             const definition = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
+            const resolvedMerchantActorId = findExistingMerchantActor(definition)?.id ?? definition?.actorId ?? "";
             const stockState = normalizeMerchantStockStateEntry(
               merchants.stockStateById?.[merchantId],
-              definition?.actorId ?? ""
+              resolvedMerchantActorId
             );
             stockState.lastRefreshedWorldTs = currentTimestamp;
             stockState.lastRefreshedDayKey = dayKey;

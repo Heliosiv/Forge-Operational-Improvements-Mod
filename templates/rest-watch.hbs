@@ -296,6 +296,9 @@
             <div class="po-info-chip" title="Projected torches consumed per day"><span>Per Day Torches</span><strong>{{operations.resources.summary.torchDrainPerDay}}</strong></div>
           </div>
           <div class="po-info-strip">
+            <div class="po-info-chip" title="Automatic resource upkeep is tied to the Simple Calendar end-of-day boundary at 6 p.m."><span>Upkeep Time</span><strong>{{operations.resources.summary.upkeepScheduleLabel}}</strong></div>
+            <div class="po-info-chip" title="Last Simple Calendar timestamp recorded for resource upkeep"><span>Last Applied</span><strong>{{operations.resources.summary.upkeepLastAppliedLabel}}</strong></div>
+            <div class="po-info-chip" title="Next Simple Calendar 6 p.m. resource upkeep tick, or Due now when pending days exist"><span>Next Due</span><strong>{{operations.resources.summary.upkeepNextDueLabel}}</strong></div>
             <div class="po-info-chip" title="Calendar days elapsed since last upkeep application"><span>Pending Days</span><strong>{{operations.resources.summary.upkeepDaysPending}}</strong></div>
             <div class="po-info-chip" title="Food expected to be deducted when daily upkeep is applied"><span>Pending Food</span><strong>{{operations.resources.summary.foodDrainPending}}</strong></div>
             <div class="po-info-chip" title="Water expected to be deducted when daily upkeep is applied"><span>Pending Water</span><strong>{{operations.resources.summary.waterDrainPending}}</strong></div>

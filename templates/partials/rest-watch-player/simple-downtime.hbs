@@ -1,11 +1,30 @@
-<section class="po-player-hub-panel po-player-downtime po-downtime-v2 po-downtime-panel" aria-label="Downtime">
-  <div class="po-op-role-row">
+<section id="po-player-hub-panel-downtime" class="po-player-hub-panel po-player-downtime po-downtime-v2 po-downtime-panel" role="tabpanel" aria-label="Downtime">
+  <div class="po-player-hub-panel-head">
     <div>
-      <h3>Downtime</h3>
-      <div class="po-op-summary">{{downtime.publication.statusLabel}}</div>
+      <div class="po-section-title">Downtime</div>
+      <div class="po-hint">{{downtime.publication.statusLabel}}</div>
     </div>
     <span class="po-pill">{{downtime.pendingCount}} pending</span>
   </div>
+
+  <section class="po-player-hub-focus-card" aria-label="Current downtime session">
+    <div>
+      <span>Session</span>
+      <strong>{{downtime.activeSession.statusLabel}}</strong>
+    </div>
+    <div>
+      <span>Hours</span>
+      <strong>{{downtime.hoursGranted}}</strong>
+    </div>
+    <div>
+      <span>Actions</span>
+      <strong>{{downtime.activeSession.availableCardCount}}</strong>
+    </div>
+    <div>
+      <span>Results</span>
+      <strong>{{#if downtime.player.hasDeliveredResults}}Ready{{else}}None{{/if}}</strong>
+    </div>
+  </section>
 
   {{#if downtime.activeSession.launched}}
     {{#if downtime.player.hasAssignedActors}}
@@ -66,7 +85,7 @@
   {{/if}}
 
   <section>
-    <h4>Submitted</h4>
+    <h4>Awaiting GM Review</h4>
     {{#if downtime.hasSubmissions}}
     <div class="po-list">
       {{#each downtime.pendingSubmissions}}
@@ -77,12 +96,12 @@
       {{/each}}
     </div>
     {{else}}
-    <div class="po-empty">No submitted downtime awaiting GM review.</div>
+    <div class="po-empty">No downtime is waiting on GM review.</div>
     {{/if}}
   </section>
 
   <section>
-    <h4>Delivered Results</h4>
+    <h4>Results</h4>
     {{#if downtime.player.hasDeliveredResults}}
     <div class="po-list">
       {{#each downtime.player.deliveredResults}}
@@ -101,7 +120,7 @@
       {{/each}}
     </div>
     {{else}}
-    <div class="po-empty">No delivered downtime results yet.</div>
+    <div class="po-empty">No downtime results are ready.</div>
     {{/if}}
   </section>
 </section>

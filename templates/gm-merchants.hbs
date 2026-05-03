@@ -574,22 +574,13 @@
                 <div class="po-merchant-row-actions">
                   <button
                     type="button"
-                    class="po-btn po-btn-sm {{#if shopTradable}}is-primary{{/if}}"
-                    data-action="merchant-toggle-shop-tradable"
-                    data-merchant-id="{{id}}"
-                    data-tradable="{{#if shopTradable}}false{{else}}true{{/if}}"
-                  >
-                    {{#if shopTradable}}Shop On{{else}}Shop Off{{/if}}
-                  </button>
-                  <button
-                    type="button"
                     class="po-btn po-btn-sm {{#if availableNow}}is-primary{{/if}}"
                     data-action="merchant-make-available-now"
                     data-merchant-id="{{id}}"
                     data-available="{{#if availableNow}}false{{else}}true{{/if}}"
                     title="{{availabilityActionHint}}"
                   >
-                    {{#if availableNow}}Hide{{else}}Open{{/if}}
+                    {{#if availableNow}}Show On{{else}}Show Off{{/if}}
                   </button>
                   <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-bell" title="Ring dinner bell for the current live shop list"><i class="fa-solid fa-bell"></i></button>
                   <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh</button>

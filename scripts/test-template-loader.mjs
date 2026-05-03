@@ -52,6 +52,7 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   const gmPanelNavPartial = readFileSync("templates/partials/gm-panel-nav.hbs", "utf8");
   const weatherUiSource = readFileSync("scripts/features/weather-ui.js", "utf8");
   const gmMerchantsTemplate = readFileSync("templates/gm-merchants.hbs", "utf8");
+  const merchantShopTemplate = readFileSync("templates/merchant-shop.hbs", "utf8");
   const pageActionHelpersSource = readFileSync("scripts/features/page-action-helpers.js", "utf8");
   const settingsHubSource = readFileSync("scripts/core/settings-hub.js", "utf8");
   const settingsHubTemplate = readFileSync("templates/settings-hub.hbs", "utf8");
@@ -110,6 +111,78 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
       'data-action="merchant-shop-bell" title="Ring dinner bell for the current live shop list"'
     ),
     "Configured merchant rows should expose the dinner bell action."
+  );
+  assert.ok(
+    !gmMerchantsTemplate.includes('data-action="merchant-toggle-shop-tradable"'),
+    "Configured merchant rows should not expose a second shop on/off button beside live availability."
+  );
+  assert.ok(
+    gmMerchantsTemplate.includes("{{#if availableNow}}Show On{{else}}Show Off{{/if}}"),
+    "Configured merchant rows should collapse live availability into one Show On/Show Off button."
+  );
+  assert.match(
+    partyOperationsSource,
+    /function findExistingMerchantActor\(merchant = \{\}\)[\s\S]*?getMerchantLinkedActorIds\(merchant\)[\s\S]*?getMerchantActorFlagMerchantId\(actor\) === merchantId[\s\S]*?getMerchantStockActorName\(merchant\)/,
+    "Merchant stock refresh should reuse a linked, flagged, or same-name stock actor before creating a new one."
+  );
+  assert.match(
+    partyOperationsSource,
+    /async function openMerchantShopById[\s\S]*await ensureMerchantActor\(merchant, \{ skipLedgerUpdate: !canAccessGmPage\(\) \}\)[\s\S]*async function openMerchantActorFromElement[\s\S]*await ensureMerchantActor\(merchant\)/,
+    "Merchant shop and actor open actions should recover stale merchant actor links through the shared actor resolver."
+  );
+  assert.doesNotMatch(
+    partyOperationsSource,
+    /const existing = merchant\.actorId \? game\.actors\.get\(String\(merchant\.actorId \?\? ""\)\) : null;/,
+    "Merchant actor resolution should not only trust the stored actorId before creating a replacement actor."
+  );
+  assert.doesNotMatch(
+    partyOperationsSource,
+    /merchantActor = merchant\??\.actorId \? game\.actors\.get/,
+    "Merchant display and open paths should not read only merchant.actorId when resolving stock actors."
+  );
+  assert.doesNotMatch(
+    partyOperationsSource,
+    /hasMerchantActor = Boolean\(merchant\.actorId && game\.actors\.get/,
+    "Merchant shop availability should not disable open actions from stale merchant.actorId checks."
+  );
+  assert.match(
+    partyOperationsSource,
+    /async function upsertMerchant[\s\S]*const resolvedMerchantActorId = findExistingMerchantActor\(normalized\)\?\.id \?\? normalized\.actorId[\s\S]*normalizeMerchantStockStateEntry/,
+    "Merchant edits should preserve stock state through the shared actor resolver when actor links are stale."
+  );
+  assert.match(
+    partyOperationsSource,
+    /async function syncMerchantActorLink[\s\S]*currentName\.startsWith\("Merchant Stock:"\)[\s\S]*actorUpdates\.name = nextName[\s\S]*await actor\.update\(actorUpdates\)/,
+    "Merchant stock actor links should keep module-owned stock actor identity aligned with renamed merchants."
+  );
+  assert.ok(
+    merchantShopTemplate.includes('data-merchant-search="buy"') &&
+      merchantShopTemplate.includes('data-merchant-search="sell"') &&
+      merchantShopTemplate.includes('data-merchant-sort="buy"') &&
+      merchantShopTemplate.includes('data-merchant-sort="sell"'),
+    "Merchant shop should expose search and sort controls for both buy and sell tables."
+  );
+  assert.ok(
+    merchantShopTemplate.includes("data-merchant-currency-tender") &&
+      merchantShopTemplate.includes("data-merchant-buy-target") &&
+      merchantShopTemplate.includes("data-merchant-fill-tender-balance") &&
+      merchantShopTemplate.includes("data-merchant-clear-tender"),
+    "Merchant shop should support coin tender, quick tender balancing, and a bought-item destination."
+  );
+  assert.match(
+    partyOperationsSource,
+    /currencyTenderCp[\s\S]*actorCurrencyDebitCp[\s\S]*transferItemBetweenActors\(merchantActor, buyTargetActor/,
+    "Merchant finalization should deduct coin tender and deliver bought items to the selected destination."
+  );
+  assert.match(
+    partyOperationsSource,
+    /actorCurrencyCp[\s\S]*readMerchantTradeCurrencyTenderFromRoot[\s\S]*setMerchantTradeCurrencyTenderFromCp/,
+    "Merchant trade dialog should track actor funds and use shared helpers for quick coin tender balancing."
+  );
+  assert.match(
+    partyOperationsSource,
+    /maximumApplicableTenderCp[\s\S]*Coin tender exceeds the remaining balance[\s\S]*setMerchantTradeCurrencyTenderFromCp[\s\S]*row\.dataset\.sortUnitCp = String\(unitCp\)/,
+    "Merchant trade should reject excess coin tender, offer quick tender balancing, and keep sortable unit prices aligned with repricing."
   );
 
   for (const requiredText of [

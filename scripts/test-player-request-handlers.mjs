@@ -114,9 +114,11 @@ function buildBaseHandlers(overrides = {}) {
     {
       merchantId: "merchant-1",
       actorId: "actor-1",
+      buyTargetActorId: "actor-1",
       settlement: "waterdeep",
       buyItems: [{ itemId: "buy-1", qty: 2 }],
       sellItems: [{ itemId: "sell-1", qty: 3 }],
+      currencyTender: {},
       barterResolution: { applied: true, delta: -1 }
     }
   ]);

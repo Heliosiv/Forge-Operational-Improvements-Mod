@@ -1575,6 +1575,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-weather-roll"
 ]);
 const UPKEEP_EVENING_END_MINUTES = 18 * 60;
+const UPKEEP_EVENING_END_LABEL = "18:00 Simple Calendar";
 const REST_WATCH_MAX_ENTRIES = 5;
 const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
 const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
@@ -7282,6 +7283,9 @@ function buildOperationsContextFallback() {
     fallbackResourcesState.upkeepLastAppliedTs,
     getCurrentWorldTimestamp()
   );
+  const fallbackUpkeepSchedule = buildUpkeepScheduleSummary(fallbackResourcesState, {
+    upkeepDaysPending: fallbackUpkeepDaysPending
+  });
   const fallbackResourcesNumeric = {
     food: Number(fallbackResourcesState.food ?? 0),
     partyFoodRations: getStewardPoolFiniteAmount(fallbackStewardPools.food),
@@ -7526,6 +7530,9 @@ function buildOperationsContextFallback() {
         foodDrainPerDay: fallbackFoodDrainPerDay,
         waterDrainPerDay: fallbackWaterDrainPerDay,
         torchDrainPerDay: fallbackTorchDrainPerDay,
+        upkeepScheduleLabel: fallbackUpkeepSchedule.scheduleLabel,
+        upkeepLastAppliedLabel: fallbackUpkeepSchedule.lastAppliedLabel,
+        upkeepNextDueLabel: fallbackUpkeepSchedule.nextDueLabel,
         upkeepDaysPending: fallbackUpkeepDaysPending,
         foodDrainPending: fallbackFoodDrainPerDay * fallbackUpkeepDaysPending,
         waterDrainPending: fallbackWaterDrainPerDay * fallbackUpkeepDaysPending,
@@ -11681,6 +11688,7 @@ const AUDIO_MIX_TRACK_BROWSER_PAGE_SIZE = 40;
 const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
 const AUDIO_MIX_TRANSPORT_LABEL = "Party Operations Shared Mix";
+const AUDIO_MIX_PLAYLIST_SOUND_LIMIT = 24;
 const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
 const AUDIO_MIX_PRESET_STORE_VERSION = 1;
 const AUDIO_MIX_CHANNEL_LABELS = Object.freeze({
@@ -13545,7 +13553,7 @@ async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
 }
 
 async function syncAudioMixPlaylistSounds(playlist, preset, candidates) {
-  const rows = candidates.slice(0, 24);
+  const rows = candidates.slice(0, AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
   const existingIds = Array.from(playlist?.sounds?.contents ?? [])
     .map((sound) => sound.id)
     .filter(Boolean);
@@ -13606,6 +13614,17 @@ function buildOrderedAudioMixCandidates(candidates, options = {}) {
     }
   }
   return ordered;
+}
+
+function buildAudioMixPlaylistWindow(candidates = [], preferredTrackId = "") {
+  const rows = Array.isArray(candidates) ? candidates.slice() : [];
+  if (rows.length <= AUDIO_MIX_PLAYLIST_SOUND_LIMIT) return rows;
+  const normalizedPreferredTrackId = String(preferredTrackId ?? "").trim();
+  if (!normalizedPreferredTrackId) return rows.slice(0, AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
+  const preferredIndex = rows.findIndex(({ item }) => String(item?.id ?? "").trim() === normalizedPreferredTrackId);
+  if (preferredIndex < 0) return rows.slice(0, AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
+  const startIndex = Math.max(0, Math.min(preferredIndex, Math.max(0, rows.length - AUDIO_MIX_PLAYLIST_SOUND_LIMIT)));
+  return rows.slice(startIndex, startIndex + AUDIO_MIX_PLAYLIST_SOUND_LIMIT);
 }
 
 async function stopManagedAudioMixPlaylist(playlist) {
@@ -13793,12 +13812,15 @@ async function playAudioMixPresetById(presetId, options = {}) {
   const preset = getAudioMixPresetById(presetId);
   const catalog = getAudioLibraryCatalog();
   const queuedTrackIds = normalizeAudioMixPresetTrackIds(options.queueTrackIds ?? preset?.trackIds ?? []);
-  const candidates = buildAudioMixAssignedCandidates(catalog, {
-    ...preset,
-    trackIds: queuedTrackIds
-  });
+  const candidates =
+    queuedTrackIds.length > 0
+      ? buildAudioMixAssignedCandidates(catalog, {
+          ...preset,
+          trackIds: queuedTrackIds
+        })
+      : buildAudioMixCandidates(catalog, preset);
   if (candidates.length <= 0) {
-    throw new Error(`Add tracks from the Track Browser to the ${preset.label} queue before playing it.`);
+    throw new Error(`No playable tracks matched the ${preset.label} mix. Scan the library or adjust this preset.`);
   }
 
   const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
@@ -13814,11 +13836,12 @@ async function playAudioMixPresetById(presetId, options = {}) {
   await stopManagedAudioMixPlaylist(playlist);
   const orderedCandidates = buildOrderedAudioMixCandidates(candidates, options);
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
+  const playlistCandidates = buildAudioMixPlaylistWindow(orderedCandidates, preferredTrackId);
   const chosenCandidate = preferredTrackId
-    ? (orderedCandidates.find(({ item }) => item.id === preferredTrackId) ??
-      pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId))
-    : pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId);
-  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, orderedCandidates);
+    ? (playlistCandidates.find(({ item }) => item.id === preferredTrackId) ??
+      pickAudioMixCandidate(playlistCandidates, options.excludeTrackId ?? priorState.activeTrackId))
+    : pickAudioMixCandidate(playlistCandidates, options.excludeTrackId ?? priorState.activeTrackId);
+  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, playlistCandidates);
   const chosenSound =
     Array.from(createdSounds ?? []).find(
       (sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id
@@ -13829,7 +13852,7 @@ async function playAudioMixPresetById(presetId, options = {}) {
     throw new Error(`Failed to prepare playback for the ${preset.label} mix.`);
   }
 
-  const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
+  const queueTrackIds = playlistCandidates.map(({ item }) => item.id);
   const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
   const playbackId = foundry.utils.randomID();
   const nextState = await setAudioMixStateFlag(playlist, {
@@ -24704,12 +24727,42 @@ function getNextUpkeepDueKey(timestamp = getCurrentWorldTimestamp()) {
   return getUpkeepDueCount(timestamp) + 1;
 }
 
+function getNextUpkeepDueTimestamp(timestamp = getCurrentWorldTimestamp()) {
+  const currentTimestamp = Number(timestamp);
+  if (!Number.isFinite(currentTimestamp)) return 0;
+  const secondsPerDay = getCalendarSecondsPerDayBridge({ gameRef: game, globalRef: globalThis });
+  const boundaryOffsetSeconds = Math.floor((UPKEEP_EVENING_END_MINUTES / (24 * 60)) * secondsPerDay);
+  return Math.max(0, getNextUpkeepDueKey(currentTimestamp) * secondsPerDay + boundaryOffsetSeconds);
+}
+
 function getUpkeepDaysFromCalendar(lastAppliedTimestamp, currentTimestamp = getCurrentWorldTimestamp()) {
   return getElapsedCalendarDaysBridge(lastAppliedTimestamp, currentTimestamp, {
     boundaryMinutes: UPKEEP_EVENING_END_MINUTES,
     gameRef: game,
     globalRef: globalThis
   });
+}
+
+function buildUpkeepScheduleSummary(resourcesState = {}, options = {}) {
+  const currentTimestamp = Number(options.currentTimestamp ?? getCurrentWorldTimestamp());
+  const lastAppliedTimestamp = Number(resourcesState?.upkeepLastAppliedTs);
+  const pendingDays = Math.max(
+    0,
+    Math.floor(
+      Number(
+        options.upkeepDaysPending ??
+          getUpkeepDaysFromCalendar(lastAppliedTimestamp, Number.isFinite(currentTimestamp) ? currentTimestamp : 0)
+      ) || 0
+    )
+  );
+  const nextDueTimestamp = getNextUpkeepDueTimestamp(Number.isFinite(currentTimestamp) ? currentTimestamp : 0);
+  return {
+    scheduleLabel: UPKEEP_EVENING_END_LABEL,
+    lastAppliedLabel: Number.isFinite(lastAppliedTimestamp)
+      ? formatRecoveryDueLabel(lastAppliedTimestamp)
+      : "Not started",
+    nextDueLabel: pendingDays > 0 ? "Due now" : formatRecoveryDueLabel(nextDueTimestamp)
+  };
 }
 
 function getOperationsLedger() {
@@ -25541,6 +25594,7 @@ function buildOperationsContext() {
   const waterDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.waterPerMember * upkeep.waterMultiplier));
   const torchDrainPerDay = Math.max(0, Math.ceil(upkeep.torchPerRest));
   const upkeepDaysPending = getUpkeepDaysFromCalendar(resourcesState.upkeepLastAppliedTs, getCurrentWorldTimestamp());
+  const upkeepSchedule = buildUpkeepScheduleSummary(resourcesState, { upkeepDaysPending });
   const resourcesNumeric = {
     food: Number(resourcesState.food ?? 0),
     partyFoodRations: getStewardPoolFiniteAmount(stewardPools.food),
@@ -25881,6 +25935,9 @@ function buildOperationsContext() {
         foodDrainPerDay,
         waterDrainPerDay,
         torchDrainPerDay,
+        upkeepScheduleLabel: upkeepSchedule.scheduleLabel,
+        upkeepLastAppliedLabel: upkeepSchedule.lastAppliedLabel,
+        upkeepNextDueLabel: upkeepSchedule.nextDueLabel,
         upkeepDaysPending,
         foodDrainPending: foodDrainPerDay * upkeepDaysPending,
         waterDrainPending: waterDrainPerDay * upkeepDaysPending,
@@ -27585,7 +27642,11 @@ async function upsertMerchant(definitionPatch = {}) {
     );
     if (existingIndex >= 0) merchants.definitions[existingIndex] = normalized;
     else merchants.definitions.push(normalized);
-    const stockState = normalizeMerchantStockStateEntry(merchants.stockStateById?.[normalized.id], normalized.actorId);
+    const resolvedMerchantActorId = findExistingMerchantActor(normalized)?.id ?? normalized.actorId;
+    const stockState = normalizeMerchantStockStateEntry(
+      merchants.stockStateById?.[normalized.id],
+      resolvedMerchantActorId
+    );
     if (normalized?.stock?.autoRefresh?.enabled && Number(stockState?.lastRefreshedWorldTs ?? 0) <= 0) {
       stockState.lastRefreshedWorldTs = getCurrentWorldTimestamp();
       stockState.lastRefreshedDayKey = getGatherDayKey(stockState.lastRefreshedWorldTs);
@@ -28238,6 +28299,39 @@ function cpToCurrencyBundle(totalCpInput) {
   remaining -= sp * 10;
   const cp = Math.floor(remaining);
   return { pp, gp, sp, cp };
+}
+
+function normalizeMerchantCurrencyTender(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    pp: Math.max(0, Math.floor(Number(source.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(source.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(source.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(source.cp ?? 0) || 0))
+  };
+}
+
+function getMerchantTradeBuyTargetOptions(user = game.user, activeActor = null) {
+  const activeActorId = String(activeActor?.id ?? "").trim();
+  const actorOptions = getLootClaimSelectableActorsForUser(user).map((actor) => ({
+    id: String(actor?.id ?? "").trim(),
+    name: String(actor?.name ?? "Actor").trim() || "Actor",
+    isStashLike: isLootClaimStashLikeActor(actor)
+  }));
+  if (activeActor?.id && !actorOptions.some((entry) => String(entry.id) === activeActorId)) {
+    actorOptions.push({
+      id: activeActorId,
+      name: String(activeActor.name ?? "Actor").trim() || "Actor",
+      isStashLike: isLootClaimStashLikeActor(activeActor)
+    });
+  }
+  const selectedId = resolveDefaultLootClaimActorIdFromOptions(actorOptions, {
+    activeActorId
+  });
+  return actorOptions.map((entry) => ({
+    ...entry,
+    selected: String(entry.id) === selectedId
+  }));
 }
 
 async function setActorCurrencyBundle(actor, bundle = {}) {
@@ -29152,7 +29246,7 @@ function getMerchantSectionSortOrder(sectionKey = "", role = "core") {
 }
 
 function buildMerchantInventoryRowsForDisplay(merchant = {}) {
-  const merchantActor = merchant?.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const merchantActor = findExistingMerchantActor(merchant);
   const merchantActorId = String(merchantActor?.id ?? "").trim();
   const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
   const pricing = merchant?.pricing ?? {};
@@ -29438,8 +29532,11 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const definitionsForDisplay = definitions.map((merchant) => {
     const merchantArchetype = normalizeMerchantArchetype(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
     const merchantArchetypeDefinition = getMerchantArchetypeDefinition(merchantArchetype);
-    const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
-    const stockMeta = normalizeMerchantStockStateEntry(stockStateById?.[merchant.id], merchant.actorId);
+    const merchantActor = findExistingMerchantActor(merchant);
+    const stockMeta = normalizeMerchantStockStateEntry(
+      stockStateById?.[merchant.id],
+      merchantActor?.id ?? merchant.actorId
+    );
     const autoRefresh = normalizeMerchantAutoRefreshConfig(
       merchant?.stock?.autoRefresh ?? {},
       MERCHANT_DEFAULTS.stock.autoRefresh
@@ -29789,7 +29886,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
             })
           )
           .map((merchant) => {
-            const hasMerchantActor = Boolean(merchant.actorId && game.actors.get(merchant.actorId));
+            const hasMerchantActor = Boolean(findExistingMerchantActor(merchant));
             const canOpenShop = Boolean(activeActorId) && hasMerchantActor;
             const openShopHint = !activeActorId
               ? "Select an actor first."
@@ -30724,20 +30821,85 @@ async function syncAllMerchantActorOwnerships() {
   }
 }
 
+function getMerchantStockActorName(merchant = {}) {
+  const actorName = String(merchant?.name ?? "Merchant").trim() || "Merchant";
+  return `Merchant Stock: ${actorName}`;
+}
+
+function getMerchantActorFlagMerchantId(actor) {
+  return String(actor?.getFlag?.(MODULE_ID, "merchantId") ?? actor?.flags?.[MODULE_ID]?.merchantId ?? "").trim();
+}
+
+function getMerchantLinkedActorIds(merchant = {}) {
+  const merchantId = String(merchant?.id ?? "").trim();
+  const ledger = getOperationsLedger();
+  const stockActorId = merchantId
+    ? String(ensureMerchantsState(ledger).stockStateById?.[merchantId]?.actorId ?? "").trim()
+    : "";
+  return [merchant?.actorId, stockActorId].map((entry) => String(entry ?? "").trim()).filter(Boolean);
+}
+
+function findExistingMerchantActor(merchant = {}) {
+  const merchantId = String(merchant?.id ?? "").trim();
+  if (!merchantId) return null;
+  for (const actorId of getMerchantLinkedActorIds(merchant)) {
+    const actor = game.actors?.get?.(actorId) ?? null;
+    if (actor) return actor;
+  }
+  const actors = Array.from(game.actors?.contents ?? []);
+  return (
+    actors.find((actor) => getMerchantActorFlagMerchantId(actor) === merchantId) ??
+    actors.find((actor) => String(actor?.name ?? "").trim() === getMerchantStockActorName(merchant)) ??
+    null
+  );
+}
+
+async function syncMerchantActorLink(actor, merchant = {}) {
+  if (!actor || !game.user?.isGM) return actor;
+  const merchantId = String(merchant?.id ?? "").trim();
+  const currentFlagMerchantId = getMerchantActorFlagMerchantId(actor);
+  if (merchantId && currentFlagMerchantId !== merchantId) {
+    await actor.setFlag?.(MODULE_ID, "merchantId", merchantId);
+  }
+  const currentName = String(actor?.name ?? "").trim();
+  const shouldSyncIdentity = currentFlagMerchantId === merchantId || currentName.startsWith("Merchant Stock:");
+  if (shouldSyncIdentity) {
+    const actorUpdates = {};
+    const nextName = getMerchantStockActorName(merchant);
+    if (nextName && currentName !== nextName) actorUpdates.name = nextName;
+    const currentImg = String(actor?.img ?? "").trim();
+    const nextImg = normalizeFoundryAssetImagePath(merchant?.img, { fallback: "icons/svg/item-bag.svg" });
+    if (nextImg && (!currentImg || currentImg === "icons/svg/item-bag.svg")) actorUpdates.img = nextImg;
+    if (Object.keys(actorUpdates).length > 0) await actor.update(actorUpdates);
+  }
+  await syncMerchantActorOwnership(actor);
+  return actor;
+}
+
 async function ensureMerchantActor(merchantInput, options = {}) {
   const merchant = merchantInput && typeof merchantInput === "object" ? merchantInput : getMerchantById(merchantInput);
   if (!merchant) return null;
-  const existing = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const existing = findExistingMerchantActor(merchant);
   if (existing) {
-    await syncMerchantActorOwnership(existing);
+    await syncMerchantActorLink(existing, merchant);
+    if (options?.skipLedgerUpdate !== true) {
+      await updateOperationsLedger((ledger) => {
+        const merchants = ensureMerchantsState(ledger);
+        const entry = merchants.definitions.find((row) => String(row?.id ?? "") === String(merchant.id ?? ""));
+        if (entry) entry.actorId = String(existing.id ?? "");
+        merchants.stockStateById[String(merchant.id ?? "")] = normalizeMerchantStockStateEntry(
+          merchants.stockStateById?.[String(merchant.id ?? "")],
+          String(existing.id ?? "")
+        );
+      });
+    }
     return existing;
   }
   if (!canAccessGmPage()) return null;
 
-  const actorName = String(merchant.name ?? "Merchant").trim() || "Merchant";
   const actorImg = normalizeFoundryAssetImagePath(merchant.img, { fallback: "icons/svg/item-bag.svg" });
   const actorData = {
-    name: `Merchant Stock: ${actorName}`,
+    name: getMerchantStockActorName(merchant),
     type: "npc",
     img: actorImg,
     ownership: createMerchantOwnershipDefaults(),
@@ -30749,7 +30911,7 @@ async function ensureMerchantActor(merchantInput, options = {}) {
   };
   const created = await Actor.create(actorData, { renderSheet: false });
   if (!created) return null;
-  await syncMerchantActorOwnership(created);
+  await syncMerchantActorLink(created, merchant);
 
   if (options?.skipLedgerUpdate !== true) {
     await updateOperationsLedger((ledger) => {
@@ -30947,9 +31109,10 @@ async function handleAutomaticMerchantAutoRefreshTick() {
         MERCHANT_DEFAULTS.stock.autoRefresh
       );
       if (!autoRefresh.enabled || Number(autoRefresh.intervalDays ?? 0) <= 0) continue;
+      const resolvedMerchantActorId = findExistingMerchantActor(merchant)?.id ?? merchant.actorId;
       const stockState = normalizeMerchantStockStateEntry(
         merchantsState.stockStateById?.[merchantId],
-        merchant.actorId
+        resolvedMerchantActorId
       );
       const lastRefreshedWorldTs = Number(stockState?.lastRefreshedWorldTs ?? 0);
       if (!Number.isFinite(lastRefreshedWorldTs) || lastRefreshedWorldTs <= 0) {
@@ -30967,9 +31130,10 @@ async function handleAutomaticMerchantAutoRefreshTick() {
           const merchants = ensureMerchantsState(nextLedger);
           for (const merchantId of initializeMerchantIds) {
             const definition = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
+            const resolvedMerchantActorId = findExistingMerchantActor(definition)?.id ?? definition?.actorId ?? "";
             const stockState = normalizeMerchantStockStateEntry(
               merchants.stockStateById?.[merchantId],
-              definition?.actorId ?? ""
+              resolvedMerchantActorId
             );
             stockState.lastRefreshedWorldTs = currentTimestamp;
             stockState.lastRefreshedDayKey = dayKey;
@@ -31283,6 +31447,16 @@ async function postMerchantTradeToChat(outcome = {}) {
     sellRows.length > 0
       ? `<p><strong>Sold:</strong> ${sellRows.map((row) => `${poEscapeHtml(row.itemName)} x${row.qty}`).join(", ")}</p>`
       : "";
+  const buyTargetName = String(outcome?.buyTargetActorName ?? outcome?.actorName ?? "Actor").trim() || "Actor";
+  const destinationHtml =
+    buyRows.length > 0 && buyTargetName !== actorName
+      ? `<p><strong>Bought items delivered to:</strong> ${poEscapeHtml(buyTargetName)}</p>`
+      : "";
+  const currencyTenderCp = Math.max(0, Math.floor(Number(outcome?.currencyTenderCp ?? 0) || 0));
+  const currencyTenderHtml =
+    currencyTenderCp > 0
+      ? `<p><strong>Coins tendered:</strong> ${poEscapeHtml(formatMerchantCp(currencyTenderCp))}</p>`
+      : "";
   const netCp = Math.floor(Number(outcome?.netCp ?? 0) || 0);
   const netLabel =
     netCp > 0
@@ -31315,7 +31489,9 @@ async function postMerchantTradeToChat(outcome = {}) {
         ${barterHtml}
         ${modifierHtml}
         ${buyHtml}
+        ${destinationHtml}
         ${sellHtml}
+        ${currencyTenderHtml}
         <p><strong>Net:</strong> ${poEscapeHtml(netLabel)}</p>
       </div>
     `
@@ -31455,6 +31631,12 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
   if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
+  const buyTargetActorId = String(payload?.buyTargetActorId ?? actorId).trim() || actorId;
+  const buyTargetActor = game.actors.get(buyTargetActorId);
+  if (!buyTargetActor) return { ok: false, message: "Bought-item destination not found." };
+  if (!canUserManageLootClaimActor(user, buyTargetActor)) {
+    return { ok: false, message: "You cannot send bought items to that destination." };
+  }
 
   const ledger = getOperationsLedger();
   const merchants = ensureMerchantsState(ledger);
@@ -31474,7 +31656,7 @@ async function applyMerchantTradeForUser(user, payload = {}) {
     return { ok: false, message: "Merchant is not currently available to this actor." };
   }
 
-  const merchantActor = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const merchantActor = await ensureMerchantActor(merchant, { skipLedgerUpdate: !canAccessGmPage() });
   if (!merchantActor)
     return { ok: false, message: "Merchant stock actor is unavailable. Ask the GM to refresh stock." };
 
@@ -31498,6 +31680,8 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   const buyLinesRequested = normalizeMerchantTradeLineItems(payload?.buyItems ?? []);
   const sellLinesRequestedRaw = normalizeMerchantTradeLineItems(payload?.sellItems ?? []);
   const sellLinesRequested = sellEnabled ? sellLinesRequestedRaw : [];
+  const currencyTender = normalizeMerchantCurrencyTender(payload?.currencyTender ?? {});
+  const currencyTenderCp = currencyBundleToCp(currencyTender);
   if (buyLinesRequested.length === 0 && sellLinesRequested.length === 0) {
     if (!sellEnabled && sellLinesRequestedRaw.length > 0) {
       return { ok: false, message: `${merchant.name} is not buying goods right now.` };
@@ -31622,15 +31806,24 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   }
 
   const totalBuyCp = buyLines.reduce((sum, row) => sum + row.unitCp * row.qty, 0);
-  const totalSellCp = sellLines.reduce((sum, row) => sum + row.unitCp * row.qty, 0);
+  const totalSellItemCp = sellLines.reduce((sum, row) => sum + row.unitCp * row.qty, 0);
+  const maximumApplicableTenderCp = Math.max(0, totalBuyCp - totalSellItemCp);
+  if (currencyTenderCp > maximumApplicableTenderCp) {
+    return {
+      ok: false,
+      message: `Coin tender exceeds the remaining balance by ${formatMerchantCp(currencyTenderCp - maximumApplicableTenderCp)}.`
+    };
+  }
+  const totalSellCp = totalSellItemCp + currencyTenderCp;
   const netCp = totalBuyCp - totalSellCp;
   const actorCurrencyBeforeCp = currencyBundleToCp(getActorCurrencyBundle(actor));
   let merchantCurrencyBeforeCp = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
   if (merchantCurrencyBeforeCp <= 0 && configuredCashCp > 0) merchantCurrencyBeforeCp = configuredCashCp;
-  if (netCp > 0 && actorCurrencyBeforeCp < netCp) {
-    return { ok: false, message: `${actor.name} cannot afford ${formatMerchantCp(netCp)}.` };
+  const actorCurrencyDebitCp = currencyTenderCp + Math.max(0, netCp);
+  if (actorCurrencyDebitCp > 0 && actorCurrencyBeforeCp < actorCurrencyDebitCp) {
+    return { ok: false, message: `${actor.name} cannot afford ${formatMerchantCp(actorCurrencyDebitCp)}.` };
   }
-  if (netCp < 0 && merchantCurrencyBeforeCp < Math.abs(netCp)) {
+  if (merchantCurrencyBeforeCp + totalBuyCp < totalSellItemCp) {
     return {
       ok: false,
       message: `${merchant.name} only has ${formatMerchantCp(merchantCurrencyBeforeCp)} available for purchases.`
@@ -31641,13 +31834,13 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   try {
     for (const line of buyLines) {
       // eslint-disable-next-line no-await-in-loop
-      const ok = await transferItemBetweenActors(merchantActor, actor, line.sourceItem, line.qty, {
+      const ok = await transferItemBetweenActors(merchantActor, buyTargetActor, line.sourceItem, line.qty, {
         clearGeneratedFlag: true
       });
       if (!ok) throw new Error("Buy transfer failed due to stock changes. Reopen shop and retry.");
       completedTransfers.push({
         sourceActor: merchantActor,
-        targetActor: actor,
+        targetActor: buyTargetActor,
         referenceItem: line.sourceItem,
         qty: line.qty
       });
@@ -31663,8 +31856,8 @@ async function applyMerchantTradeForUser(user, payload = {}) {
         qty: line.qty
       });
     }
-    const actorCurrencyAfterCp = actorCurrencyBeforeCp - netCp;
-    const merchantCurrencyAfterCp = merchantCurrencyBeforeCp + netCp;
+    const actorCurrencyAfterCp = actorCurrencyBeforeCp - actorCurrencyDebitCp + Math.max(0, -netCp);
+    const merchantCurrencyAfterCp = merchantCurrencyBeforeCp + totalBuyCp - totalSellItemCp;
     await setActorCurrencyFromCp(actor, actorCurrencyAfterCp);
     await setActorCurrencyFromCp(merchantActor, merchantCurrencyAfterCp);
     const actorCurrencyVerifiedCp = currencyBundleToCp(getActorCurrencyBundle(actor));
@@ -31679,10 +31872,15 @@ async function applyMerchantTradeForUser(user, payload = {}) {
       userName: String(user?.name ?? "Player").trim() || "Player",
       actorId: String(actor.id ?? ""),
       actorName: String(actor.name ?? "Actor"),
+      buyTargetActorId: String(buyTargetActor.id ?? ""),
+      buyTargetActorName: String(buyTargetActor.name ?? "Actor"),
       merchantId,
       merchantName: String(merchant.name ?? "Merchant"),
       settlement,
       totalBuyCp,
+      totalSellItemCp,
+      currencyTender,
+      currencyTenderCp,
       totalSellCp,
       netCp,
       baseBuyMarkup,
@@ -31838,6 +32036,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
           : 1.0;
       const effectiveBuyMult = itemIsLiquidation ? 1.0 : buyMarkup * rarityMult * stockPressureMult * taxFeeFactor;
       const unitCp = getMerchantItemUnitPriceCp(itemData, effectiveBuyMult);
+      const metaPills = buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 });
       return {
         itemId: String(item?.id ?? ""),
         itemName: String(item?.name ?? "Item"),
@@ -31847,13 +32046,21 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
         unitCp,
         rarityMult: Number(rarityMult.toFixed(4)),
         unitLabel: formatMerchantCp(unitCp),
-        metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }),
-        hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }).length > 0,
+        metaPills,
+        hasMetaPills: metaPills.length > 0,
         valueLabel: baseGp > 0 ? `${baseGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp` : "",
         stockRole: stockMeta.role,
         stockRoleLabel: stockMeta.roleLabel,
         stockSectionKey: stockMeta.sectionKey,
-        stockSectionLabel: stockMeta.sectionLabel
+        stockSectionLabel: stockMeta.sectionLabel,
+        searchText: [
+          String(item?.name ?? "Item"),
+          stockMeta.roleLabel,
+          stockMeta.sectionLabel,
+          ...metaPills.map((pill) => String(pill?.label ?? ""))
+        ]
+          .join(" ")
+          .trim()
       };
     })
     .filter((row) => row.qty > 0)
@@ -31901,6 +32108,16 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
           const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
           const baseGp = Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0));
           const unitCp = getMerchantItemUnitPriceCp(itemData, sellRate);
+          const itemTypeLabel = String(
+            LOOT_ITEM_TYPE_LABELS[
+              String(item?.type ?? "")
+                .trim()
+                .toLowerCase()
+            ] ??
+              item?.type ??
+              "item"
+          );
+          const metaPills = buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 3 });
           return {
             itemId: String(item?.id ?? ""),
             itemName: String(item?.name ?? "Item"),
@@ -31908,30 +32125,31 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
             itemType: String(item?.type ?? "")
               .trim()
               .toLowerCase(),
-            itemTypeLabel: String(
-              LOOT_ITEM_TYPE_LABELS[
-                String(item?.type ?? "")
-                  .trim()
-                  .toLowerCase()
-              ] ??
-                item?.type ??
-                "item"
-            ),
+            itemTypeLabel,
             qty,
             baseGp,
             unitCp,
             unitLabel: formatMerchantCp(unitCp),
-            metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 3 }),
-            hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 3 }).length > 0,
-            valueLabel: baseGp > 0 ? `${baseGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp` : ""
+            metaPills,
+            hasMetaPills: metaPills.length > 0,
+            valueLabel: baseGp > 0 ? `${baseGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp` : "",
+            searchText: [
+              String(item?.name ?? "Item"),
+              itemTypeLabel,
+              ...metaPills.map((pill) => String(pill?.label ?? ""))
+            ]
+              .join(" ")
+              .trim()
           };
         })
         .filter((row) => row.qty > 0)
         .sort((a, b) => a.itemName.localeCompare(b.itemName));
 
-  const actorFunds = formatMerchantCp(currencyBundleToCp(getActorCurrencyBundle(actor)));
+  const actorCurrencyCp = currencyBundleToCp(getActorCurrencyBundle(actor));
+  const actorFunds = formatMerchantCp(actorCurrencyCp);
   const merchantFundsBase = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
   const merchantFunds = formatMerchantCp(Math.max(merchantFundsBase, configuredCashCp));
+  const buyTargetOptions = getMerchantTradeBuyTargetOptions(game.user, actor);
   const buybackTypeSummary =
     buybackAllowedTypeSet.size >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
       ? "All item types"
@@ -31991,6 +32209,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     baseSellRate: sellRate,
     stockPressureMultiplier: Number(stockPressureMult.toFixed(4)),
     taxFeeFactor: Number(taxFeeFactor.toFixed(4)),
+    actorCurrencyCp,
     taxFeePercent,
     liquidationMode,
     merchantName: String(merchant?.name ?? "Merchant"),
@@ -32009,6 +32228,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     settlementLabel,
     actorFunds,
     merchantFunds,
+    buyTargetOptions,
     buyMarkupLabel: `x${buyMarkup.toFixed(2)}`,
     sellRateLabel: `${Math.round(sellRate * 100)}%`,
     stockPressureLabel,
@@ -32058,13 +32278,68 @@ function readMerchantTradeInputsFromDialog(html) {
         return { itemId, qty };
       })
       .filter((entry) => entry.itemId && entry.qty > 0);
+  const currencyTender = readMerchantTradeCurrencyTenderFromRoot(root);
   return {
     merchantId: meta.merchantId,
     actorId: meta.actorId,
+    buyTargetActorId: String(root.querySelector("select[data-merchant-buy-target]")?.value ?? meta.actorId).trim(),
     settlement: meta.settlement,
     buyItems: readLines("input[data-merchant-buy-item]", "merchantBuyItem"),
-    sellItems: readLines("input[data-merchant-sell-item]", "merchantSellItem")
+    sellItems: readLines("input[data-merchant-sell-item]", "merchantSellItem"),
+    currencyTender
   };
+}
+
+function getMerchantTradeCurrencyTenderInputs(root) {
+  if (!(root instanceof HTMLElement)) return [];
+  return Array.from(root.querySelectorAll("input[data-merchant-currency-tender]")).filter(
+    (input) => input instanceof HTMLInputElement
+  );
+}
+
+function readMerchantTradeCurrencyTenderFromRoot(root, { normalizeInputs = false } = {}) {
+  return getMerchantTradeCurrencyTenderInputs(root).reduce(
+    (bundle, input) => {
+      const denom = String(input?.dataset?.merchantCurrencyTender ?? "")
+        .trim()
+        .toLowerCase();
+      if (!["pp", "gp", "sp", "cp"].includes(denom)) return bundle;
+      const qty = Math.max(0, Math.floor(Number(input?.value ?? 0) || 0));
+      if (normalizeInputs && String(input.value) !== String(qty)) input.value = String(qty);
+      bundle[denom] = qty;
+      return bundle;
+    },
+    { pp: 0, gp: 0, sp: 0, cp: 0 }
+  );
+}
+
+function setMerchantTradeCurrencyTenderFromCp(root, totalCpInput) {
+  const bundle = cpToCurrencyBundle(totalCpInput);
+  for (const input of getMerchantTradeCurrencyTenderInputs(root)) {
+    const denom = String(input?.dataset?.merchantCurrencyTender ?? "")
+      .trim()
+      .toLowerCase();
+    if (!["pp", "gp", "sp", "cp"].includes(denom)) continue;
+    input.value = String(bundle[denom] ?? 0);
+  }
+}
+
+function getMerchantTradeSelectedSubtotalCp(root, selector) {
+  if (!(root instanceof HTMLElement)) return 0;
+  return Array.from(root.querySelectorAll(selector)).reduce((sum, input) => {
+    if (!(input instanceof HTMLInputElement)) return sum;
+    const qty = Math.max(0, Math.floor(Number(input?.value ?? 0) || 0));
+    const max = Math.max(0, Math.floor(Number(input?.getAttribute?.("max") ?? 0) || 0));
+    if (qty > max) input.value = String(max);
+    const unitCp = Math.max(0, Math.floor(Number(input?.dataset?.unitCp ?? 0) || 0));
+    return sum + Math.max(0, Math.min(qty, max)) * unitCp;
+  }, 0);
+}
+
+function getMerchantTradeOutstandingTenderCp(root) {
+  const buyCp = getMerchantTradeSelectedSubtotalCp(root, "input[data-merchant-buy-item]");
+  const sellItemCp = getMerchantTradeSelectedSubtotalCp(root, "input[data-merchant-sell-item]");
+  return Math.max(0, buyCp - sellItemCp);
 }
 
 function bindMerchantTradeDialogItemOpeners(html) {
@@ -32108,16 +32383,13 @@ function recalculateMerchantTradeDialogTotals(root) {
   const sellNode = root.querySelector("[data-merchant-sell-total]");
   const netNode = root.querySelector("[data-merchant-net-total]");
   const netCard = root.querySelector(".po-merchant-trade-total-card.is-net");
-  const sumBySelector = (selector) =>
-    Array.from(root.querySelectorAll(selector)).reduce((sum, input) => {
-      const qty = Math.max(0, Math.floor(Number(input?.value ?? 0) || 0));
-      const max = Math.max(0, Math.floor(Number(input?.getAttribute?.("max") ?? 0) || 0));
-      if (qty > max) input.value = String(max);
-      const unitCp = Math.max(0, Math.floor(Number(input?.dataset?.unitCp ?? 0) || 0));
-      return sum + Math.max(0, Math.min(qty, max)) * unitCp;
-    }, 0);
-  const buyCp = sumBySelector("input[data-merchant-buy-item]");
-  const sellCp = sumBySelector("input[data-merchant-sell-item]");
+  const rawCurrencyTenderCp = currencyBundleToCp(
+    readMerchantTradeCurrencyTenderFromRoot(root, { normalizeInputs: true })
+  );
+  const buyCp = getMerchantTradeSelectedSubtotalCp(root, "input[data-merchant-buy-item]");
+  const sellItemCp = getMerchantTradeSelectedSubtotalCp(root, "input[data-merchant-sell-item]");
+  const currencyTenderCp = Math.min(rawCurrencyTenderCp, Math.max(0, buyCp - sellItemCp));
+  const sellCp = sellItemCp + currencyTenderCp;
   const netCp = buyCp - sellCp;
   if (buyNode) buyNode.textContent = formatMerchantCp(buyCp);
   if (sellNode) sellNode.textContent = formatMerchantCp(sellCp);
@@ -32173,6 +32445,7 @@ function refreshMerchantTradeDialogPricing(root) {
     if (qtyInput instanceof HTMLInputElement) {
       qtyInput.dataset.unitCp = String(unitCp);
     }
+    row.dataset.sortUnitCp = String(unitCp);
   }
   recalculateMerchantTradeDialogTotals(root);
 }
@@ -32183,34 +32456,94 @@ function bindMerchantTradeDialogTotals(html) {
   root.addEventListener("input", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
-    if (!target.matches("input[data-merchant-buy-item], input[data-merchant-sell-item]")) return;
+    if (
+      !target.matches(
+        "input[data-merchant-buy-item], input[data-merchant-sell-item], input[data-merchant-currency-tender]"
+      )
+    )
+      return;
     recalculateMerchantTradeDialogTotals(root);
   });
   refreshMerchantTradeDialogPricing(root);
+}
+
+function bindMerchantTradeDialogCurrencyTenderActions(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root || root.dataset.poMerchantTenderActionsBound === "1") return;
+  root.dataset.poMerchantTenderActionsBound = "1";
+  root.addEventListener("click", (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const fillButton = target.closest("[data-merchant-fill-tender-balance]");
+    const clearButton = target.closest("[data-merchant-clear-tender]");
+    if (!fillButton && !clearButton) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (fillButton) {
+      const actorCurrencyCp = Math.max(0, Math.floor(Number(root.dataset?.actorCurrencyCp ?? 0) || 0));
+      setMerchantTradeCurrencyTenderFromCp(root, Math.min(getMerchantTradeOutstandingTenderCp(root), actorCurrencyCp));
+    } else {
+      setMerchantTradeCurrencyTenderFromCp(root, 0);
+    }
+    recalculateMerchantTradeDialogTotals(root);
+  });
 }
 
 function bindMerchantTradeDialogSearch(html) {
   const root = getMerchantTradeDialogRoot(html);
   if (!root || root.dataset.poMerchantSearchBound === "1") return;
   root.dataset.poMerchantSearchBound = "1";
-  const searchInput = root.querySelector("input[data-merchant-search]");
-  if (!(searchInput instanceof HTMLInputElement)) return;
   let debounceTimer = null;
-  const applyFilter = () => {
-    const needle = searchInput.value.trim().toLowerCase();
-    const buyRows = Array.from(root.querySelectorAll("tr[data-price-kind='buy'][data-search]"));
-    for (const row of buyRows) {
+  const getRows = (kind) => Array.from(root.querySelectorAll(`tr[data-price-kind='${kind}'][data-search]`));
+  const applyFilter = (kind) => {
+    const searchInput = root.querySelector(`input[data-merchant-search='${kind}']`);
+    const needle = searchInput instanceof HTMLInputElement ? searchInput.value.trim().toLowerCase() : "";
+    for (const row of getRows(kind)) {
       if (!(row instanceof HTMLElement)) continue;
       const searchText = String(row.dataset?.search ?? "").toLowerCase();
       const visible = !needle || searchText.includes(needle);
       row.hidden = !visible;
     }
   };
-  searchInput.addEventListener("input", () => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(applyFilter, 120);
-  });
-  searchInput.addEventListener("search", applyFilter);
+  const applySort = (kind) => {
+    const sortInput = root.querySelector(`select[data-merchant-sort='${kind}']`);
+    const value = sortInput instanceof HTMLSelectElement ? sortInput.value : "name-asc";
+    const [field, direction] = value.split("-");
+    const multiplier = direction === "desc" ? -1 : 1;
+    const rows = getRows(kind);
+    const sortedRows = rows.sort((left, right) => {
+      const leftNumber = Number(left?.dataset?.[`sort${field === "unit" ? "UnitCp" : field === "qty" ? "Qty" : ""}`]);
+      const rightNumber = Number(right?.dataset?.[`sort${field === "unit" ? "UnitCp" : field === "qty" ? "Qty" : ""}`]);
+      if (field === "unit" || field === "qty") {
+        const diff = (Number.isFinite(leftNumber) ? leftNumber : 0) - (Number.isFinite(rightNumber) ? rightNumber : 0);
+        if (diff !== 0) return diff * multiplier;
+      }
+      const leftText = String(left?.dataset?.[`sort${field === "type" ? "Type" : "Name"}`] ?? "").toLowerCase();
+      const rightText = String(right?.dataset?.[`sort${field === "type" ? "Type" : "Name"}`] ?? "").toLowerCase();
+      return leftText.localeCompare(rightText) * multiplier;
+    });
+    const tbody = rows[0]?.parentElement ?? null;
+    if (!tbody) return;
+    for (const row of sortedRows) tbody.append(row);
+  };
+  for (const searchInput of Array.from(root.querySelectorAll("input[data-merchant-search]"))) {
+    if (!(searchInput instanceof HTMLInputElement)) continue;
+    const kind = String(searchInput.dataset?.merchantSearch ?? "buy").trim() || "buy";
+    searchInput.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => applyFilter(kind), 120);
+    });
+    searchInput.addEventListener("search", () => applyFilter(kind));
+  }
+  for (const sortInput of Array.from(root.querySelectorAll("select[data-merchant-sort]"))) {
+    if (!(sortInput instanceof HTMLSelectElement)) continue;
+    const kind = String(sortInput.dataset?.merchantSort ?? "buy").trim() || "buy";
+    sortInput.addEventListener("change", () => {
+      applySort(kind);
+      applyFilter(kind);
+    });
+    applySort(kind);
+  }
 }
 
 async function resolveMerchantBarterForUser(user, payload = {}) {
@@ -32433,7 +32766,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
     ui.notifications?.warn("Merchant is not available to this actor.");
     return;
   }
-  const merchantActor = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const merchantActor = await ensureMerchantActor(merchant, { skipLedgerUpdate: !canAccessGmPage() });
   if (!merchantActor) {
     ui.notifications?.warn("Merchant stock actor is unavailable. Ask the GM to refresh stock.");
     return;
@@ -32485,9 +32818,11 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
               gmUserId,
               merchantId: trade.merchantId,
               actorId: trade.actorId,
+              buyTargetActorId: trade.buyTargetActorId,
               settlement: trade.settlement,
               buyItems: trade.buyItems,
               sellItems: trade.sellItems,
+              currencyTender: trade.currencyTender,
               barterResolution: barterResolution?.applied ? barterResolution : null
             });
             clearMerchantBarterResolutionEntryByKey(barterKey);
@@ -32501,6 +32836,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
         bindMerchantTradeDialogTotals(html);
         bindMerchantTradeDialogBarterButton(html);
         bindMerchantTradeDialogItemOpeners(html);
+        bindMerchantTradeDialogCurrencyTenderActions(html);
         bindMerchantTradeDialogSearch(html);
       }
     },
@@ -33081,7 +33417,7 @@ async function refreshAllMerchantStocksFromElement(_element) {
 }
 
 function getMerchantSessionDialogStockCount(merchant = {}) {
-  const merchantActor = merchant?.actorId ? game.actors.get(merchant.actorId) : null;
+  const merchantActor = findExistingMerchantActor(merchant);
   if (!merchantActor) return 0;
   return (merchantActor.items?.contents ?? [])
     .filter((item) =>
@@ -33881,7 +34217,7 @@ async function openMerchantActorFromElement(element) {
   if (!merchantId) return false;
   const merchant = getMerchantById(merchantId);
   if (!merchant) return false;
-  const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
+  const merchantActor = await ensureMerchantActor(merchant);
   if (!merchantActor) {
     ui.notifications?.warn("Merchant actor is not configured yet. Use Refresh Stock first.");
     return false;
@@ -47764,6 +48100,7 @@ async function createOperationalUpkeepCalendarNote(result = {}, timestamp = getC
 
 async function handleAutomaticOperationalUpkeepTick() {
   if (!game.user?.isGM) return null;
+  if (!isPrimaryActiveGmClient()) return null;
   if (automaticUpkeepTickInFlight) return null;
   automaticUpkeepTickInFlight = true;
 

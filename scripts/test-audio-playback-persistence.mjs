@@ -28,6 +28,16 @@ expect(
 );
 
 expect(
+  /async function playAudioMixPresetById\(presetId, options = \{\}\)\s*\{[\s\S]*?const queuedTrackIds = normalizeAudioMixPresetTrackIds\(options\.queueTrackIds \?\? preset\?\.trackIds \?\? \[\]\);[\s\S]*?queuedTrackIds\.length > 0[\s\S]*?buildAudioMixAssignedCandidates\([\s\S]*?: buildAudioMixCandidates\(catalog, preset\);/,
+  "Playing a mix without a saved queue should use the preset's matching track pool instead of failing."
+);
+
+expect(
+  /const AUDIO_MIX_PLAYLIST_SOUND_LIMIT = 24;[\s\S]*?function buildAudioMixPlaylistWindow\(candidates = \[\], preferredTrackId = ""\)[\s\S]*?rows\.slice\(startIndex, startIndex \+ AUDIO_MIX_PLAYLIST_SOUND_LIMIT\);[\s\S]*?const playlistCandidates = buildAudioMixPlaylistWindow\(orderedCandidates, preferredTrackId\);[\s\S]*?syncAudioMixPlaylistSounds\(playlist, preset, playlistCandidates\);/,
+  "Mix playback should create a bounded playlist window that includes the requested next/restart track."
+);
+
+expect(
   /function queueManagedAudioMixPlaybackResync\(delayMs = 60, options = \{\}\)\s*\{[\s\S]*?window\.setTimeout\(\s*async \(\) => \{[\s\S]*?if \(game\.user\?\.isGM && options\?\.syncState !== false\) \{[\s\S]*?await syncManagedAudioMixStateFromPlaylist\([\s\S]*?\);[\s\S]*?\}[\s\S]*?await syncManagedAudioMixPlaybackForCurrentUser\(\{[\s\S]*?refresh: options\?\.refresh === true[\s\S]*?\}\);[\s\S]*?\}/,
   "Playback resync should refresh GM playlist state before reconciling client playback state."
 );

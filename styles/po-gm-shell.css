@@ -355,12 +355,15 @@
   position: sticky;
   top: 0;
   z-index: 7;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
-  padding: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  grid-template-columns: none;
+  align-items: center;
+  align-content: flex-start;
+  gap: 6px;
+  padding: 6px;
   border: 1px solid var(--po-gm-shell-border);
-  border-radius: 16px;
+  border-radius: 8px;
   background:
     linear-gradient(
       180deg,
@@ -389,18 +392,19 @@
   )
   .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
   .po-tab {
-  width: 100%;
+  width: auto;
+  flex: 0 0 auto;
   min-width: 0;
-  min-height: 56px;
-  padding: 8px 10px;
+  min-height: 30px;
+  padding: 3px 10px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: center;
   justify-content: center;
   gap: 4px;
-  text-align: left;
-  white-space: normal;
-  border-radius: 12px;
+  text-align: center;
+  white-space: nowrap;
+  border-radius: 7px;
 }
 
 .party-operations
@@ -433,13 +437,7 @@
   )
   .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs
   .po-gm-tab-sub {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  color: color-mix(in srgb, var(--po-muted) 92%, var(--po-text));
-  font-size: 0.66rem;
-  line-height: 1.25;
-  text-overflow: ellipsis;
+  display: none;
 }
 
 .party-operations

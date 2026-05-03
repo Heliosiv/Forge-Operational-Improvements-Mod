@@ -1,6 +1,6 @@
 # Loot Source Registry
 
-Source: legacy/party-operations-monolith.js:14031-16204
+Source: legacy/party-operations-monolith.js:14047-16220
 Feature IDs: loot
 Target Modules: scripts/features/loot-source-*
 

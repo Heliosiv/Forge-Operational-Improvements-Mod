@@ -1,6 +1,6 @@
 # Weather, Upkeep, And Session Autopilot
 
-Source: legacy/party-operations-monolith.js:44587-45617
+Source: legacy/party-operations-monolith.js:44876-45907
 Feature IDs: operations, gm-pages
 Target Modules: scripts/features/weather-*, scripts/features/upkeep-*
 
@@ -486,6 +486,7 @@ async function createOperationalUpkeepCalendarNote(result = {}, timestamp = getC
 
 async function handleAutomaticOperationalUpkeepTick() {
   if (!game.user?.isGM) return null;
+  if (!isPrimaryActiveGmClient()) return null;
   if (automaticUpkeepTickInFlight) return null;
   automaticUpkeepTickInFlight = true;
 
