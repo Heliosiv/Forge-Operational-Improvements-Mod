@@ -74,6 +74,7 @@ export function buildPartyOpsRuntimeHookModules({
   autoInventoryPackIndexCache,
   clearAutoInventorySnapshot,
   clearLootItemSourceCaches,
+  clearLootOverrideIndexLoadRequests,
   gameRef = globalThis.game,
   foundryRef = globalThis.foundry,
   perfTracker = createModulePerfTracker("runtime-hooks")
@@ -133,15 +134,18 @@ export function buildPartyOpsRuntimeHookModules({
       perfTracker
     }),
     buildLootRecentRollsCacheHookModule(),
-    autoInventoryPackIndexCache instanceof Map || typeof clearLootItemSourceCaches === "function"
+    autoInventoryPackIndexCache instanceof Map ||
+      typeof clearLootItemSourceCaches === "function" ||
+      typeof clearLootOverrideIndexLoadRequests === "function"
       ? {
           id: "compendium-invalidation-hooks",
           registrations: [
             [
               "updateCompendium",
-              () => {
+              (pack) => {
                 if (autoInventoryPackIndexCache instanceof Map) autoInventoryPackIndexCache.clear();
                 clearLootItemSourceCaches?.();
+                clearLootOverrideIndexLoadRequests?.(pack?.collection);
               }
             ]
           ]

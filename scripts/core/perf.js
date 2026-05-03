@@ -68,7 +68,7 @@ function recordMetric(container, metricName, value, meta, clock) {
   bucket.updatedAt = Date.now();
   bucket.samples.push(resolvedValue);
   if (bucket.samples.length > MAX_BUCKET_SAMPLES) {
-    bucket.samples.splice(0, bucket.samples.length - MAX_BUCKET_SAMPLES);
+    bucket.samples.shift();
   }
 
   return {
@@ -82,7 +82,7 @@ function recordMetric(container, metricName, value, meta, clock) {
 function pushRecentEvent(scopeState, event) {
   scopeState.recent.push(event);
   if (scopeState.recent.length > MAX_RECENT_EVENTS) {
-    scopeState.recent.splice(0, scopeState.recent.length - MAX_RECENT_EVENTS);
+    scopeState.recent.shift();
   }
 }
 

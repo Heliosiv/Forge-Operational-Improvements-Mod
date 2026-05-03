@@ -4,7 +4,7 @@ Party Operations is a Foundry VTT module for running the table-facing logistics 
 
 ## Current Build
 
-The current repository manifest version is `2.2.37`.
+The current repository manifest version is `2.2.38`.
 
 ## What This Module Covers
 

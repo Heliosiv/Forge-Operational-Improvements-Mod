@@ -111,7 +111,11 @@ export const DOWNTIME_V2_DEFAULT_CARDS = Object.freeze([
 
 function clone(value) {
   if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value));
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value));
+  }
 }
 
 function clampInt(value, min = 0, max = Number.MAX_SAFE_INTEGER, fallback = min) {

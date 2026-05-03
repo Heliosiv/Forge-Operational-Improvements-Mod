@@ -3299,9 +3299,15 @@ async function setGatherAttemptState(actor, dayKey, environmentSignature) {
     "gather.lastWorldTime": Number(getCurrentWorldTimestamp())
   };
   try {
-    await actor.setFlag(MODULE_ID, "gather.lastDay", payload["gather.lastDay"]);
-    await actor.setFlag(MODULE_ID, "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]);
-    await actor.setFlag(MODULE_ID, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
+    await actor.update({
+      flags: {
+        [MODULE_ID]: {
+          "gather.lastDay": payload["gather.lastDay"],
+          "gather.lastEnvironmentSignature": payload["gather.lastEnvironmentSignature"],
+          "gather.lastWorldTime": payload["gather.lastWorldTime"]
+        }
+      }
+    });
   } catch (error) {
     console.warn(`${MODULE_ID}: failed to persist gather attempt flags`, {
       actorId: actor.id,
@@ -3310,13 +3316,15 @@ async function setGatherAttemptState(actor, dayKey, environmentSignature) {
     });
   }
   // Best-effort legacy mirror; do not fail or warn when legacy scope is unavailable.
-  await setLegacyPartyOpsFlagSilently(actor, "gather.lastDay", payload["gather.lastDay"]);
-  await setLegacyPartyOpsFlagSilently(
-    actor,
-    "gather.lastEnvironmentSignature",
-    payload["gather.lastEnvironmentSignature"]
-  );
-  await setLegacyPartyOpsFlagSilently(actor, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
+  await Promise.allSettled([
+    setLegacyPartyOpsFlagSilently(actor, "gather.lastDay", payload["gather.lastDay"]),
+    setLegacyPartyOpsFlagSilently(
+      actor,
+      "gather.lastEnvironmentSignature",
+      payload["gather.lastEnvironmentSignature"]
+    ),
+    setLegacyPartyOpsFlagSilently(actor, "gather.lastWorldTime", payload["gather.lastWorldTime"])
+  ]);
 }
 
 function canAttemptGatherForDay(actor, dayKey, environmentSignature) {
@@ -7068,12 +7076,17 @@ function buildOperationsContextFallback() {
           ? new Date(Number(calendarWeather.lastForecastPlottedAt)).toLocaleString()
           : "Never"
     };
-  } catch (_error) {}
+  } catch (_error) {
+    if (isModuleDebugEnabled())
+      console.warn(`${MODULE_ID}: fallback weather context build failed`, _error);
+  }
   let fallbackLootSources;
   try {
     fallbackLootSources = buildLootSourceRegistryContext();
     fallbackLootSources.preview = buildLootPreviewContext();
   } catch (_error) {
+    if (isModuleDebugEnabled())
+      console.warn(`${MODULE_ID}: fallback loot source context build failed`, _error);
     fallbackLootSources = {
       itemPackOptions: [],
       itemPackVisibleOptions: [],
@@ -10353,6 +10366,20 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   openGmPanelByKey
 });
 
+function wrapAudioAction(label, asyncFn) {
+  return async (...args) => {
+    try {
+      clearAudioLibraryError();
+      return await asyncFn(...args);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`${label} failed: ${message}`);
+      return null;
+    }
+  };
+}
+
 export const GmAudioPageApp = createGmAudioPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
@@ -10364,26 +10391,8 @@ export const GmAudioPageApp = createGmAudioPageApp({
   setAudioLibraryView,
   setAudioLibraryDraftField,
   openAudioLibraryRootPicker,
-  uploadLocalAudioFolderToLibrary: async () => {
-    try {
-      clearAudioLibraryError();
-      await uploadLocalAudioFolderToLibrary();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio library upload failed: ${message}`);
-    }
-  },
-  scanConfiguredAudioLibrary: async () => {
-    try {
-      clearAudioLibraryError();
-      await scanAudioLibraryCatalog();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio library scan failed: ${message}`);
-    }
-  },
+  uploadLocalAudioFolderToLibrary: wrapAudioAction("Audio library upload", () => uploadLocalAudioFolderToLibrary()),
+  scanConfiguredAudioLibrary: wrapAudioAction("Audio library scan", () => scanAudioLibraryCatalog()),
   clearAudioLibraryCatalog,
   setAudioLibraryFilterField,
   selectAudioLibraryTrack,
@@ -10396,17 +10405,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   selectVisibleAudioMixTracks,
   clearAudioMixTrackSelections,
   selectAudioMixPreset,
-  createAudioMixPresetFromSelection: async () => {
-    try {
-      clearAudioLibraryError();
-      return await createAudioMixPresetFromSelection();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio preset creation failed: ${message}`);
-      return null;
-    }
-  },
+  createAudioMixPresetFromSelection: wrapAudioAction("Audio preset creation", () => createAudioMixPresetFromSelection()),
   promptAndUpdateSelectedAudioMixPresetField,
   setSelectedAudioMixPresetTextField,
   setSelectedAudioMixPresetOption,
@@ -10427,76 +10426,13 @@ export const GmAudioPageApp = createGmAudioPageApp({
   removeTrackFromSelectedAudioMixPreset,
   restoreAllHiddenAudioLibraryTracks,
   restoreHiddenAudioLibraryTrack,
-  playSelectedAudioMixPreset: async () => {
-    try {
-      clearAudioLibraryError();
-      await playAudioMixPresetById(getSelectedAudioMixPreset().id);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio mix failed: ${message}`);
-    }
-  },
-  playAudioScenePreset: async (actionElement) => {
-    try {
-      clearAudioLibraryError();
-      await playAudioScenePresetFromElement(actionElement);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio scene preset failed: ${message}`);
-    }
-  },
-  playSelectedAudioMixCandidate: async (actionElement) => {
-    try {
-      clearAudioLibraryError();
-      await playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio mix failed: ${message}`);
-    }
-  },
-  toggleAudioMixPlayback: async () => {
-    try {
-      clearAudioLibraryError();
-      await toggleAudioMixPlayback();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio mix failed: ${message}`);
-    }
-  },
-  playNextAudioMixTrack: async () => {
-    try {
-      clearAudioLibraryError();
-      await playNextAudioMixTrack();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio mix failed: ${message}`);
-    }
-  },
-  restartCurrentAudioMixTrack: async () => {
-    try {
-      clearAudioLibraryError();
-      await restartCurrentAudioMixTrack();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio mix failed: ${message}`);
-    }
-  },
-  stopAudioMixPlayback: async () => {
-    try {
-      clearAudioLibraryError();
-      await stopAudioMixPlayback();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-      setAudioLibraryError(message);
-      ui.notifications?.warn(`Audio stop failed: ${message}`);
-    }
-  },
+  playSelectedAudioMixPreset: wrapAudioAction("Audio mix", () => playAudioMixPresetById(getSelectedAudioMixPreset().id)),
+  playAudioScenePreset: wrapAudioAction("Audio scene preset", (actionElement) => playAudioScenePresetFromElement(actionElement)),
+  playSelectedAudioMixCandidate: wrapAudioAction("Audio mix", (actionElement) => playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId)),
+  toggleAudioMixPlayback: wrapAudioAction("Audio mix", () => toggleAudioMixPlayback()),
+  playNextAudioMixTrack: wrapAudioAction("Audio mix", () => playNextAudioMixTrack()),
+  restartCurrentAudioMixTrack: wrapAudioAction("Audio mix", () => restartCurrentAudioMixTrack()),
+  stopAudioMixPlayback: wrapAudioAction("Audio stop", () => stopAudioMixPlayback()),
   getManagedAudioMixPlaybackMonitorSnapshot,
   syncManagedAudioMixPlaybackForCurrentUser,
   openGmPanelByKey
@@ -14886,6 +14822,14 @@ function getLootSourceConfig() {
 function clearLootItemSourceCaches() {
   lootSourceItemsCache.clear();
   lootCandidateBuildCache.clear();
+}
+
+function clearLootOverrideIndexLoadRequests(packCollection) {
+  if (packCollection != null) {
+    lootOverrideIndexLoadRequests.delete(packCollection);
+  } else {
+    lootOverrideIndexLoadRequests.clear();
+  }
 }
 
 async function updateLootSourceConfig(mutator, options = {}) {
@@ -21114,12 +21058,14 @@ function setTimedCacheEntry(cache, key, value, options = {}) {
 
 function normalizeLootCacheKeyArray(values = []) {
   const source = Array.isArray(values) ? values : [];
+  const seen = new Set();
   const deduped = [];
   for (const raw of source) {
     const normalized = String(raw ?? "")
       .trim()
       .toLowerCase();
-    if (!normalized || deduped.includes(normalized)) continue;
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
     deduped.push(normalized);
   }
   deduped.sort((left, right) => left.localeCompare(right));
@@ -54907,6 +54853,7 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   autoInventoryPackIndexCache,
   clearAutoInventorySnapshot,
   clearLootItemSourceCaches,
+  clearLootOverrideIndexLoadRequests,
   gameRef: game,
   foundryRef: foundry
 });
