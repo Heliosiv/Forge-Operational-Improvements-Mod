@@ -1785,6 +1785,8 @@ function getAppRootElement(appOrElement) {
   return null;
 }
 
+const TYPING_INPUT_TYPES = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
+
 function isEditableTypingElement(element) {
   if (!(element instanceof HTMLElement)) return false;
   if (element instanceof HTMLTextAreaElement) {
@@ -1795,8 +1797,7 @@ function isEditableTypingElement(element) {
     const type = String(element.type ?? "text")
       .trim()
       .toLowerCase();
-    const typingTypes = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
-    return typingTypes.has(type);
+    return TYPING_INPUT_TYPES.has(type);
   }
   if (element instanceof HTMLSelectElement) return false;
   return element.isContentEditable;
@@ -30684,7 +30685,12 @@ async function syncMerchantActorOwnership(actor) {
   if (!actor || !game.user?.isGM) return actor;
   const nextOwnership = createMerchantOwnershipDefaults();
   const currentOwnership = actor.ownership && typeof actor.ownership === "object" ? actor.ownership : {};
-  if (JSON.stringify(currentOwnership) === JSON.stringify(nextOwnership)) return actor;
+  const nextKeys = Object.keys(nextOwnership);
+  const currentKeys = Object.keys(currentOwnership);
+  const ownershipChanged =
+    nextKeys.length !== currentKeys.length ||
+    nextKeys.some((k) => currentOwnership[k] !== nextOwnership[k]);
+  if (!ownershipChanged) return actor;
   await actor.update({ ownership: nextOwnership });
   return actor;
 }
@@ -33150,7 +33156,7 @@ async function reorderMerchantCuratedItemsFromElement(element, draggedUuidInput,
   const targetIndex = targetUuid ? next.indexOf(targetUuid) : -1;
   if (targetIndex < 0) next.push(draggedUuid);
   else next.splice(targetIndex, 0, draggedUuid);
-  if (JSON.stringify(next) === JSON.stringify(current)) return false;
+  if (next.length === current.length && next.every((v, i) => v === current[i])) return false;
   patch.stock.curatedItemUuids = next;
   cacheMerchantEditorDraftFromPatch(patch);
   return true;

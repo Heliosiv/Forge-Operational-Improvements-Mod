@@ -85,6 +85,7 @@ function getCachedNormalizedSelected(entry) {
     source: normalizeText(entry?.sourceId ?? entry?.sourceLabel),
     kind: normalizeVariableTreasureKind(entry?.variableTreasureKind),
     categories,
+    categorySet: new Set(categories),
     primaryCategory: categories[0] ?? "",
     sourceClass: normalizeSourceClass(entry?.sourceClass),
     sourcePolicy: normalizeSourcePolicy(entry?.sourcePolicy)
@@ -146,7 +147,11 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
     if (candidateSource && selectedSource === candidateSource) sameSourceCount += 1;
     if (candidateSourceClass && selectedSourceClass === candidateSourceClass) sameSourceClassCount += 1;
     if (candidateSourcePolicy && selectedSourcePolicy === candidateSourcePolicy) sameSourcePolicyCount += 1;
-    overlappingCategoryCount += countCategoryOverlap(candidateCategories, selectedEntry);
+    if (candidateCategories.length > 0) {
+      for (const category of candidateCategories) {
+        if (sel.categorySet.has(category)) overlappingCategoryCount += 1;
+      }
+    }
     if (candidatePrimaryCategory && selectedPrimaryCategory === candidatePrimaryCategory) samePrimaryCategoryCount += 1;
   }
 
