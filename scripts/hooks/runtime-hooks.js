@@ -71,6 +71,7 @@ export function buildPartyOpsRuntimeHookModules({
   bindFolderOwnershipProxySubmit,
   isManagedAudioMixPlaylist,
   queueManagedAudioMixPlaybackResync,
+  autoInventoryPackIndexCache,
   gameRef = globalThis.game,
   foundryRef = globalThis.foundry,
   perfTracker = createModulePerfTracker("runtime-hooks")
@@ -129,6 +130,12 @@ export function buildPartyOpsRuntimeHookModules({
       gameRef,
       perfTracker
     }),
-    buildLootRecentRollsCacheHookModule()
-  ];
+    buildLootRecentRollsCacheHookModule(),
+    autoInventoryPackIndexCache instanceof Map
+      ? {
+          id: "auto-inventory-pack-index-cache",
+          registrations: [["updateCompendium", () => autoInventoryPackIndexCache.clear()]]
+        }
+      : null
+  ].filter(Boolean);
 }

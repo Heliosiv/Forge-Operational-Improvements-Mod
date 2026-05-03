@@ -130,6 +130,9 @@ const REFACTOR_FEATURES = Object.freeze([
     status: FEATURE_STATUSES.PARTIAL,
     owner: "scripts/features/loot-*",
     runtimeOwners: [
+      "scripts/features/loot-builder.js",
+      "scripts/features/loot-audit.js",
+      "scripts/features/loot-claim-bundle.js",
       "scripts/features/loot-item-overrides.js",
       "scripts/features/loot-item-override-editor.js",
       "scripts/features/loot-candidate-sources.js",
@@ -137,6 +140,7 @@ const REFACTOR_FEATURES = Object.freeze([
       "scripts/features/loot-ui.js"
     ],
     focusedChecks: [
+      "check:loot-board-ready-bundle",
       "check:loot-item-overrides",
       "check:loot-ui-state",
       "check:loot-compendium-manifest-source",

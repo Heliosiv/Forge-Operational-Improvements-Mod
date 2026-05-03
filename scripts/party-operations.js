@@ -48,6 +48,7 @@ import {
   createLootItemOverrideEditorActions
 } from "./features/loot-item-override-editor.js";
 import { flushExpiredRecentRolls, recordLootRollItems } from "./features/loot-recent-rolls-cache.js";
+import { createLootAuditRecorder, appendLootConstraintResult, appendLootRelaxationStep, appendLootWarning, finalizeLootAuditPayload } from "./features/loot-audit.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
@@ -111,7 +112,10 @@ import {
   MODULE_ID,
   PARTY_OPS_MODULE_ID as PRIMARY_MODULE_ID,
   PARTY_OPS_PREMIUM_MODULE_ID as PREMIUM_MODULE_ID,
-  SOCKET_CHANNEL
+  SOCKET_CHANNEL,
+  INTEGRATION_MODES,
+  LOOT_SCARCITY_LEVELS,
+  INVENTORY_HOOK_MODES
 } from "./core/constants.js";
 import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
@@ -389,9 +393,6 @@ import {
   normalizePhase1MaterialDrops,
   resolvePhase1DowntimeEntry
 } from "./features/downtime-phase1-service.js";
-const DEBUG_LOG = false;
-if (DEBUG_LOG) console.log("party-operations: script loaded");
-
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const bootstrapLogger = createLogger("bootstrap");
 const perfTracker = createModulePerfTracker("party-operations-runtime");
@@ -578,19 +579,6 @@ async function preloadPartyOperationsPartialTemplates() {
   });
 }
 
-const INTEGRATION_MODES = {
-  AUTO: "auto",
-  OFF: "off",
-  FLAGS: "flags",
-  DAE: "dae"
-};
-
-const LOOT_SCARCITY_LEVELS = {
-  ABUNDANT: "abundant",
-  NORMAL: "normal",
-  SCARCE: "scarce"
-};
-
 function getEconomyPriceMultiplier() {
   try {
     const pct = Number(game.settings.get(MODULE_ID, SETTINGS.ECONOMY_PRICE_MULTIPLIER) ?? 100) || 100;
@@ -621,11 +609,7 @@ const DEFAULT_PARTY_OPS_CONFIG = Object.freeze({
   crGoldMultiplier: 1
 });
 
-const INVENTORY_HOOK_MODES = {
-  OFF: "off",
-  REFRESH: "refresh",
-  SYNC: "sync"
-};
+
 
 let partyOpsConfigNormalizationInProgress = false;
 
@@ -1136,9 +1120,12 @@ const OPERATIONS_JOURNAL_CATEGORIES = {
   session: "Session"
 };
 
+let _cachedModuleVersion = null;
 function getCurrentModuleVersion() {
+  if (_cachedModuleVersion) return _cachedModuleVersion;
   const module = game.modules?.get(MODULE_ID);
-  return String(module?.version ?? module?.data?.version ?? "dev");
+  _cachedModuleVersion = String(module?.version ?? module?.data?.version ?? "dev");
+  return _cachedModuleVersion;
 }
 const DOWNTIME_ACTION_OPTIONS = DOWNTIME_PHASE1_ACTIONS;
 const DOWNTIME_TUNING_ECONOMY_OPTIONS = PHASE1_ECONOMY_OPTIONS;
@@ -2694,8 +2681,8 @@ const {
 const { getIntegrationModeSetting, isDaeAvailable, resolveIntegrationMode } = (integrationAccess =
   createIntegrationAccess({
     moduleId: MODULE_ID,
-    settings: SETTINGS,
-    integrationModes: INTEGRATION_MODES,
+    settings: game.settings,
+    settingKey: SETTINGS.INTEGRATION_MODE,
     gameRef: game
   }));
 const {
@@ -7917,7 +7904,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _onRender(context, options) {
     await super._onRender(context, options);
-    if (DEBUG_LOG) console.log("RestWatchApp: _onRender called");
     setPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
@@ -8139,7 +8125,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     finalizeRestWatchRender(this, "rest-watch");
 
-    if (DEBUG_LOG) console.log("RestWatchApp: event delegation attached", this.element);
   }
 
   #updateActivityUI() {
@@ -8268,7 +8253,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         event.preventDefault();
         event.stopPropagation();
       }
-      if (DEBUG_LOG) console.log("RestWatchApp #onAction:", { action, element, event });
       if (!action) return;
       if (element?.tagName === "SELECT" && event?.type !== "change") return;
 
@@ -8401,6 +8385,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (String(element?.dataset?.page ?? "").trim() === "gm" && canAccessGmPage()) setActiveRestMainTab("gm");
             else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "open-player-downtime": async () => {
+            setPlayerHubTab("downtime");
+            openRestWatchPlayerApp({ hubTab: "downtime" });
           },
           "merchant-select-actor": async () => {
             if (setMerchantActorSelectionFromElement(element)) {
@@ -10966,7 +10954,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   async _onRender(context, options) {
     await super._onRender(context, options);
     setPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER, this);
-    if (DEBUG_LOG) console.log("MarchingOrderApp: _onRender called");
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
     bindTabListKeyboardNavigation(this.element);
@@ -11035,6 +11022,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       isLockedForUser,
       notifyUiWarnThrottled,
       updateMarchingOrderState,
+      moveActorTokenToSpacingCell: moveActorTokenToMarchSpacingCell,
       refreshSingleAppPreservingView,
       getAppInstance,
       appInstanceKeys: APP_INSTANCE_KEYS,
@@ -11060,7 +11048,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     restorePendingUiState(this);
     restorePendingScrollState(this);
 
-    if (DEBUG_LOG) console.log("MarchingOrderApp: event delegation attached", this.element);
   }
 
   #onTabClick(tabElement, html, event = null) {
@@ -11116,7 +11103,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         event.preventDefault();
         event.stopPropagation();
       }
-      if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
       if (!action) return;
       if (element?.tagName === "SELECT" && event?.type !== "change") return;
 
@@ -21293,58 +21279,20 @@ function calculateLootPreviewValueTotals(result = {}, budgetContext = null) {
 }
 
 async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
-  const getPerfNow =
-    typeof getLootBuilderPerfNow === "function"
-      ? getLootBuilderPerfNow
-      : () => {
-          const now = globalThis?.performance?.now?.();
-          if (Number.isFinite(now)) return Number(now);
-          return Date.now();
-        };
-  const readCache = typeof getTimedCacheEntry === "function" ? getTimedCacheEntry : () => null;
-  const writeCache = typeof setTimedCacheEntry === "function" ? setTimedCacheEntry : () => {};
-  const buildSourceCacheKey =
-    typeof buildLootSourceItemsCacheKey === "function"
-      ? buildLootSourceItemsCacheKey
-      : (sourceId = "") => String(sourceId ?? "").trim();
-  const buildCandidatesCacheKey =
-    typeof buildLootCandidateBuildCacheKey === "function" ? buildLootCandidateBuildCacheKey : () => "";
-  const debugLog = typeof logLootBuilderDebug === "function" ? logLootBuilderDebug : () => {};
-  const hydrateCachedCandidates =
-    typeof hydrateLootCandidateCacheRows === "function"
-      ? hydrateLootCandidateCacheRows
-      : (rows = []) => (Array.isArray(rows) ? [...rows] : []);
-  const prepareCachedCandidates =
-    typeof freezeLootCandidateRows === "function"
-      ? freezeLootCandidateRows
-      : (rows = []) => {
-          if (!Array.isArray(rows) || rows.length <= 0) return [];
-          return rows.map((entry) => {
-            if (!entry || typeof entry !== "object") return entry;
-            const copy = {
-              ...entry,
-              tags: Array.isArray(entry.tags) ? [...entry.tags] : entry.tags,
-              keywords: Array.isArray(entry.keywords) ? [...entry.keywords] : entry.keywords
-            };
-            if (Array.isArray(copy.tags)) Object.freeze(copy.tags);
-            if (Array.isArray(copy.keywords)) Object.freeze(copy.keywords);
-            Object.freeze(copy);
-            return copy;
-          });
-        };
-  const sourceItemsCache = typeof lootSourceItemsCache !== "undefined" ? lootSourceItemsCache : new Map();
-  const candidatesCache = typeof lootCandidateBuildCache !== "undefined" ? lootCandidateBuildCache : new Map();
-  const sourceItemsCacheTtlMs =
-    Number(typeof LOOT_SOURCE_ITEMS_CACHE_TTL_MS !== "undefined" ? LOOT_SOURCE_ITEMS_CACHE_TTL_MS : 30000) || 30000;
-  const sourceItemsCacheMaxEntries =
-    Number(typeof LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES !== "undefined" ? LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES : 64) || 64;
-  const candidateCacheTtlMs =
-    Number(typeof LOOT_CANDIDATE_BUILD_CACHE_TTL_MS !== "undefined" ? LOOT_CANDIDATE_BUILD_CACHE_TTL_MS : 15000) ||
-    15000;
-  const candidateCacheMaxEntries =
-    Number(
-      typeof LOOT_CANDIDATE_BUILD_CACHE_MAX_ENTRIES !== "undefined" ? LOOT_CANDIDATE_BUILD_CACHE_MAX_ENTRIES : 24
-    ) || 24;
+  const getPerfNow = getLootBuilderPerfNow;
+  const readCache = getTimedCacheEntry;
+  const writeCache = setTimedCacheEntry;
+  const buildSourceCacheKey = buildLootSourceItemsCacheKey;
+  const buildCandidatesCacheKey = buildLootCandidateBuildCacheKey;
+  const debugLog = logLootBuilderDebug;
+  const hydrateCachedCandidates = hydrateLootCandidateCacheRows;
+  const prepareCachedCandidates = freezeLootCandidateRows;
+  const sourceItemsCache = lootSourceItemsCache;
+  const candidatesCache = lootCandidateBuildCache;
+  const sourceItemsCacheTtlMs = Number(LOOT_SOURCE_ITEMS_CACHE_TTL_MS) || 30000;
+  const sourceItemsCacheMaxEntries = Number(LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES) || 64;
+  const candidateCacheTtlMs = Number(LOOT_CANDIDATE_BUILD_CACHE_TTL_MS) || 15000;
+  const candidateCacheMaxEntries = Number(LOOT_CANDIDATE_BUILD_CACHE_MAX_ENTRIES) || 24;
   const startedAtMs = getPerfNow();
   const nowEpochMs = Date.now();
   const metrics = {
@@ -21361,18 +21309,12 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   const ceiling = String(sourceConfig?.filters?.rarityCeiling ?? "");
   const includeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordIncludeTags ?? []);
   const excludeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordExcludeTags ?? []);
-  const includeModeAll =
-    typeof LOOT_KEYWORD_INCLUDE_MODES !== "undefined"
-      ? String(LOOT_KEYWORD_INCLUDE_MODES?.ALL ?? "all")
-          .trim()
-          .toLowerCase() || "all"
-      : "all";
-  const includeModeAny =
-    typeof LOOT_KEYWORD_INCLUDE_MODES !== "undefined"
-      ? String(LOOT_KEYWORD_INCLUDE_MODES?.ANY ?? "any")
-          .trim()
-          .toLowerCase() || "any"
-      : "any";
+  const includeModeAll = String(LOOT_KEYWORD_INCLUDE_MODES?.ALL ?? "all")
+    .trim()
+    .toLowerCase() || "all";
+  const includeModeAny = String(LOOT_KEYWORD_INCLUDE_MODES?.ANY ?? "any")
+    .trim()
+    .toLowerCase() || "any";
   const includeModeRaw = String(sourceConfig?.filters?.keywordIncludeMode ?? includeModeAll)
     .trim()
     .toLowerCase();
@@ -23534,7 +23476,13 @@ function buildBoardReadyLootBundleFromPreviewPayload(preview = {}, options = {})
 
 async function generateBoardReadyLootBundle(draftInput = {}, options = {}) {
   const preview = await generateLootPreviewPayload(draftInput);
-  return buildBoardReadyLootBundleFromPreviewPayload(preview, options);
+  const bundle = buildBoardReadyLootBundleFromPreviewPayload(preview, options);
+  const validation = validateBoardReadyLootBundle(bundle);
+  if (!validation.ok) {
+    bundle.warnings = Array.isArray(bundle.warnings) ? bundle.warnings : [];
+    bundle.warnings.push(...validation.errors);
+  }
+  return bundle;
 }
 
 function getLootEngineRarityWeights() {
@@ -50092,6 +50040,54 @@ function getMarchingTokenPositions(state = getMarchingOrderState()) {
   return positions;
 }
 
+async function moveActorTokenToMarchSpacingCell({ actorId, cellIndex }) {
+  const size = 12;
+  const encodedCellOffset = 1000;
+  const normalizedCellIndex = Number.parseInt(String(cellIndex ?? ""), 10);
+  if (!Number.isInteger(normalizedCellIndex) || normalizedCellIndex < encodedCellOffset) return false;
+  if (!canvas?.ready) return false;
+
+  const actor = game?.actors?.get?.(String(actorId ?? "")) ?? null;
+  const token = actor?.getActiveTokens?.(true, true)?.[0] ?? actor?.getActiveTokens?.()?.[0] ?? null;
+  const tokenDocument = token?.document ?? token;
+  if (!token || !tokenDocument || typeof tokenDocument.update !== "function") return false;
+
+  const tokenPositions = getMarchingTokenPositions();
+  const entries = Object.values(tokenPositions);
+  if (!entries.length) return false;
+
+  const encoded = normalizedCellIndex - encodedCellOffset;
+  const row = Math.max(0, Math.min(size - 1, Math.floor(encoded / size)));
+  const column = Math.max(0, Math.min(size - 1, encoded % size));
+  const centerCell = Math.floor(size / 2);
+  const gridUnitPixels = getMarchingGridUnitPixels();
+  const centroid = entries.reduce(
+    (acc, position) => ({
+      x: acc.x + Number(position?.x ?? 0),
+      y: acc.y + Number(position?.y ?? 0)
+    }),
+    { x: 0, y: 0 }
+  );
+  centroid.x /= entries.length;
+  centroid.y /= entries.length;
+
+  const tokenWidth = Math.max(
+    1,
+    Number(token?.w ?? token?.width ?? 0) || Number(tokenDocument?.width ?? 1) * gridUnitPixels || gridUnitPixels
+  );
+  const tokenHeight = Math.max(
+    1,
+    Number(token?.h ?? token?.height ?? 0) || Number(tokenDocument?.height ?? 1) * gridUnitPixels || gridUnitPixels
+  );
+  const targetCenterX = centroid.x + (column - centerCell) * gridUnitPixels;
+  const targetCenterY = centroid.y + (row - centerCell) * gridUnitPixels;
+  await tokenDocument.update({
+    x: Math.round(targetCenterX - tokenWidth / 2),
+    y: Math.round(targetCenterY - tokenHeight / 2)
+  });
+  return true;
+}
+
 function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
   const ranks = state?.ranks ?? {};
   const rankIds = getMarchBoardRankIds();
@@ -54886,7 +54882,6 @@ async function diagnoseWorldData(options = {}) {
   } else {
     ui.notifications?.info(`Party Operations diagnose finished. Issues found: ${totalIssues}.`);
   }
-  if (DEBUG_LOG) console.log(`${MODULE_ID}: world data diagnose report`, report);
   return report;
 }
 
@@ -54926,6 +54921,7 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   bindFolderOwnershipProxySubmit,
   isManagedAudioMixPlaylist,
   queueManagedAudioMixPlaybackResync,
+  autoInventoryPackIndexCache,
   gameRef: game,
   foundryRef: foundry
 });

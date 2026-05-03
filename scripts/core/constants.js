@@ -23,3 +23,22 @@ export function getModuleSocketChannel(moduleId = MODULE_ID) {
 }
 
 export const SOCKET_CHANNEL = getModuleSocketChannel();
+
+export const INTEGRATION_MODES = Object.freeze({
+  AUTO: "auto",
+  OFF: "off",
+  FLAGS: "flags",
+  DAE: "dae"
+});
+
+export const LOOT_SCARCITY_LEVELS = Object.freeze({
+  ABUNDANT: "abundant",
+  NORMAL: "normal",
+  SCARCE: "scarce"
+});
+
+export const INVENTORY_HOOK_MODES = Object.freeze({
+  OFF: "off",
+  REFRESH: "refresh",
+  SYNC: "sync"
+});
