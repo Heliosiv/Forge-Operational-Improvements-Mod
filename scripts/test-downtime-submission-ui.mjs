@@ -49,6 +49,11 @@ assertMatch(
 );
 assertMatch(
   moduleSource,
+  /function emitDowntimeV2PlayerResultReady\(result = \{\}\)[\s\S]*type: "ops:player-action-result"[\s\S]*hubTab: "downtime"/,
+  "Delivered downtime results should send players directly back to the downtime panel."
+);
+assertMatch(
+  moduleSource,
   /async function applyDowntimeV2SubmissionForUser\(user,\s*rawSubmission = \{\}\)[\s\S]*submission\.resultDraft = buildDowntimeV2ResultDraft\(submission,\s*card,/,
   "GM-side downtime v2 submissions should rebuild result drafts instead of trusting client payloads."
 );
@@ -150,6 +155,26 @@ assertMatch(
   "Opening Operations for players should render the downtime form even when the player hub is in advanced/classic mode."
 );
 assertMatch(
+  playerAppSource,
+  /window:\s*\{\s*title:\s*"Party Operations - Player Command Center"\s*\}/,
+  "Player-facing routes should open as a separate Player Command Center window."
+);
+assertMatch(
+  playerShellTemplate,
+  /aria-label="Party Operations Player Command Center"/,
+  "Player shell should identify itself as the player command center."
+);
+assertMatch(
+  playerShellTemplate,
+  /aria-label="Player Command Center Views"/,
+  "Player command center should expose Watch, March, Loot, and Downtime as shell views."
+);
+assertMatch(
+  playerShellTemplate,
+  /\{\{#if playerHubSimpleMode\}\}Player Command Center\{\{else\}\}Advanced Player View/,
+  "Player shell should reserve rest-watch wording for the legacy/classic body rather than the command-center frame."
+);
+assertMatch(
   restWatchTemplate,
   /\{\{#unless isGM\}\}[\s\S]*\{\{#if mainTabOperations\}\}[\s\S]*data-action="open-player-downtime"[\s\S]*Downtime/,
   "The player Operations shell should expose a direct Downtime button."
@@ -201,6 +226,16 @@ assertMatch(
   socketHandlers,
   /players:openDowntimeSession[\s\S]*setPlayerHubTab\?\.\("downtime"\)/,
   "Player socket route should open the downtime hub tab."
+);
+assertMatch(
+  socketHandlers,
+  /message\.type === "ops:downtimeV2-submit"[\s\S]*hubTab: "downtime"/,
+  "Accepted player downtime submissions should return the player to the downtime panel."
+);
+assertMatch(
+  socketHandlers,
+  /playerHubTab === "downtime"[\s\S]*openRestWatchUiForCurrentUser\?\.\(\{\s*force: true,\s*hubTab: "downtime"\s*\}\)/,
+  "Player action results should honor direct downtime panel routing."
 );
 
 process.stdout.write("downtime submission ui validation passed\n");

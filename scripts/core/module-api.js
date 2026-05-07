@@ -6,8 +6,6 @@ export function buildPartyOperationsApi(options = {}) {
     moduleId,
     ensureLauncherUi,
     openMainTab,
-    openGmMerchantsPage,
-    openGmAudioPage,
     refreshOpenApps,
     getOperationsLedger,
     runGatherResourcesAction,
@@ -69,8 +67,9 @@ export function buildPartyOperationsApi(options = {}) {
     getPerfSummary
   } = options;
 
-  const deepClone = (value) => foundryRef?.utils?.deepClone ? foundryRef.utils.deepClone(value) : value;
+  const deepClone = (value) => (foundryRef?.utils?.deepClone ? foundryRef.utils.deepClone(value) : value);
   const wrapTrackIdAction = (action, trackId) => action?.({ dataset: { trackId: String(trackId ?? "").trim() } });
+  const openCommandCenterView = (view) => openMainTab("gm", { force: true, commandCenterView: String(view ?? "") });
   const buildAudioPick = ({ kind = "all", usage = "all", search = "" } = {}) => {
     const catalog = getAudioLibraryCatalog();
     const normalizedKind = normalizeAudioLibraryKind(kind);
@@ -100,8 +99,8 @@ export function buildPartyOperationsApi(options = {}) {
       openMarchingOrder: () => openMainTab("marching-order", { force: true }),
       openOperations: () => openMainTab("operations", { force: true }),
       openGm: () => openMainTab("gm", { force: true }),
-      openGmMerchants: () => openGmMerchantsPage({ force: true }),
-      openGmAudio: () => openGmAudioPage({ force: true }),
+      openGmMerchants: () => openCommandCenterView("merchants"),
+      openGmAudio: () => openCommandCenterView("audio"),
       openSettings: () => openPartyOperationsSettingsHub({ force: true }),
       refreshAll: () => refreshOpenApps()
     },
@@ -134,7 +133,8 @@ export function buildPartyOperationsApi(options = {}) {
       getSourceConfig: () => deepClone(getLootSourceConfig()),
       getCrBracket: (cr) => getCrBracket(cr),
       convertCurrencyToGpEquivalent: (currency) => convertCurrencyToGpEquivalent(currency),
-      rollIndividual: (cr, creatureCount, options = {}) => deepClone(rollIndividualTreasure(cr, creatureCount, options)),
+      rollIndividual: (cr, creatureCount, options = {}) =>
+        deepClone(rollIndividualTreasure(cr, creatureCount, options)),
       rollHoard: (cr, options = {}) => deepClone(rollHoardTreasure(cr, options)),
       applyTweakers: (result, tweakers = []) => deepClone(applyLootTweakers(result, tweakers)),
       summarize: (result) => summarizeLoot(result),
@@ -144,7 +144,7 @@ export function buildPartyOperationsApi(options = {}) {
       getPreviewResult: () => deepClone(getLootPreviewResult())
     },
     audio: {
-      open: () => openGmAudioPage({ force: true }),
+      open: () => openCommandCenterView("audio"),
       getCatalog: () => deepClone(getAudioLibraryCatalog()),
       getCatalogWithHidden: () => deepClone(getAudioLibraryCatalog({ includeHidden: true })),
       scan: (options = {}) => scanAudioLibraryCatalog(options),
@@ -183,12 +183,7 @@ export function buildPartyOperationsApi(options = {}) {
   return api;
 }
 
-export function registerPartyOperationsApi({
-  attachModuleApi,
-  moduleId,
-  api,
-  logger
-} = {}) {
+export function registerPartyOperationsApi({ attachModuleApi, moduleId, api, logger } = {}) {
   return attachModuleApi({
     moduleId,
     api,

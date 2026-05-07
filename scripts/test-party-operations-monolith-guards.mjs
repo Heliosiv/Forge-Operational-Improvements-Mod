@@ -208,6 +208,99 @@ assert.match(
   /Choose player-owned actor target items for food, water, and torches\./,
   "Resource target helper copy should describe actor-owned targets, not character-only targets."
 );
+
+{
+  const fn = getFunctionSource("applyMarchSpacingPresetFromElement");
+  assert.match(
+    source,
+    /async function syncMarchSpacingPresetTokens\(state = getMarchingOrderState\(\)\)/,
+    "March spacing presets should have a live-token sync helper for canvas-backed grids."
+  );
+  assert.match(
+    source,
+    /async function moveActorTokenToMarchSpacingCell\(\{\s*actorId,\s*cellIndex,\s*tokenPositions = null\s*\}\)/,
+    "March spacing token moves should accept a stable token-position snapshot."
+  );
+  assert.match(
+    fn,
+    /updateMarchingOrderState\([\s\S]*\{\s*skipLocalRefresh:\s*true\s*\}/,
+    "March spacing presets should defer the local refresh until after token sync."
+  );
+  assert.match(
+    fn,
+    /await syncMarchSpacingPresetTokens\(getMarchingOrderState\(\)\);[\s\S]*refreshOpenApps\(\{\s*scope:\s*REFRESH_SCOPE_KEYS\.MARCH\s*\}\);/,
+    "March spacing presets should move canvas tokens before refreshing the visible grid."
+  );
+}
+
+{
+  const rosterFn = getFunctionSource("getGatherPlanningActors");
+  const batchFn = getFunctionSource("promptGatherBatchDialog");
+  const singleFn = getFunctionSource("promptGatherResourceDialog");
+  assert.match(
+    rosterFn,
+    /for \(const actor of getPartyCharacterActors\(\)\) addActor\(actor\);/,
+    "Gather planning should start from the party character roster, not only player-owned resource actors."
+  );
+  assert.match(
+    rosterFn,
+    /for \(const actor of getResourceSyncActors\(\)\) addActor\(actor\);/,
+    "Gather planning should still include resource-sync/player-owned actors as a fallback."
+  );
+  assert.match(
+    batchFn,
+    /const actors = getGatherPlanningActors\(\)\.sort/,
+    "The batch gather dialog should use the gather planning roster."
+  );
+  assert.match(
+    singleFn,
+    /const actors = getGatherPlanningActors\(\)\.sort/,
+    "The single gather dialog should use the gather planning roster."
+  );
+}
+
+{
+  const normalizeFn = getFunctionSource("normalizeOperationalUpkeepCosts");
+  const contextFn = getFunctionSource("buildOperationalUpkeepCostContext");
+  const resourceFn = getFunctionSource("setOperationalResource");
+  assert.match(
+    source,
+    /const OPERATIONAL_UPKEEP_COST_DEFAULTS\s*=\s*Object\.freeze\(\{/,
+    "Daily upkeep costs should have explicit GM-facing defaults."
+  );
+  assert.match(
+    normalizeFn,
+    /foodRationGp[\s\S]*waterRationGp[\s\S]*torchGp[\s\S]*lodgingCampGp[\s\S]*otherDailyGp/,
+    "Daily upkeep costs should normalize ration, torch, lodging, and other daily gp fields."
+  );
+  assert.match(
+    contextFn,
+    /dailyTotalGp[\s\S]*pendingTotalGp[\s\S]*dailyTotalLabel[\s\S]*pendingTotalLabel/,
+    "Resource planning should derive daily and pending gp upkeep totals."
+  );
+  assert.match(
+    source,
+    /resources\.upkeepCosts\s*=\s*normalizeOperationalUpkeepCosts\(resources\.upkeepCosts\)/,
+    "Resource normalization should persist a stable upkeep cost config."
+  );
+  assert.match(
+    resourceFn,
+    /resourceKey\.startsWith\("upkeepCost:"\)[\s\S]*normalizeResourceCostGp\(element\?\.value,\s*0\)/,
+    "GM resource edits should save numeric upkeep cost fields."
+  );
+  assert.match(resourceFn, /resourceKey === "upkeepCostNote"/, "GM resource edits should save an upkeep cost note.");
+  assert.match(
+    restWatchTemplate,
+    /Daily Upkeep Costs[\s\S]*data-resource="upkeepCost:foodRationGp"[\s\S]*data-resource="upkeepCost:waterRationGp"[\s\S]*data-resource="upkeepCost:torchGp"[\s\S]*data-resource="upkeepCost:lodgingCampGp"[\s\S]*data-resource="upkeepCost:otherDailyGp"[\s\S]*data-resource="upkeepCostNote"/,
+    "The GM Resources section should expose daily upkeep cost controls."
+  );
+  assert.match(
+    restWatchTemplate,
+    /Daily Cost[\s\S]*upkeepCosts\.dailyTotalLabel[\s\S]*Pending Cost[\s\S]*upkeepCosts\.pendingTotalLabel/,
+    "The Resources summary should show daily and pending upkeep gp totals."
+  );
+}
+
 assert.match(
   restWatchTemplate,
   /Upkeep Time[\s\S]*upkeepScheduleLabel[\s\S]*Last Applied[\s\S]*upkeepLastAppliedLabel[\s\S]*Next Due[\s\S]*upkeepNextDueLabel/,

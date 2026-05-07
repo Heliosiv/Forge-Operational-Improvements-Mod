@@ -79,6 +79,7 @@ assert.deepEqual(openedDowntime, [
 
 const actionNotifications = [];
 const actionRefreshes = [];
+const actionDowntimeOpens = [];
 globalThis.ui = {
   notifications: {
     info: (message) => actionNotifications.push({ type: "info", message }),
@@ -99,12 +100,53 @@ await routePartyOperationsSocketMessage(
     },
     normalizeRefreshScopeList: (scopes) => scopes,
     refreshOpenApps: (payload) => actionRefreshes.push(payload),
-    schedulePendingSopNoteSync: () => {}
+    schedulePendingSopNoteSync: () => {},
+    setPlayerHubTab: (tab) => actionDowntimeOpens.push(["tab", tab]),
+    openRestWatchUiForCurrentUser: (options) => actionDowntimeOpens.push(["open", options])
   }
 );
 assert.deepEqual(actionNotifications, [{ type: "warn", message: "Marching order is locked by the GM." }]);
 await new Promise((resolve) => setTimeout(resolve, 100));
 assert.deepEqual(actionRefreshes, [{ scopes: ["march"] }]);
+assert.deepEqual(actionDowntimeOpens, []);
+delete globalThis.ui;
+
+const downtimeResultNotifications = [];
+const downtimeResultRefreshes = [];
+const downtimeResultOpens = [];
+globalThis.ui = {
+  notifications: {
+    info: (message) => downtimeResultNotifications.push({ type: "info", message }),
+    warn: (message) => downtimeResultNotifications.push({ type: "warn", message })
+  }
+};
+await routePartyOperationsSocketMessage(
+  {
+    type: "ops:player-action-result",
+    userId: "player-1",
+    ok: true,
+    summary: "Downtime result ready.",
+    scopes: ["operations"],
+    hubTab: "downtime"
+  },
+  {
+    game: {
+      user: { id: "player-1", isGM: false }
+    },
+    normalizeRefreshScopeList: (scopes) => scopes,
+    refreshOpenApps: (payload) => downtimeResultRefreshes.push(payload),
+    schedulePendingSopNoteSync: () => {},
+    setPlayerHubTab: (tab) => downtimeResultOpens.push(["tab", tab]),
+    openRestWatchUiForCurrentUser: (options) => downtimeResultOpens.push(["open", options])
+  }
+);
+assert.deepEqual(downtimeResultNotifications, [{ type: "info", message: "Downtime result ready." }]);
+await new Promise((resolve) => setTimeout(resolve, 100));
+assert.deepEqual(downtimeResultRefreshes, [{ scopes: ["operations"] }]);
+assert.deepEqual(downtimeResultOpens, [
+  ["tab", "downtime"],
+  ["open", { force: true, hubTab: "downtime" }]
+]);
 delete globalThis.ui;
 
 const emitted = [];
@@ -133,6 +175,37 @@ assert.deepEqual(emitted, [
       ok: false,
       summary: "You do not have permission to move that actor in marching order.",
       scopes: ["march"]
+    },
+    options: { channel: "module.party-operations" }
+  }
+]);
+
+const downtimeSubmitEmits = [];
+await routePartyOperationsSocketMessage(
+  { type: "ops:downtimeV2-submit", userId: "player-1", submission: { actorId: "actor-1" } },
+  {
+    game: {
+      user: { id: "gm-1", isGM: true }
+    },
+    getSocketRequester: () => ({ id: "player-1" }),
+    applyPlayerDowntimeV2SubmitRequest: async () => ({
+      ok: true,
+      summary: "Downtime submission received.",
+      scope: "operations"
+    }),
+    emitModuleSocket: (message, options) => downtimeSubmitEmits.push({ message, options }),
+    socketChannel: "module.party-operations"
+  }
+);
+assert.deepEqual(downtimeSubmitEmits, [
+  {
+    message: {
+      type: "ops:player-action-result",
+      userId: "player-1",
+      ok: true,
+      summary: "Downtime submission received.",
+      scopes: ["operations"],
+      hubTab: "downtime"
     },
     options: { channel: "module.party-operations" }
   }

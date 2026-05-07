@@ -18,6 +18,7 @@ const MAIN_OPERATIONS_WINDOW_PROFILE = Object.freeze({
 
 export const APP_WINDOW_SIZE_PROFILES = Object.freeze({
   default: NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "command-center": MAIN_OPERATIONS_WINDOW_PROFILE,
   "rest-watch": MAIN_OPERATIONS_WINDOW_PROFILE,
   "operations-shell": MAIN_OPERATIONS_WINDOW_PROFILE,
   "rest-watch-player": NEAR_FULLSCREEN_WINDOW_PROFILE,
@@ -32,6 +33,7 @@ export const APP_WINDOW_SIZE_PROFILES = Object.freeze({
 });
 
 export const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
+  "party-operations-command-center": "command-center",
   "rest-watch-app": "rest-watch",
   "operations-shell-app": "operations-shell",
   "rest-watch-player-app": "rest-watch-player",
@@ -46,6 +48,7 @@ export const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
 });
 
 export const APP_WINDOW_POSITION_STORAGE_KEYS = Object.freeze({
+  "command-center": "main-ops",
   "rest-watch": "main-ops",
   "operations-shell": "main-ops",
   "marching-order": "main-ops",

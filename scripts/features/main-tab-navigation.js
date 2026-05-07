@@ -9,7 +9,7 @@ export function createMainTabNavigator({
   appInstanceKeys,
   RestWatchApp,
   OperationsShellApp,
-  MarchingOrderApp,
+  CommandCenterApp,
   getResponsiveWindowOptions,
   setActiveRestMainTab,
   setPlayerHubTab,
@@ -17,6 +17,15 @@ export function createMainTabNavigator({
   writePoBrowserHistoryEntry,
   openRestWatchPlayerApp
 } = {}) {
+  const playerHubTabValues = new Set(["watch", "march", "loot", "downtime"]);
+
+  function normalizeRequestedPlayerHubTab(value) {
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
+    return playerHubTabValues.has(normalized) ? normalized : "";
+  }
+
   function getPlayerHubTabFromMainTab(tabId) {
     const normalized = normalizeMainTabId(tabId, "rest-watch");
     if (normalized === "marching-order") return "march";
@@ -43,12 +52,15 @@ export function createMainTabNavigator({
         });
         return null;
       }
-      const playerHubTab = getPlayerHubTabFromMainTab(normalized);
+      const requestedPlayerHubTab = normalizeRequestedPlayerHubTab(renderOptions?.hubTab);
+      const playerHubTab = requestedPlayerHubTab || getPlayerHubTabFromMainTab(normalized);
       setPlayerHubTab?.(playerHubTab);
       const restWatchApp = getAppInstance?.(appInstanceKeys?.REST_WATCH);
       if (restWatchApp?.element?.isConnected) void restWatchApp.close();
       const operationsShellApp = getAppInstance?.(appInstanceKeys?.OPERATIONS_SHELL);
       if (operationsShellApp?.element?.isConnected) void operationsShellApp.close();
+      const commandCenterApp = getAppInstance?.(appInstanceKeys?.COMMAND_CENTER);
+      if (commandCenterApp?.element?.isConnected) void commandCenterApp.close();
       const marchingOrderApp = getAppInstance?.(appInstanceKeys?.MARCHING_ORDER);
       if (marchingOrderApp?.element?.isConnected) void marchingOrderApp.close();
       setActiveRestMainTab?.("rest-watch");
@@ -58,62 +70,37 @@ export function createMainTabNavigator({
       return app ?? null;
     }
 
-    if (normalized === "marching-order") {
-      const restWatchApp = getAppInstance?.(appInstanceKeys?.REST_WATCH);
-      if (restWatchApp?.element?.isConnected) void restWatchApp.close();
-      const operationsShellApp = getAppInstance?.(appInstanceKeys?.OPERATIONS_SHELL);
-      if (operationsShellApp?.element?.isConnected) void operationsShellApp.close();
-      const restWatchPlayerApp = getAppInstance?.(appInstanceKeys?.REST_WATCH_PLAYER);
-      if (restWatchPlayerApp?.element?.isConnected) void restWatchPlayerApp.close();
-      const marchingOrderApp = getAppInstance?.(appInstanceKeys?.MARCHING_ORDER);
-      const app = marchingOrderApp?.element?.isConnected
-        ? marchingOrderApp
-        : new MarchingOrderApp(getResponsiveWindowOptions?.("marching-order"));
-      app.render(renderOptions);
-      queueManagedAudioMixPlaybackResync?.();
-      if (!suppressHistory) writePoBrowserHistoryEntry?.({ type: "main", tab: "marching-order" });
-      return app;
-    }
-
-    const marchingOrderApp = getAppInstance?.(appInstanceKeys?.MARCHING_ORDER);
-    if (marchingOrderApp?.element?.isConnected) void marchingOrderApp.close();
+    const commandCenterApp = getAppInstance?.(appInstanceKeys?.COMMAND_CENTER);
+    const restWatchApp = getAppInstance?.(appInstanceKeys?.REST_WATCH);
     const operationsShellApp = getAppInstance?.(appInstanceKeys?.OPERATIONS_SHELL);
     const restWatchPlayerApp = getAppInstance?.(appInstanceKeys?.REST_WATCH_PLAYER);
     if (restWatchPlayerApp?.element?.isConnected) void restWatchPlayerApp.close();
+    if (restWatchApp?.element?.isConnected) void restWatchApp.close();
+    if (operationsShellApp?.element?.isConnected) void operationsShellApp.close();
+    const marchingOrderApp = getAppInstance?.(appInstanceKeys?.MARCHING_ORDER);
+    if (marchingOrderApp?.element?.isConnected) void marchingOrderApp.close();
 
-    if (normalized === "gm" || normalized === "operations") {
-      const targetMainTab = normalized === "gm" ? "gm" : "operations";
-      if (targetMainTab === "gm" && !canAccessGmPage?.()) {
-        notifyUiWarnThrottled?.("GM permissions are required for the GM section.", {
-          key: "gm-section-permission",
-          ttlMs: 1500
-        });
-        return null;
-      }
-      const restWatchApp = getAppInstance?.(appInstanceKeys?.REST_WATCH);
-      if (restWatchApp?.element?.isConnected) void restWatchApp.close();
-      setActiveRestMainTab?.(targetMainTab);
-      const app = operationsShellApp?.element?.isConnected
-        ? operationsShellApp
-        : new OperationsShellApp(getResponsiveWindowOptions?.("operations-shell"));
-      app._activePanel = targetMainTab;
-      app.render(renderOptions);
-      queueManagedAudioMixPlaybackResync?.();
-      if (!suppressHistory) writePoBrowserHistoryEntry?.({ type: "main", tab: targetMainTab });
-      return app;
+    if (normalized === "gm" && !canAccessGmPage?.()) {
+      notifyUiWarnThrottled?.("GM permissions are required for the GM section.", {
+        key: "gm-section-permission",
+        ttlMs: 1500
+      });
+      return null;
     }
 
-    if (operationsShellApp?.element?.isConnected) void operationsShellApp.close();
-
-    setActiveRestMainTab?.("rest-watch");
-    const restWatchApp = getAppInstance?.(appInstanceKeys?.REST_WATCH);
-    const app = restWatchApp?.element?.isConnected
-      ? restWatchApp
-      : new RestWatchApp(getResponsiveWindowOptions?.("rest-watch"));
-    app._activePanel = "rest-watch";
+    setActiveRestMainTab?.(normalized);
+    const ShellApp = CommandCenterApp ?? OperationsShellApp ?? RestWatchApp;
+    const app = commandCenterApp?.element?.isConnected
+      ? commandCenterApp
+      : new ShellApp(getResponsiveWindowOptions?.("command-center"));
+    app._isCommandCenterShell = true;
+    app._activePanel = normalized;
+    if (renderOptions?.commandCenterView) {
+      app._commandCenterView = String(renderOptions.commandCenterView);
+    }
     app.render(renderOptions);
     queueManagedAudioMixPlaybackResync?.();
-    if (!suppressHistory) writePoBrowserHistoryEntry?.({ type: "main", tab: "rest-watch" });
+    if (!suppressHistory) writePoBrowserHistoryEntry?.({ type: "main", tab: normalized });
     return app;
   }
 

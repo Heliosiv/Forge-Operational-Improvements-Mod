@@ -6,7 +6,7 @@
     </div>
     <nav class="po-tabs po-tabs-main po-tabs-main-header" role="tablist" aria-label="Party Operations views">
       <button type="button" role="tab" tabindex="{{#if mainTabRestWatch}}0{{else}}-1{{/if}}" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="switch-tab" data-tab="rest" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
-      <button type="button" role="tab" tabindex="-1" class="po-tab" data-action="switch-tab" data-tab="march" aria-selected="false" aria-current="false">Marching Order</button>
+      <button type="button" role="tab" tabindex="{{#if mainTabMarchingOrder}}0{{else}}-1{{/if}}" class="po-tab {{#if mainTabMarchingOrder}}is-active{{/if}}" data-action="switch-tab" data-tab="march" aria-selected="{{#if mainTabMarchingOrder}}true{{else}}false{{/if}}" aria-current="{{#if mainTabMarchingOrder}}page{{else}}false{{/if}}">Marching Order</button>
       <button type="button" role="tab" tabindex="{{#if mainTabOperations}}0{{else}}-1{{/if}}" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="switch-tab" data-tab="operations" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
       {{#if showGmPageTab}}
       <button type="button" role="tab" tabindex="{{#if mainTabGm}}0{{else}}-1{{/if}}" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-action="switch-tab" data-tab="gm" aria-selected="{{#if mainTabGm}}true{{else}}false{{/if}}" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
@@ -30,7 +30,70 @@
   </header>
 
   <div class="po-body">
+  {{#if isCommandCenterShell}}
+  <nav class="po-command-rail" aria-label="Command center views">
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewCommand}}is-active{{/if}}" data-action="command-center-view" data-view="command">
+      <i class="fa-solid fa-gauge-high"></i><span>Command</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if mainTabRestWatch}}is-active{{/if}}" data-action="command-center-view" data-view="rest">
+      <i class="fa-solid fa-moon"></i><span>Rest</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if mainTabMarchingOrder}}is-active{{/if}}" data-action="command-center-view" data-view="march">
+      <i class="fa-solid fa-shoe-prints"></i><span>March</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewResources}}is-active{{/if}}" data-action="command-center-view" data-view="resources">
+      <i class="fa-solid fa-boxes-stacked"></i><span>Resources</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewGather}}is-active{{/if}}" data-action="command-center-view" data-view="gather">
+      <i class="fa-solid fa-wheat-awn"></i><span>Gather</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewLoot}}is-active{{/if}}" data-action="command-center-view" data-view="loot">
+      <i class="fa-solid fa-gem"></i><span>Loot</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewDowntime}}is-active{{/if}}" data-action="command-center-view" data-view="downtime">
+      <i class="fa-solid fa-hourglass-half"></i><span>Downtime</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewMerchants}}is-active{{/if}}" data-action="command-center-view" data-view="merchants">
+      <i class="fa-solid fa-scale-balanced"></i><span>Merchants</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewWeather}}is-active{{/if}}" data-action="command-center-view" data-view="weather">
+      <i class="fa-solid fa-cloud-sun-rain"></i><span>Weather</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewAudio}}is-active{{/if}}" data-action="command-center-view" data-view="audio">
+      <i class="fa-solid fa-music"></i><span>Audio</span>
+    </button>
+    <button type="button" class="po-command-rail-item {{#if commandCenterViewReputation}}is-active{{/if}}" data-action="command-center-view" data-view="reputation">
+      <i class="fa-solid fa-handshake"></i><span>Reputation</span>
+    </button>
+    <button type="button" class="po-command-rail-item" data-action="command-center-view" data-view="settings">
+      <i class="fa-solid fa-gear"></i><span>Settings</span>
+    </button>
+  </nav>
+  {{/if}}
   <div class="po-primary-shell">
+
+  {{#if commandCenterToolView}}
+  <section class="po-command-center-tool-host" aria-label="{{mainSubtitleLabel}}">
+    {{#if commandCenterViewWeather}}
+    {{> "modules/party-operations/templates/gm-weather.hbs"}}
+    {{/if}}
+    {{#if commandCenterViewDowntime}}
+    {{> "modules/party-operations/templates/gm-downtime.hbs"}}
+    {{/if}}
+    {{#if commandCenterViewMerchants}}
+    {{> "modules/party-operations/templates/gm-merchants.hbs"}}
+    {{/if}}
+    {{#if commandCenterViewAudio}}
+    {{> "modules/party-operations/templates/gm-audio.hbs"}}
+    {{/if}}
+    {{#if commandCenterViewLoot}}
+    {{> "modules/party-operations/templates/gm-loot.hbs"}}
+    {{/if}}
+    {{#if commandCenterViewReputation}}
+    {{> "modules/party-operations/templates/gm-factions.hbs"}}
+    {{/if}}
+  </section>
+  {{else}}
 
   {{#if mainTabRestWatch}}
   <section class="po-overview" aria-label="Rest watch status">
@@ -244,6 +307,10 @@
       </div>
       {{/if}}
 
+      {{#if mainTabMarchingOrder}}
+      {{> "modules/party-operations/templates/partials/command-center/marching-order-panel.hbs"}}
+      {{/if}}
+
       {{#if isGM}}
       {{#if gmPanelTabOperations}}
       <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
@@ -302,6 +369,8 @@
             <div class="po-info-chip" title="Calendar days elapsed since last upkeep application"><span>Pending Days</span><strong>{{operations.resources.summary.upkeepDaysPending}}</strong></div>
             <div class="po-info-chip" title="Food expected to be deducted when daily upkeep is applied"><span>Pending Food</span><strong>{{operations.resources.summary.foodDrainPending}}</strong></div>
             <div class="po-info-chip" title="Water expected to be deducted when daily upkeep is applied"><span>Pending Water</span><strong>{{operations.resources.summary.waterDrainPending}}</strong></div>
+            <div class="po-info-chip" title="Estimated gp value of one daily upkeep cycle"><span>Daily Cost</span><strong>{{operations.resources.upkeepCosts.dailyTotalLabel}}</strong></div>
+            <div class="po-info-chip" title="Estimated gp value of currently pending upkeep"><span>Pending Cost</span><strong>{{operations.resources.upkeepCosts.pendingTotalLabel}}</strong></div>
             <div class="po-info-chip" title="Current automatic upkeep gate state"><span>Auto Upkeep</span><strong>{{operations.resources.summary.autoUpkeepPromptLabel}}</strong></div>
           </div>
           <div class="po-op-summary {{#if operations.resources.gatherFoodCoveredNextUpkeep}}is-good{{else}}{{#if operations.resources.gatherWaterCoveredNextUpkeep}}is-good{{else}}is-warn{{/if}}{{/if}}" title="Gathered food and water are held in a pending pool, consumed by upkeep first, then any remainder is pushed into the configured targets.">
@@ -346,6 +415,35 @@
                   {{/if}}
                 </div>
                 {{/each}}
+              </div>
+              <div class="po-resource-config-col">
+                <div class="po-section-title">Daily Upkeep Costs</div>
+                <div class="po-hint">GM planning values for the daily drains above. These do not spend party currency automatically.</div>
+                <label class="po-resource-row">
+                  <span>Food Ration GP</span>
+                  <input type="number" min="0" step="0.01" class="po-input" data-action="set-resource" data-resource="upkeepCost:foodRationGp" value="{{operations.resources.upkeepCosts.foodRationGp}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Water Ration GP</span>
+                  <input type="number" min="0" step="0.01" class="po-input" data-action="set-resource" data-resource="upkeepCost:waterRationGp" value="{{operations.resources.upkeepCosts.waterRationGp}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Torch GP</span>
+                  <input type="number" min="0" step="0.01" class="po-input" data-action="set-resource" data-resource="upkeepCost:torchGp" value="{{operations.resources.upkeepCosts.torchGp}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Lodging / Camp GP</span>
+                  <input type="number" min="0" step="0.01" class="po-input" data-action="set-resource" data-resource="upkeepCost:lodgingCampGp" value="{{operations.resources.upkeepCosts.lodgingCampGp}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Other Daily GP</span>
+                  <input type="number" min="0" step="0.01" class="po-input" data-action="set-resource" data-resource="upkeepCost:otherDailyGp" value="{{operations.resources.upkeepCosts.otherDailyGp}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Context</span>
+                  <input type="text" class="po-input" data-action="set-resource" data-resource="upkeepCostNote" value="{{operations.resources.upkeepCosts.note}}" placeholder="e.g., city lodging, stabling, hireling meals" />
+                </label>
+                <div class="po-op-summary">Daily: {{operations.resources.upkeepCosts.dailyTotalLabel}} - Pending: {{operations.resources.upkeepCosts.pendingTotalLabel}}</div>
               </div>
               {{/if}}
 
@@ -1081,6 +1179,7 @@
       {{/unless}}
     </div>
   </section>
+  {{/if}}
   </div>
   </div>
 

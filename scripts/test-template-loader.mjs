@@ -51,6 +51,7 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   const moduleManifest = JSON.parse(readFileSync("module.json", "utf8"));
   const gmPanelNavPartial = readFileSync("templates/partials/gm-panel-nav.hbs", "utf8");
   const weatherUiSource = readFileSync("scripts/features/weather-ui.js", "utf8");
+  const restWatchTemplate = readFileSync("templates/rest-watch.hbs", "utf8");
   const gmMerchantsTemplate = readFileSync("templates/gm-merchants.hbs", "utf8");
   const merchantShopTemplate = readFileSync("templates/merchant-shop.hbs", "utf8");
   const pageActionHelpersSource = readFileSync("scripts/features/page-action-helpers.js", "utf8");
@@ -68,6 +69,45 @@ assert.ok(Array.isArray(PO_PARTIAL_TEMPLATE_PATHS));
   assert.ok(
     !moduleManifest.templates.includes("templates/party-operations-app.hbs"),
     "Dead legacy app template should not be preloaded by module.json."
+  );
+  assert.ok(
+    moduleManifest.templates.includes("templates/party-operations-shell.hbs"),
+    "The command-center shell template should be preloaded by module.json."
+  );
+  assert.ok(
+    partyOperationsSource.includes("class PartyOperationsCommandCenterApp extends RestWatchApp"),
+    "The command center should be a real ApplicationV2 shell adapter, not only a launcher route."
+  );
+  assert.ok(
+    partyOperationsSource.includes("buildMarchingOrderViewContext()"),
+    "The shell should reuse the marching-order context builder instead of duplicating march data logic."
+  );
+  for (const shellGmTemplate of [
+    "gm-weather.hbs",
+    "gm-downtime.hbs",
+    "gm-merchants.hbs",
+    "gm-audio.hbs",
+    "gm-loot.hbs",
+    "gm-factions.hbs"
+  ]) {
+    assert.ok(
+      PO_PARTIAL_TEMPLATE_PATHS.some((templatePath) => templatePath.endsWith(shellGmTemplate)),
+      `${shellGmTemplate} should preload as a command-center partial.`
+    );
+    assert.ok(
+      restWatchTemplate.includes(`templates/${shellGmTemplate}`),
+      `${shellGmTemplate} should be reachable inside the command-center shell.`
+    );
+  }
+  assert.match(
+    partyOperationsSource,
+    /function openCommandCenterView[\s\S]*openMainTab\(mainTab,\s*\{[\s\S]*commandCenterView[\s\S]*function openGmFactionsPage/,
+    "GM tool pages should route through the command-center view helper by default."
+  );
+  assert.match(
+    partyOperationsSource,
+    /function openGmPanelByKey[\s\S]*openGmFactionsPage\(\{[\s\S]*openGmWeatherPage\(\{[\s\S]*openGmDowntimePage\(\{[\s\S]*openGmMerchantsPage\(\{[\s\S]*openGmAudioPage\(\{[\s\S]*openGmLootPage\(\{/,
+    "GM panel navigation should keep sibling tool views inside the command center."
   );
   assert.match(
     pageActionHelpersSource,

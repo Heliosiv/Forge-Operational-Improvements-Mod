@@ -1,10 +1,10 @@
-<div class="po-window po-window-rest-player" data-tool="rest-watch-player" role="region" aria-label="Party Operations Player View">
+<div class="po-window po-window-rest-player" data-tool="rest-watch-player" role="region" aria-label="Party Operations Player Command Center">
   <header class="po-header">
     <div class="po-header-main">
       <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
-      <div class="po-subtitle" aria-live="polite">{{#if playerHubSimpleMode}}Player Hub{{else}}Rest Watch (Player){{/if}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
+      <div class="po-subtitle" aria-live="polite">{{#if playerHubSimpleMode}}Player Command Center{{else}}Advanced Player View{{/if}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
-    <div class="po-context-pill" aria-hidden="true">Player View</div>
+    <div class="po-context-pill" aria-hidden="true">Player Command Center</div>
     <div class="po-controls">
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
@@ -30,7 +30,7 @@
       {{/if}}
 
       {{#if playerHubFlow.hasCards}}
-      <nav class="po-player-hub-nav" role="tablist" aria-label="Player Hub Tabs">
+      <nav class="po-player-hub-nav" role="tablist" aria-label="Player Command Center Views">
         {{#each playerHubFlow.cards}}
         <button type="button" role="tab" aria-controls="po-player-hub-panel-{{tab}}" tabindex="{{#if selected}}0{{else}}-1{{/if}}" class="po-player-hub-nav-card {{toneClass}} {{#if selected}}is-active{{/if}}" data-action="player-hub-tab" data-tab="{{tab}}" aria-selected="{{#if selected}}true{{else}}false{{/if}}">
           <span class="po-player-hub-nav-label">{{label}}</span>
@@ -79,7 +79,7 @@
   </div>
 
   <footer class="po-footer">
-    <div class="po-footer-text">{{#if playerHubSimpleMode}}Player Hub{{else}}Rest Watch{{/if}}</div>
+    <div class="po-footer-text">{{#if playerHubSimpleMode}}Player Command Center{{else}}Player View{{/if}}</div>
     <div class="po-footer-text">{{#if playerHubSimpleMode}}{{#if playerHubWatch}}Watch{{/if}}{{#if playerHubMarch}}March{{/if}}{{#if playerHubLoot}}Loot{{/if}}{{#if playerHubDowntime}}Downtime{{/if}}{{else}}Player view{{/if}}</div>
   </footer>
 </div>

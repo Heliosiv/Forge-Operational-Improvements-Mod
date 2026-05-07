@@ -32,6 +32,7 @@ export const REFRESH_SCOPE_KEYS = Object.freeze({
 });
 
 export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
+  "party-operations-command-center",
   "rest-watch-app",
   "party-operations-rest-watch-shared-note",
   "operations-shell-app",
@@ -48,13 +49,19 @@ export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
 
 export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
   [REFRESH_SCOPE_KEYS.REST]: Object.freeze([
+    "party-operations-command-center",
     "rest-watch-app",
     "operations-shell-app",
     "party-operations-rest-watch-shared-note",
     "rest-watch-player-app"
   ]),
-  [REFRESH_SCOPE_KEYS.MARCH]: Object.freeze(["marching-order-app", "rest-watch-player-app"]),
+  [REFRESH_SCOPE_KEYS.MARCH]: Object.freeze([
+    "party-operations-command-center",
+    "marching-order-app",
+    "rest-watch-player-app"
+  ]),
   [REFRESH_SCOPE_KEYS.OPERATIONS]: Object.freeze([
+    "party-operations-command-center",
     "operations-shell-app",
     "rest-watch-player-app",
     "party-operations-gm-factions-page",
@@ -66,6 +73,7 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
     "party-operations-gm-loot-claims-board"
   ]),
   [REFRESH_SCOPE_KEYS.LOOT]: Object.freeze([
+    "party-operations-command-center",
     "operations-shell-app",
     "party-operations-gm-audio-page",
     "party-operations-gm-loot-page",
@@ -76,6 +84,7 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
 });
 
 export const PO_TEMPLATE_MAP = Object.freeze({
+  "party-operations-shell": "modules/party-operations/templates/party-operations-shell.hbs",
   "rest-watch": "modules/party-operations/templates/rest-watch.hbs",
   "rest-watch-shared-note": "modules/party-operations/templates/rest-watch-shared-note.hbs",
   "rest-watch-player": "modules/party-operations/templates/rest-watch-player.hbs",

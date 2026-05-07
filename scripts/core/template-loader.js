@@ -1,7 +1,15 @@
 import { PO_TEMPLATE_MAP } from "./window-config.js";
 
 export const PO_PARTIAL_TEMPLATE_PATHS = Object.freeze([
+  "modules/party-operations/templates/rest-watch.hbs",
+  "modules/party-operations/templates/gm-weather.hbs",
+  "modules/party-operations/templates/gm-downtime.hbs",
+  "modules/party-operations/templates/gm-merchants.hbs",
+  "modules/party-operations/templates/gm-audio.hbs",
+  "modules/party-operations/templates/gm-loot.hbs",
+  "modules/party-operations/templates/gm-factions.hbs",
   "modules/party-operations/templates/partials/gm-panel-nav.hbs",
+  "modules/party-operations/templates/partials/command-center/marching-order-panel.hbs",
   "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs",
   "modules/party-operations/templates/partials/rest-watch-player/simple-march.hbs",
   "modules/party-operations/templates/partials/rest-watch-player/simple-loot.hbs",
@@ -13,10 +21,7 @@ export function listPartyOperationsTemplatePaths({
   templateMap = PO_TEMPLATE_MAP,
   partialTemplatePaths = PO_PARTIAL_TEMPLATE_PATHS
 } = {}) {
-  return [...new Set([
-    ...Object.values(templateMap ?? {}),
-    ...partialTemplatePaths
-  ])];
+  return [...new Set([...Object.values(templateMap ?? {}), ...partialTemplatePaths])];
 }
 
 export async function validatePartyOperationsTemplates({

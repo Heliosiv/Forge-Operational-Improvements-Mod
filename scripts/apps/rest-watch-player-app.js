@@ -174,7 +174,7 @@ export function createRestWatchPlayerAppClass(deps = {}) {
     static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
       id: "rest-watch-player-app",
       classes: ["party-operations"],
-      window: { title: "Party Operations - Rest Watch" },
+      window: { title: "Party Operations - Player Command Center" },
       position: getResponsiveWindowPosition("rest-watch-player"),
       resizable: true
     });

@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 
-import {
-  buildPartyOperationsApi,
-  registerPartyOperationsApi
-} from "./core/module-api.js";
+import { buildPartyOperationsApi, registerPartyOperationsApi } from "./core/module-api.js";
 import { attachModuleApi } from "./core/api-registry.js";
 
 {
@@ -56,8 +53,6 @@ import { attachModuleApi } from "./core/api-registry.js";
       return { ok: true };
     },
     openMainTab: (tabId, options) => calls.openTabs.push({ tabId, options }),
-    openGmMerchantsPage: () => "gm-merchants",
-    openGmAudioPage: () => "gm-audio",
     refreshOpenApps: () => "refresh",
     getOperationsLedger: () => operationsLedgerState,
     runGatherResourcesAction: (options) => {
@@ -131,7 +126,10 @@ import { attachModuleApi } from "./core/api-registry.js";
     stopAudioMixPlayback: () => "stop-track",
     normalizeAudioLibraryKind: (value) => value,
     normalizeAudioLibraryUsage: (value) => value,
-    normalizeAudioLibrarySearch: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizeAudioLibrarySearch: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
     getPerfState: () => perfState,
     getPerfSummary: () => perfSummary
   });
@@ -161,6 +159,16 @@ import { attachModuleApi } from "./core/api-registry.js";
   assert.deepEqual(calls.openTabs.at(-1), { tabId: "operations", options: { force: true } });
   api.navigation.openGm();
   assert.deepEqual(calls.openTabs.at(-1), { tabId: "gm", options: { force: true } });
+  api.navigation.openGmMerchants();
+  assert.deepEqual(calls.openTabs.at(-1), {
+    tabId: "gm",
+    options: { force: true, commandCenterView: "merchants" }
+  });
+  api.navigation.openGmAudio();
+  assert.deepEqual(calls.openTabs.at(-1), {
+    tabId: "gm",
+    options: { force: true, commandCenterView: "audio" }
+  });
 
   const ledgerRead = api.operations.getLedger();
   ledgerRead.entries.push(99);
@@ -210,6 +218,11 @@ import { attachModuleApi } from "./core/api-registry.js";
 
   assert.equal(api.audio.queueTrackNext("track-9"), "track-9");
   assert.deepEqual(calls.queueInputs.at(-1), { dataset: { trackId: "track-9" } });
+  api.audio.open();
+  assert.deepEqual(calls.openTabs.at(-1), {
+    tabId: "gm",
+    options: { force: true, commandCenterView: "audio" }
+  });
   assert.deepEqual(api.audio.moveTrackToIndex("track-2", 4), { trackId: "track-2", targetIndex: 4 });
   assert.equal(api.audio.moveTrackToTop("track-2"), "track-2");
   assert.deepEqual(api.audio.moveTrack("track-2", "down"), { trackId: "track-2", direction: "down" });

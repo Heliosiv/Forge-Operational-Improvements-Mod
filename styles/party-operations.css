@@ -4,6 +4,7 @@
    Root + Variables
    ========================================================= */
 :is(
+    #party-operations-command-center,
     #rest-watch-app,
     #rest-watch-player-app,
     #marching-order-app,
@@ -171,6 +172,138 @@
   flex-direction: column;
   gap: var(--po-space-3);
   padding: var(--po-space-3) var(--po-space-4);
+}
+
+.party-operations .po-command-center-shell,
+.party-operations .po-command-center-shell > .po-window {
+  height: 100%;
+  min-height: 0;
+}
+
+.party-operations .po-window[data-tool="command-center"] .po-body {
+  display: grid;
+  grid-template-columns: minmax(148px, 176px) minmax(0, 1fr);
+  gap: var(--po-space-3);
+  align-items: stretch;
+}
+
+.party-operations .po-command-rail {
+  display: grid;
+  grid-auto-rows: minmax(34px, auto);
+  align-content: start;
+  gap: var(--po-space-2);
+  min-width: 0;
+  padding: var(--po-space-2);
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 56%, var(--po-border));
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-bg-alt) 82%, var(--po-surface));
+}
+
+.party-operations .po-command-rail-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--po-space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--po-radius) - 3px);
+  background: transparent;
+  color: var(--po-text);
+  font-weight: 650;
+  text-align: left;
+}
+
+.party-operations .po-command-rail-item i,
+.party-operations .po-command-rail-item span {
+  min-width: 0;
+}
+
+.party-operations .po-command-rail-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-operations .po-command-rail-item:is(:hover, :focus-visible),
+.party-operations .po-command-rail-item.is-active {
+  border-color: color-mix(in srgb, var(--po-brass-strong) 64%, var(--po-border));
+  background: color-mix(in srgb, var(--po-brass-soft) 30%, var(--po-surface));
+  color: var(--po-text-strong);
+}
+
+.party-operations .po-window[data-tool="command-center"] .po-primary-shell {
+  min-width: 0;
+}
+
+.party-operations .po-command-center-tool-host {
+  min-width: 0;
+  min-height: 0;
+}
+
+.party-operations .po-command-center-tool-host > .po-window {
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.party-operations .po-command-center-tool-host > .po-window > .po-header {
+  display: none;
+}
+
+.party-operations .po-command-center-tool-host > .po-window > .po-body,
+.party-operations .po-command-center-tool-host > .po-window > .po-main {
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+.party-operations .po-command-center-tool-host .po-gm-shell {
+  padding: 0;
+}
+
+.party-operations .po-command-center-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-3);
+  min-width: 0;
+}
+
+.party-operations .po-command-view-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--po-space-3);
+  padding: var(--po-space-3);
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-surface) 84%, transparent);
+}
+
+.party-operations .po-command-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--po-space-2);
+}
+
+@media (max-width: 920px) {
+  .party-operations .po-window[data-tool="command-center"] .po-body {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-command-rail {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .party-operations .po-command-rail-item {
+    flex: 0 0 auto;
+    width: auto;
+  }
 }
 
 .party-operations .po-main {

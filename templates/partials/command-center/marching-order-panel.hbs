@@ -1,0 +1,147 @@
+<section id="po-march-command-panel" class="po-command-center-panel po-command-march-panel" aria-label="Marching Order">
+  <header class="po-command-view-head">
+    <div>
+      <div class="po-gm-page-eyebrow">March</div>
+      <div class="po-section-title">Marching Order</div>
+      <div class="po-op-summary">Spacing grid, roster placement, light checks, and march snapshot controls.</div>
+    </div>
+    <div class="po-command-view-actions">
+      <button type="button" class="po-btn po-btn-sm" data-action="open-march-help"><i class="fa-solid fa-circle-question"></i> Help</button>
+      <button type="button" class="po-btn po-btn-sm" data-action="copy-text"><i class="fa-solid fa-copy"></i> Copy Text</button>
+      <button type="button" class="po-btn po-btn-sm" data-action="copy-md"><i class="fa-brands fa-markdown"></i> Copy Markdown</button>
+      {{#if showGmPageTab}}
+      <button type="button" class="po-btn po-btn-sm" data-action="commit-plan"><i class="fa-solid fa-floppy-disk"></i> Save Snapshot</button>
+      <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
+      {{/if}}
+    </div>
+  </header>
+
+  <section id="po-march-overview" class="po-overview" aria-label="Marching status">
+    {{#each overview.cards}}
+    <article class="po-overview-card {{toneClass}}">
+      <span>{{label}}</span>
+      <strong>{{value}}</strong>
+      <div class="po-overview-card-detail">{{detail}}</div>
+    </article>
+    {{/each}}
+  </section>
+
+  <section class="po-content">
+    <section class="po-gm-section po-march-spacing-details-panel" aria-label="Player details by grid order">
+      <header class="po-march-spacing-details-head">
+        <div>
+          <div class="po-section-title">Player Details</div>
+          <div class="po-op-summary">Current grid order</div>
+        </div>
+        <span class="po-pill">{{spacingGrid.assignedActorCount}}</span>
+      </header>
+      {{#if spacingGrid.hasActors}}
+      <div class="po-march-spacing-details-list">
+        {{#each spacingGrid.orderedActors}}
+        <article class="po-march-spacing-detail-row {{#if @root.formationBoard.canManageRoster}}has-roster-actions{{/if}}" data-actor-id="{{actorId}}">
+          <span class="po-march-spacing-detail-order">{{orderLabel}}</span>
+          <span class="po-march-avatar {{#unless hasPortraitImage}}is-fallback{{/unless}}" data-initial="{{initial}}" aria-hidden="true">
+            <span class="po-march-avatar-initial">{{initial}}</span>
+            {{#if hasPortraitImage}}<img class="po-portrait" src="{{img}}" alt="" loading="lazy" />{{/if}}
+          </span>
+          <div class="po-march-spacing-detail-main">
+            <div class="po-march-spacing-detail-name">{{name}}</div>
+            <div class="po-march-spacing-detail-meta">
+              <span>{{positionLabel}}</span>
+              <span>{{offsetLabel}}</span>
+            </div>
+            <div class="po-march-spacing-detail-meta">
+              {{#if statLabel}}<span>{{statLabel}}</span>{{/if}}
+              <span>{{lightLabel}}</span>
+            </div>
+          </div>
+          {{#if @root.formationBoard.canManageRoster}}
+          <button type="button" class="po-icon-btn po-march-spacing-detail-remove" data-action="remove-march-roster-actor" data-actor-id="{{actorId}}" aria-label="Remove {{name}} from marching setup" title="Remove from marching setup">
+            <i class="fa-solid fa-user-minus"></i>
+          </button>
+          {{/if}}
+        </article>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="po-op-summary">No players are placed on the spacing grid.</div>
+      {{/if}}
+    </section>
+
+    <section id="po-march-spacing-grid" class="po-gm-section po-march-spacing-panel">
+      <header class="po-march-spacing-head">
+        <div>
+          <div class="po-section-title">Spacing Grid</div>
+          <div class="po-op-summary">{{spacingGrid.sourceLabel}} - 60 ft by 60 ft - each square is 5 ft</div>
+          <div class="po-op-summary">Click an actor, then click a square to place. Shift-click another actor to swap.</div>
+        </div>
+        <div class="po-march-spacing-summary" aria-label="Party marching summary">
+          <span class="po-pill">Roster {{formationBoard.restWatchRosterCount}}</span>
+          <span class="po-pill">Placed {{spacingGrid.assignedActorCount}}</span>
+          {{#if spacingGrid.passivePerceptionLow}}
+          <span class="po-pill">PP {{spacingGrid.passivePerceptionLow}}-{{spacingGrid.passivePerceptionHigh}}</span>
+          {{/if}}
+          <span class="po-pill">Lights {{overview.lightSources}}</span>
+          {{#if formationBoard.canManageRoster}}
+          <button type="button" class="po-btn po-btn-sm" data-action="add-march-roster-actor" title="Add a character or NPC to the marching setup">
+            <i class="fa-solid fa-user-plus"></i> Add Actor
+          </button>
+          {{/if}}
+        </div>
+      </header>
+      {{#if spacingPresets}}
+      <div class="po-op-action-row po-march-spacing-presets" aria-label="Spacing presets">
+        {{#each spacingPresets}}
+        <button type="button" class="po-btn po-btn-sm" data-action="apply-spacing-preset" data-spacing-preset="{{id}}" title="{{title}}">{{label}}</button>
+        {{/each}}
+      </div>
+      {{/if}}
+      <div class="po-march-spacing-grid" role="grid" aria-label="Party spacing grid">
+        {{#each spacingGrid.rows}}
+        <div class="po-march-spacing-row" role="row">
+          {{#each cells}}
+          <div class="po-march-spacing-cell {{#if hasActors}}has-actor{{/if}}" role="gridcell" title="{{label}}" data-rank-id="{{rankId}}" data-cell-index="{{cellIndex}}" data-insert-index="{{insertIndex}}">
+            {{#each actors}}
+            <span class="po-march-spacing-token {{#if hasLight}}has-light{{/if}}" title="{{title}}" data-actor-id="{{actorId}}">
+              <span class="po-march-avatar {{#unless hasPortraitImage}}is-fallback{{/unless}}" data-initial="{{initial}}" aria-hidden="true">
+                <span class="po-march-avatar-initial">{{initial}}</span>
+                {{#if hasPortraitImage}}<img class="po-portrait" src="{{img}}" alt="" loading="lazy" />{{/if}}
+              </span>
+              <label class="po-march-spacing-token-light" title="{{lightTooltip}}" aria-label="Toggle torch for {{name}}" data-actor-id="{{actorId}}">
+                <input type="checkbox" data-action="toggle-light" data-actor-id="{{actorId}}" {{#if hasLight}}checked{{/if}} />
+                <i class="fa-solid fa-fire" aria-hidden="true"></i>
+              </label>
+            </span>
+            {{/each}}
+          </div>
+          {{/each}}
+        </div>
+        {{/each}}
+      </div>
+      {{#if formationBoard.hasUnassignedRestActors}}
+      <div class="po-march-board-staging">
+        <div class="po-section-title">Not Placed</div>
+        <div class="po-march-board-staging-list">
+          {{#each formationBoard.unassignedRestActors}}
+          <div class="po-march-board-staging-chip {{#if canRemoveFromRoster}}has-roster-actions{{/if}}" data-actor-id="{{id}}">
+            <span class="po-march-avatar {{#unless hasPortraitImage}}is-fallback{{/unless}}" data-initial="{{initial}}" aria-hidden="true">
+              <span class="po-march-avatar-initial">{{initial}}</span>
+              {{#if hasPortraitImage}}<img class="po-portrait" src="{{img}}" alt="" loading="lazy" />{{/if}}
+            </span>
+            <span>{{name}}</span>
+            {{#if canRemoveFromRoster}}
+            <button type="button" class="po-icon-btn po-march-board-staging-remove" data-action="remove-march-roster-actor" data-actor-id="{{id}}" aria-label="Remove {{name}} from marching setup" title="Remove from marching setup">
+              <i class="fa-solid fa-user-minus"></i>
+            </button>
+            {{/if}}
+          </div>
+          {{/each}}
+        </div>
+      </div>
+      {{/if}}
+      {{#unless spacingGrid.hasActors}}
+      <div class="po-op-summary">Drop a roster actor on any 5-foot square to build the marching layout.</div>
+      {{/unless}}
+    </section>
+  </section>
+</section>

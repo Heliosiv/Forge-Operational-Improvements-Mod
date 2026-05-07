@@ -29,6 +29,13 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
     else globalThis.ui?.notifications?.info?.(summary || "Player action complete.");
     const scopes = normalizeRefreshScopeList?.(message?.scopes ?? message?.scope) ?? [];
     if (scopes.length) setTimeout(() => refreshOpenApps({ scopes }), 75);
+    const playerHubTab = String(message?.hubTab ?? message?.playerHubTab ?? "")
+      .trim()
+      .toLowerCase();
+    if (playerHubTab === "downtime") {
+      setPlayerHubTab?.("downtime");
+      openRestWatchUiForCurrentUser?.({ force: true, hubTab: "downtime" });
+    }
     return true;
   }
 
@@ -140,7 +147,7 @@ export async function routeGmSocketMessage(message, context = {}) {
   if (targetGmUserId && targetGmUserId !== String(currentUser?.id ?? "").trim()) return true;
 
   const getActivePlayerRequester = () => getSocketRequester(message, { allowGM: false, requireActive: true });
-  const notifyPlayerActionResult = (result, fallbackSummary, fallbackScopes = []) => {
+  const notifyPlayerActionResult = (result, fallbackSummary, fallbackScopes = [], extra = {}) => {
     const targetUserId = String(message?.userId ?? "").trim();
     if (!targetUserId || !emitModuleSocket) return;
     const scopes = Array.isArray(result?.scopes)
@@ -158,7 +165,8 @@ export async function routeGmSocketMessage(message, context = {}) {
         userId: targetUserId,
         ok: result?.ok !== false,
         summary: String(result?.summary ?? fallbackSummary ?? "").trim(),
-        scopes
+        scopes,
+        ...extra
       },
       { channel: socketChannel }
     );
@@ -166,7 +174,10 @@ export async function routeGmSocketMessage(message, context = {}) {
   const runWithRequester = async (handler) => {
     const requester = getActivePlayerRequester();
     if (!requester) return true;
-    await handler(message, requester);
+    const result = await handler(message, requester);
+    if (message.type === "ops:downtimeV2-submit") {
+      notifyPlayerActionResult(result, "Downtime submission received.", "operations", { hubTab: "downtime" });
+    }
     return true;
   };
 

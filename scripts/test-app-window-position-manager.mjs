@@ -86,6 +86,10 @@ function mergeObject(target, source) {
 
   assert.equal(manager.normalizeWindowProfileId("gm-loot"), "gm-loot");
   assert.equal(manager.normalizeWindowProfileId({ options: { id: "operations-shell-app" } }), "operations-shell");
+  assert.equal(
+    manager.normalizeWindowProfileId({ options: { id: "party-operations-command-center" } }),
+    "command-center"
+  );
 
   const responsivePosition = manager.getResponsiveWindowPosition("operations-shell", {
     left: 980,

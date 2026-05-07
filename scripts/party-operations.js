@@ -48,7 +48,13 @@ import {
   createLootItemOverrideEditorActions
 } from "./features/loot-item-override-editor.js";
 import { flushExpiredRecentRolls, recordLootRollItems } from "./features/loot-recent-rolls-cache.js";
-import { createLootAuditRecorder, appendLootConstraintResult, appendLootRelaxationStep, appendLootWarning, finalizeLootAuditPayload } from "./features/loot-audit.js";
+import {
+  createLootAuditRecorder,
+  appendLootConstraintResult,
+  appendLootRelaxationStep,
+  appendLootWarning,
+  finalizeLootAuditPayload
+} from "./features/loot-audit.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
@@ -592,8 +598,6 @@ function getEconomyPriceMultiplier() {
 }
 
 // LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES, PARTY_OPS_LOOT_RARITIES, DEFAULT_PARTY_OPS_CONFIG imported from ./core/constants.js
-
-
 
 let partyOpsConfigNormalizationInProgress = false;
 
@@ -2190,6 +2194,76 @@ function normalizeGatherDeliveryCall(input = {}) {
   };
 }
 
+const OPERATIONAL_UPKEEP_COST_DEFAULTS = Object.freeze({
+  foodRationGp: 0.5,
+  waterRationGp: 0,
+  torchGp: 0.01,
+  lodgingCampGp: 0,
+  otherDailyGp: 0,
+  note: ""
+});
+
+function normalizeResourceCostGp(value, fallback = 0) {
+  const fallbackNumber = Number(fallback);
+  const raw = Number(value);
+  const safeValue = Number.isFinite(raw) ? raw : Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
+  return Math.max(0, Number(safeValue.toFixed(2)));
+}
+
+function normalizeOperationalUpkeepCosts(source = {}) {
+  const input = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+  return {
+    foodRationGp: normalizeResourceCostGp(input.foodRationGp, OPERATIONAL_UPKEEP_COST_DEFAULTS.foodRationGp),
+    waterRationGp: normalizeResourceCostGp(input.waterRationGp, OPERATIONAL_UPKEEP_COST_DEFAULTS.waterRationGp),
+    torchGp: normalizeResourceCostGp(input.torchGp, OPERATIONAL_UPKEEP_COST_DEFAULTS.torchGp),
+    lodgingCampGp: normalizeResourceCostGp(input.lodgingCampGp, OPERATIONAL_UPKEEP_COST_DEFAULTS.lodgingCampGp),
+    otherDailyGp: normalizeResourceCostGp(input.otherDailyGp, OPERATIONAL_UPKEEP_COST_DEFAULTS.otherDailyGp),
+    note: String(input.note ?? OPERATIONAL_UPKEEP_COST_DEFAULTS.note)
+      .trim()
+      .slice(0, 180)
+  };
+}
+
+function formatOperationalGpLabel(value) {
+  const amount = normalizeResourceCostGp(value, 0);
+  return `${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`;
+}
+
+function buildOperationalUpkeepCostContext(
+  resourcesState,
+  { foodDrainPerDay = 0, waterDrainPerDay = 0, torchDrainPerDay = 0, upkeepDaysPending = 0 } = {}
+) {
+  const costs = normalizeOperationalUpkeepCosts(resourcesState?.upkeepCosts);
+  const foodDailyCostGp = normalizeResourceCostGp(foodDrainPerDay * costs.foodRationGp, 0);
+  const waterDailyCostGp = normalizeResourceCostGp(waterDrainPerDay * costs.waterRationGp, 0);
+  const torchDailyCostGp = normalizeResourceCostGp(torchDrainPerDay * costs.torchGp, 0);
+  const fixedDailyCostGp = normalizeResourceCostGp(costs.lodgingCampGp + costs.otherDailyGp, 0);
+  const dailyTotalGp = normalizeResourceCostGp(
+    foodDailyCostGp + waterDailyCostGp + torchDailyCostGp + fixedDailyCostGp,
+    0
+  );
+  const pendingTotalGp = normalizeResourceCostGp(
+    dailyTotalGp * Math.max(0, Math.floor(Number(upkeepDaysPending) || 0)),
+    0
+  );
+  return {
+    ...costs,
+    foodDailyCostGp,
+    foodDailyCostLabel: formatOperationalGpLabel(foodDailyCostGp),
+    waterDailyCostGp,
+    waterDailyCostLabel: formatOperationalGpLabel(waterDailyCostGp),
+    torchDailyCostGp,
+    torchDailyCostLabel: formatOperationalGpLabel(torchDailyCostGp),
+    fixedDailyCostGp,
+    fixedDailyCostLabel: formatOperationalGpLabel(fixedDailyCostGp),
+    dailyTotalGp,
+    dailyTotalLabel: formatOperationalGpLabel(dailyTotalGp),
+    pendingTotalGp,
+    pendingTotalLabel: formatOperationalGpLabel(pendingTotalGp),
+    hasNote: costs.note.length > 0
+  };
+}
+
 function ensureOperationalResourceConfig(resources) {
   if (!resources) return;
   const legacyFoodPool = Number(resources.partyRations);
@@ -2349,6 +2423,7 @@ function ensureOperationalResourceConfig(resources) {
     resources.gather.weatherMods[key] = Number.isFinite(current) ? current : value;
   }
   if (!resources.upkeep) resources.upkeep = {};
+  resources.upkeepCosts = normalizeOperationalUpkeepCosts(resources.upkeepCosts);
   ensureStewardPoolsState(resources);
 }
 
@@ -3321,11 +3396,7 @@ async function setGatherAttemptState(actor, dayKey, environmentSignature) {
   // Best-effort legacy mirror; do not fail or warn when legacy scope is unavailable.
   await Promise.allSettled([
     setLegacyPartyOpsFlagSilently(actor, "gather.lastDay", payload["gather.lastDay"]),
-    setLegacyPartyOpsFlagSilently(
-      actor,
-      "gather.lastEnvironmentSignature",
-      payload["gather.lastEnvironmentSignature"]
-    ),
+    setLegacyPartyOpsFlagSilently(actor, "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]),
     setLegacyPartyOpsFlagSilently(actor, "gather.lastWorldTime", payload["gather.lastWorldTime"])
   ]);
 }
@@ -4605,7 +4676,12 @@ function ensureEnvironmentState(ledger) {
         createdBy: String(entry?.createdBy ?? "GM")
       };
     })
-    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()));
+    .filter(
+      (
+        (seen) => (entry) =>
+          entry.id && !seen.has(entry.id) && seen.add(entry.id)
+      )(new Set())
+    );
   if (!Array.isArray(ledger.environment.checkResults)) ledger.environment.checkResults = [];
   ledger.environment.checkResults = ledger.environment.checkResults
     .map((entry) => {
@@ -4629,7 +4705,12 @@ function ensureEnvironmentState(ledger) {
         createdBy: String(entry?.createdBy ?? "GM")
       };
     })
-    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
+    .filter(
+      (
+        (seen) => (entry) =>
+          entry.id && !seen.has(entry.id) && seen.add(entry.id)
+      )(new Set())
+    )
     .slice(0, 100);
   return ledger.environment;
 }
@@ -5384,6 +5465,7 @@ function getRestMainTabLabel(tab = getActiveRestMainTab()) {
     .toLowerCase();
   if (value === "gm") return "GM";
   if (value === "operations") return "Operations";
+  if (value === "marching-order" || value === "march") return "Marching Order";
   return "Rest Watch";
 }
 
@@ -7084,16 +7166,14 @@ function buildOperationsContextFallback() {
           : "Never"
     };
   } catch (_error) {
-    if (isModuleDebugEnabled())
-      console.warn(`${MODULE_ID}: fallback weather context build failed`, _error);
+    if (isModuleDebugEnabled()) console.warn(`${MODULE_ID}: fallback weather context build failed`, _error);
   }
   let fallbackLootSources;
   try {
     fallbackLootSources = buildLootSourceRegistryContext();
     fallbackLootSources.preview = buildLootPreviewContext();
   } catch (_error) {
-    if (isModuleDebugEnabled())
-      console.warn(`${MODULE_ID}: fallback loot source context build failed`, _error);
+    if (isModuleDebugEnabled()) console.warn(`${MODULE_ID}: fallback loot source context build failed`, _error);
     fallbackLootSources = {
       itemPackOptions: [],
       itemPackVisibleOptions: [],
@@ -7274,6 +7354,12 @@ function buildOperationsContextFallback() {
     fallbackResourcesState.upkeepLastAppliedTs,
     getCurrentWorldTimestamp()
   );
+  const fallbackUpkeepCosts = buildOperationalUpkeepCostContext(fallbackResourcesState, {
+    foodDrainPerDay: fallbackFoodDrainPerDay,
+    waterDrainPerDay: fallbackWaterDrainPerDay,
+    torchDrainPerDay: fallbackTorchDrainPerDay,
+    upkeepDaysPending: fallbackUpkeepDaysPending
+  });
   const fallbackUpkeepSchedule = buildUpkeepScheduleSummary(fallbackResourcesState, {
     upkeepDaysPending: fallbackUpkeepDaysPending
   });
@@ -7556,6 +7642,7 @@ function buildOperationsContextFallback() {
         selectedBindingCount: fallbackSelectedBindingCount
       },
       upkeep: fallbackUpkeep,
+      upkeepCosts: fallbackUpkeepCosts,
       encumbranceOptions: [
         { value: "light", label: "Light", selected: (fallbackResourcesState.encumbrance ?? "light") === "light" },
         {
@@ -7619,6 +7706,129 @@ function buildOperationsContextFallback() {
   };
 }
 
+const COMMAND_CENTER_VIEW_IDS = new Set([
+  "command",
+  "rest",
+  "march",
+  "resources",
+  "gather",
+  "loot",
+  "downtime",
+  "merchants",
+  "weather",
+  "audio",
+  "reputation",
+  "settings"
+]);
+
+const COMMAND_CENTER_GM_TOOL_VIEW_IDS = new Set(["loot", "downtime", "merchants", "weather", "audio", "reputation"]);
+
+const COMMAND_CENTER_PANEL_VIEW_BY_KEY = Object.freeze({
+  faction: "reputation",
+  reputation: "reputation",
+  weather: "weather",
+  downtime: "downtime",
+  merchants: "merchants",
+  audio: "audio",
+  loot: "loot"
+});
+
+const COMMAND_CENTER_PANEL_KEY_BY_VIEW = Object.freeze({
+  reputation: "faction",
+  weather: "weather",
+  downtime: "downtime",
+  merchants: "merchants",
+  audio: "audio",
+  loot: "loot"
+});
+
+const COMMAND_CENTER_VIEW_LABELS = Object.freeze({
+  command: "Command",
+  rest: "Rest Watch",
+  march: "Marching Order",
+  resources: "Resources",
+  gather: "Gather",
+  loot: "Loot",
+  downtime: "Downtime",
+  merchants: "Merchants",
+  weather: "Weather",
+  audio: "Audio",
+  reputation: "Reputation",
+  settings: "Settings"
+});
+
+function normalizeCommandCenterView(value, fallback = "command") {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return COMMAND_CENTER_VIEW_IDS.has(normalized) ? normalized : fallback;
+}
+
+function isCommandCenterGmToolView(value) {
+  return COMMAND_CENTER_GM_TOOL_VIEW_IDS.has(normalizeCommandCenterView(value, ""));
+}
+
+function getCommandCenterViewForPanelKey(panelKey) {
+  const key = String(panelKey ?? "")
+    .trim()
+    .toLowerCase();
+  return COMMAND_CENTER_PANEL_VIEW_BY_KEY[key] ?? "";
+}
+
+function getCommandCenterPanelKeyForView(view) {
+  return COMMAND_CENTER_PANEL_KEY_BY_VIEW[normalizeCommandCenterView(view, "")] ?? "";
+}
+
+function getMainTabForCommandCenterView(view) {
+  const normalized = normalizeCommandCenterView(view, "command");
+  if (normalized === "rest") return "rest-watch";
+  if (normalized === "march") return "marching-order";
+  if (normalized === "resources" || normalized === "gather") return "operations";
+  return "gm";
+}
+
+function getCommandCenterViewLabel(view) {
+  return COMMAND_CENTER_VIEW_LABELS[normalizeCommandCenterView(view, "command")] ?? "Command";
+}
+
+function deriveCommandCenterView({ mainTab, operationsPageValue, operationsPlanningTab } = {}) {
+  const normalizedMainTab = normalizeMainTabId(mainTab, "rest-watch");
+  if (normalizedMainTab === "marching-order") return "march";
+  if (normalizedMainTab === "rest-watch") return "rest";
+  if (normalizedMainTab === "gm") return "command";
+  if (normalizedMainTab === "operations") {
+    if (operationsPageValue === "planning" && operationsPlanningTab === "loot") return "loot";
+    if (operationsPageValue === "planning") return "resources";
+  }
+  return "command";
+}
+
+function isMarchingOrderViewActive(app = null) {
+  return normalizeMainTabId(app?._activePanel ?? getActiveRestMainTab(), "rest-watch") === "marching-order";
+}
+
+function buildCommandCenterToolContext(view) {
+  const normalized = normalizeCommandCenterView(view, "");
+  if (normalized === "weather") return buildGmWeatherPageContext();
+  if (normalized === "downtime") return buildGmDowntimePageContext();
+  if (normalized === "merchants") return buildGmMerchantsPageContext();
+  if (normalized === "audio") return buildGmAudioPageContext();
+  if (normalized === "loot") return buildGmLootPageContext();
+  if (normalized === "reputation") return buildGmFactionsPageContext();
+  return {};
+}
+
+function getLootItemOverrideSearchInputFromRoot(root) {
+  const input = root?.querySelector?.(".po-loot-item-overrides-panel [data-po-loot-override-search-input]");
+  return input instanceof HTMLInputElement ? input : null;
+}
+
+function getSelectedLootItemOverrideKeysFromRoot(root) {
+  return Array.from(root?.querySelectorAll?.("[data-po-loot-override-select][data-override-key]:checked") ?? [])
+    .map((entry) => String(entry?.dataset?.overrideKey ?? "").trim())
+    .filter(Boolean);
+}
+
 export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
     id: "rest-watch-app",
@@ -7665,6 +7875,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         injuryRecovery = this._lastGoodInjuryRecoveryContext ?? {};
       }
       const mainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "rest-watch");
+      const mainTabMarchingOrder = mainTab === "marching-order";
       const operationsTabActive = mainTab === "operations" || mainTab === "gm";
       const operationsPageValue =
         mainTab === "gm"
@@ -7686,6 +7897,25 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         });
       }
       const operationsPlanningTab = getActiveOperationsPlanningTab();
+      const derivedCommandCenterView = deriveCommandCenterView({ mainTab, operationsPageValue, operationsPlanningTab });
+      const requestedCommandCenterView = normalizeCommandCenterView(this._commandCenterView, "");
+      const commandCenterView =
+        this._isCommandCenterShell && isCommandCenterGmToolView(requestedCommandCenterView)
+          ? requestedCommandCenterView
+          : this._isCommandCenterShell &&
+              requestedCommandCenterView === "gather" &&
+              derivedCommandCenterView === "resources"
+            ? "gather"
+            : derivedCommandCenterView;
+      this._commandCenterView = commandCenterView;
+      const commandCenterToolView = Boolean(this._isCommandCenterShell && isCommandCenterGmToolView(commandCenterView));
+      const commandCenterToolContext = commandCenterToolView ? buildCommandCenterToolContext(commandCenterView) : {};
+      if (commandCenterView === "downtime" || commandCenterView === "loot") {
+        const uiStatus = this._uiActionStatus ?? { message: "", tone: "" };
+        commandCenterToolContext.uiActionStatusMessage = uiStatus.message;
+        commandCenterToolContext.uiActionStatusWarn = uiStatus.tone === "warn";
+        commandCenterToolContext.uiActionStatusGood = uiStatus.tone === "good";
+      }
       const gmOperationsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
       this._gmOperationsTab = gmOperationsTab;
       const lootRegistryTab = normalizeLootRegistryTab(
@@ -7713,11 +7943,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           )
         : 0;
       const autofillOverflowCount = Math.max(0, autofillRosterCount - autofillVisibleCapacity);
-      const mainSubtitleLabel = mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch";
+      const mainSubtitleLabel =
+        this._isCommandCenterShell && commandCenterView
+          ? getCommandCenterViewLabel(commandCenterView)
+          : mainTab === "gm"
+            ? "GM"
+            : mainTab === "operations"
+              ? "Operations"
+              : mainTabMarchingOrder
+                ? "Marching Order"
+                : "Rest Watch";
       const gmCockpit = buildGmCockpitContext(operations, {
         lastUpdatedAt: state.lastUpdatedAt ?? "-",
         mainSubtitleLabel
       });
+      const marchingOrderContext = mainTabMarchingOrder ? buildMarchingOrderViewContext() : null;
 
       const context = {
         isGM,
@@ -7730,8 +7970,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         lastUpdatedAt: state.lastUpdatedAt ?? "-",
         lastUpdatedBy: state.lastUpdatedBy ?? "-",
         moduleVersion,
-        mainContextLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        mainContextLabel: mainSubtitleLabel,
         mainSubtitleLabel,
+        isCommandCenterShell: Boolean(this._isCommandCenterShell),
+        commandCenterView,
+        commandCenterToolView,
+        commandCenterViewCommand: commandCenterView === "command",
+        commandCenterViewResources: commandCenterView === "resources",
+        commandCenterViewGather: commandCenterView === "gather",
+        commandCenterViewLoot: commandCenterView === "loot",
+        commandCenterViewDowntime: commandCenterView === "downtime",
+        commandCenterViewMerchants: commandCenterView === "merchants",
+        commandCenterViewWeather: commandCenterView === "weather",
+        commandCenterViewAudio: commandCenterView === "audio",
+        commandCenterViewReputation: commandCenterView === "reputation",
         visibilityOptions: buildVisibilityOptions(visibility),
         highestPP: isGM ? computeHighestPP(slots) : "-",
         noDarkvision: isGM ? computeNoDarkvision(slots) : "",
@@ -7750,6 +8002,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         mainTab,
         activeTab: getSwitchTabIdFromMainTabId(mainTab),
         mainTabRestWatch: mainTab === "rest-watch",
+        mainTabMarchingOrder,
         mainTabOperations: mainTab === "operations",
         mainTabGm: mainTab === "gm",
         mainTabOperationsOrGm: operationsTabActive,
@@ -7782,8 +8035,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           lockState,
           campfireState: campfireOverview.stateLabel
         },
+        ...commandCenterToolContext,
+        ...(marchingOrderContext ?? {}),
         windowToolId: "rest-watch",
-        windowAriaLabel: "Party Operations Rest Watch"
+        windowAriaLabel: mainTabMarchingOrder ? "Party Operations Marching Order" : "Party Operations Rest Watch"
       };
 
       logUiDebug("rest-watch", "prepared rest context", {
@@ -7798,6 +8053,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     } catch (error) {
       console.error(`${MODULE_ID}: RestWatchApp _prepareContext failed`, error);
       const mainTab = normalizeMainTabId(getActiveRestMainTab(), "rest-watch");
+      const fallbackMainTabMarchingOrder = mainTab === "marching-order";
       const operationsTabActive = mainTab === "operations" || mainTab === "gm";
       const isGM = Boolean(canAccessAllPlayerOps());
       const fallbackState = getRestWatchState();
@@ -7819,7 +8075,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const fallbackGmOpsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
       const fallbackOperations = this._lastGoodOperationsContext ?? buildOperationsContextFallback();
       const fallbackMainSubtitleLabel =
-        mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch";
+        mainTab === "gm"
+          ? "GM"
+          : mainTab === "operations"
+            ? "Operations"
+            : fallbackMainTabMarchingOrder
+              ? "Marching Order"
+              : "Rest Watch";
       const fallbackGmCockpit = buildGmCockpitContext(fallbackOperations, {
         lastUpdatedAt: fallbackState.lastUpdatedAt ?? "-",
         mainSubtitleLabel: fallbackMainSubtitleLabel
@@ -7832,6 +8094,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
               return active === "gm" ? "planning" : active;
             })();
       const fallbackPlanningTab = getActiveOperationsPlanningTab();
+      const fallbackCommandCenterView = deriveCommandCenterView({
+        mainTab,
+        operationsPageValue: fallbackOpsPage,
+        operationsPlanningTab: fallbackPlanningTab
+      });
+      const fallbackCommandCenterToolView = Boolean(
+        this._isCommandCenterShell && isCommandCenterGmToolView(fallbackCommandCenterView)
+      );
       logUiDebug("rest-watch", "falling back to safe context", { mainTab, error: String(error?.message ?? error) });
       return {
         isGM,
@@ -7848,8 +8118,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         lastUpdatedAt: fallbackState.lastUpdatedAt ?? "-",
         lastUpdatedBy: fallbackState.lastUpdatedBy ?? "-",
         moduleVersion: getCurrentModuleVersion(),
-        mainContextLabel: mainTab === "gm" ? "GM" : mainTab === "operations" ? "Operations" : "Rest Watch",
+        mainContextLabel: fallbackMainSubtitleLabel,
         mainSubtitleLabel: fallbackMainSubtitleLabel,
+        isCommandCenterShell: Boolean(this._isCommandCenterShell),
+        commandCenterView: fallbackCommandCenterView,
+        commandCenterToolView: fallbackCommandCenterToolView,
+        commandCenterViewCommand: fallbackCommandCenterView === "command",
+        commandCenterViewResources: fallbackCommandCenterView === "resources",
+        commandCenterViewGather: fallbackCommandCenterView === "gather",
+        commandCenterViewLoot: fallbackCommandCenterView === "loot",
+        commandCenterViewDowntime: fallbackCommandCenterView === "downtime",
+        commandCenterViewMerchants: fallbackCommandCenterView === "merchants",
+        commandCenterViewWeather: fallbackCommandCenterView === "weather",
+        commandCenterViewAudio: fallbackCommandCenterView === "audio",
+        commandCenterViewReputation: fallbackCommandCenterView === "reputation",
         visibilityOptions: buildVisibilityOptions(fallbackVisibility),
         highestPP: isGM ? computeHighestPP(fallbackSlots) : "-",
         noDarkvision: isGM ? computeNoDarkvision(fallbackSlots) : "",
@@ -7868,6 +8150,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         mainTab,
         activeTab: getSwitchTabIdFromMainTabId(mainTab),
         mainTabRestWatch: mainTab === "rest-watch",
+        mainTabMarchingOrder: fallbackMainTabMarchingOrder,
         mainTabOperations: mainTab === "operations",
         mainTabGm: mainTab === "gm",
         mainTabOperationsOrGm: operationsTabActive,
@@ -7901,7 +8184,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           campfireState: fallbackCampfireOverview.stateLabel
         },
         windowToolId: "rest-watch",
-        windowAriaLabel: "Party Operations Rest Watch"
+        windowAriaLabel: fallbackMainTabMarchingOrder
+          ? "Party Operations Marching Order"
+          : "Party Operations Rest Watch"
       };
     }
   }
@@ -7956,6 +8241,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         (event) => {
           if (!event.target?.matches("input[data-action='set-loot-pack-filter']")) return false;
+          void this._onAction(event);
+          return true;
+        },
+        (event) => {
+          const action = String(event.target?.dataset?.action ?? "");
+          if (
+            ![
+              "set-audio-library-draft-field",
+              "set-audio-library-filter",
+              "set-audio-mix-preset-option",
+              "set-loot-preview-field",
+              "set-loot-item-override-price"
+            ].includes(action)
+          )
+            return false;
           void this._onAction(event);
           return true;
         },
@@ -8100,7 +8400,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const activeButton = this.element?.querySelector?.(
         `.po-tabs-main [data-action="switch-tab"][data-tab="${activeTab}"]`
       );
-      const panelTarget = this._activePanel === "rest-watch" ? "#po-panel-rest-watch" : "#po-panel-operations";
+      const panelTarget =
+        this._activePanel === "rest-watch"
+          ? "#po-panel-rest-watch"
+          : this._activePanel === "marching-order"
+            ? "#po-march-command-panel"
+            : "#po-panel-operations";
       const panelExists = Boolean(this.element?.querySelector?.(panelTarget));
       logUiDebug("rest-watch", "after render active tab", {
         activeTab,
@@ -8128,7 +8433,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     finalizeRestWatchRender(this, "rest-watch");
-
   }
 
   #updateActivityUI() {
@@ -8162,6 +8466,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     renderAppWithPreservedState(this, renderOptions);
   }
 
+  _setUiActionStatus(message, tone = "") {
+    this._uiActionStatus = {
+      message: String(message ?? ""),
+      tone: String(tone ?? "")
+    };
+    const statusNode = this.element?.querySelector?.("[data-page-action-status]");
+    if (statusNode instanceof HTMLElement) {
+      statusNode.textContent = this._uiActionStatus.message;
+      statusNode.classList.toggle("is-warn", this._uiActionStatus.tone === "warn");
+      statusNode.classList.toggle("is-good", this._uiActionStatus.tone === "good");
+      statusNode.setAttribute("aria-live", this._uiActionStatus.tone === "warn" ? "assertive" : "polite");
+    }
+  }
+
   setActivePanel(panelId, options = {}) {
     const normalized = normalizeMainTabId(panelId, "rest-watch");
     if (normalized === "gm" && !canAccessGmPage()) {
@@ -8171,7 +8489,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
       return;
     }
-    if (!(this instanceof OperationsShellApp) && (normalized === "operations" || normalized === "gm")) {
+    if (
+      !(this instanceof OperationsShellApp) &&
+      !this._isCommandCenterShell &&
+      (normalized === "operations" || normalized === "gm")
+    ) {
       openMainTab(normalized, { force: true });
       return;
     }
@@ -8266,9 +8588,81 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       if (handledJournalAction) return;
 
       try {
+        const rerenderShell = () => this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        const rerenderAlways = (operation) => async () => {
+          await operation();
+          rerenderShell();
+        };
+        const rerenderIfTruthy = (operation) => async () => {
+          const result = await operation();
+          if (result) rerenderShell();
+        };
+        const rerenderUnlessInput = (operation) => async () => {
+          await operation();
+          if (event?.type !== "input") rerenderShell();
+        };
+        const withActionStatus =
+          (operation, { pending = "Working...", success = "Update complete.", failure = "Action failed." } = {}) =>
+          async () => {
+            this._setUiActionStatus(pending);
+            try {
+              const result = await operation();
+              const failed =
+                result === false ||
+                result === null ||
+                (result && typeof result === "object" && "ok" in result && result.ok === false);
+              this._setUiActionStatus(failed ? failure : success, failed ? "warn" : "good");
+              return result;
+            } catch (statusError) {
+              this._setUiActionStatus(failure, "warn");
+              throw statusError;
+            }
+          };
         const actionHandlers = {
           "switch-tab": async () => {
             this.#onSwitchTabClick(event, element);
+          },
+          "command-center-view": async () => {
+            const view = normalizeCommandCenterView(element?.dataset?.view);
+            this._commandCenterView = view;
+            if (view === "rest") {
+              this.setActivePanel("rest-watch", { rerender: false });
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+              return;
+            }
+            if (view === "march") {
+              this.setActivePanel("marching-order", { rerender: false });
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+              return;
+            }
+            if (view === "command") {
+              setActiveOperationsPage("gm");
+              this.setActivePanel("gm", { rerender: false });
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+              return;
+            }
+            if (view === "resources" || view === "gather") {
+              setActiveOperationsPage("planning");
+              setActiveOperationsPlanningTab("resources");
+              this.setActivePanel("operations", { rerender: false });
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+              return;
+            }
+            if (isCommandCenterGmToolView(view)) {
+              setActiveOperationsPage("gm");
+              this.setActivePanel("gm", { rerender: false });
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+              return;
+            }
+            if (view === "settings") {
+              openPartyOperationsSettingsHub({
+                force: true,
+                returnTarget: buildSettingsHubReturnTargetForRestWatchApp(this)
+              });
+              return;
+            }
+            const panelKey = view === "reputation" ? "faction" : view;
+            openGmPanelByKey(panelKey, { force: true });
           },
           refresh: async () => {
             emitSocketRefresh();
@@ -8285,6 +8679,57 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
               force: true,
               returnTarget: buildSettingsHubReturnTargetForRestWatchApp(this)
             });
+          },
+          "gm-factions-page-back": async () => {
+            this._commandCenterView = "command";
+            setActiveOperationsPage("gm");
+            this.setActivePanel("gm", { rerender: false });
+            rerenderShell();
+          },
+          "gm-weather-page-back": async () => {
+            this._commandCenterView = "command";
+            setActiveOperationsPage("gm");
+            this.setActivePanel("gm", { rerender: false });
+            rerenderShell();
+          },
+          "gm-downtime-page-back": async () => {
+            this._commandCenterView = "command";
+            setActiveOperationsPage("gm");
+            this.setActivePanel("gm", { rerender: false });
+            rerenderShell();
+          },
+          "gm-merchants-page-back": async () => {
+            this._commandCenterView = "command";
+            setActiveOperationsPage("gm");
+            this.setActivePanel("gm", { rerender: false });
+            rerenderShell();
+          },
+          "gm-audio-page-back": async () => {
+            this._commandCenterView = "command";
+            setActiveOperationsPage("gm");
+            this.setActivePanel("gm", { rerender: false });
+            rerenderShell();
+          },
+          "gm-loot-page-back": async () => {
+            this._commandCenterView = "command";
+            setActiveOperationsPage("gm");
+            this.setActivePanel("gm", { rerender: false });
+            rerenderShell();
+          },
+          "gm-factions-page-refresh": async () => {
+            rerenderShell();
+          },
+          "gm-weather-page-refresh": async () => {
+            rerenderShell();
+          },
+          "gm-merchants-page-refresh": async () => {
+            rerenderShell();
+          },
+          "gm-audio-page-refresh": async () => {
+            rerenderShell();
+          },
+          "gm-loot-page-refresh": async () => {
+            rerenderShell();
           },
           assign: async () => {
             await assignSlotByPicker(element, { source: "pc" });
@@ -8326,18 +8771,34 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await restoreRestCommitted();
           },
           "commit-plan": async () => {
+            if (isMarchingOrderViewActive(this)) {
+              await commitMarchingOrderState();
+              return;
+            }
             await commitRestWatchState();
           },
           "copy-text": async () => {
+            if (isMarchingOrderViewActive(this)) {
+              await copyMarchingText(false);
+              return;
+            }
             await copyRestWatchText(false);
           },
           "copy-md": async () => {
+            if (isMarchingOrderViewActive(this)) {
+              await copyMarchingText(true);
+              return;
+            }
             await copyRestWatchText(true);
           },
           "post-rest-watch-summary": async () => {
             await postRestWatchSummaryToChat();
           },
           "clear-all": async () => {
+            if (isMarchingOrderViewActive(this)) {
+              await clearMarchingAll();
+              return;
+            }
             await clearRestWatchAll();
           },
           ping: async () => {
@@ -8369,6 +8830,46 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "toggle-mini-viz": async () => {
             setMiniVizCollapsed(!isMiniVizCollapsed());
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "open-march-help": async () => {
+            openMarchingOrderHelpDialog();
+          },
+          "toggle-section": async () => {
+            const sectionId = element?.dataset?.sectionId;
+            if (!sectionId) return;
+            setMarchSectionCollapsed(sectionId, !isMarchSectionCollapsed(sectionId));
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "assign-rank": async () => {
+            await assignActorToRank(element);
+          },
+          "add-march-roster-actor": async () => {
+            await addMarchRosterActor();
+          },
+          "remove-march-roster-actor": async () => {
+            await removeMarchRosterActorFromElement(element);
+          },
+          "join-rank": async () => {
+            await joinRank(element);
+          },
+          "remove-from-rank": async () => {
+            await removeActorFromRanks(element);
+          },
+          "toggle-light": async () => {
+            await toggleLight(element);
+          },
+          "set-light-range": async () => {
+            await setLightRange(element);
+          },
+          "formation-set": async () => {
+            await applyMarchingFormation({ type: element?.dataset?.formationId });
+          },
+          "apply-spacing-preset": async () => {
+            await applyMarchSpacingPresetFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "sync-rest-watch": async () => {
+            await syncMarchingOrderFromRestWatch();
           },
           "gm-panel-tab": async () => {
             const panelKey = String(element?.dataset?.panel ?? "")
@@ -8440,8 +8941,22 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
               this.#renderWithPreservedState({ force: true, parts: ["main"] });
             }
           },
+          "merchant-clear-source-filter": async () => {
+            setMerchantEditorSourceFilter("");
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-gm-view-tab": async () => {
+            cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true });
+            if (setMerchantGmViewTabFromElement(element))
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "merchant-new": async () => {
             resetMerchantEditorSelection();
+            setMerchantGmViewTab("editor");
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-create-starters": async () => {
+            await createStarterMerchants();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "merchant-randomize-name": async () => {
@@ -8465,7 +8980,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
           },
           "merchant-save": async () => {
-            await saveMerchantFromElement(element);
+            const saved = await saveMerchantFromElement(element);
+            if (saved?.id) {
+              setMerchantGmViewTab("configured-merchants");
+              setMerchantEditorSelectionFromElement({ dataset: { merchantId: saved.id } });
+            }
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "merchant-delete": async () => {
@@ -8479,6 +8998,36 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "merchant-refresh-all-stock": async () => {
             await refreshAllMerchantStocksFromElement(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-gm-filter-change": async () => {
+            if (await setMerchantGmCollectionFilterFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-gm-filter-reset": async () => {
+            if (await resetMerchantGmCollectionFilterFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-update-location-catalog-entry": async () => {
+            if (await updateMerchantCatalogLocationFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-remove-location-catalog-entry": async () => {
+            if (await removeMerchantCatalogLocationFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-location-add-merchant": async () => {
+            if (await assignMerchantCatalogLocationMerchantFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-location-remove-merchant": async () => {
+            if (await removeMerchantCatalogLocationMerchantFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
           },
           "merchant-assign-by-contract-key": async () => {
             await assignMerchantByContractKeyFromElement(element);
@@ -8499,6 +9048,56 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "merchant-set-access-mode": async () => {
             await setMerchantAccessModeFromElement(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "merchant-shop-restrict-toggle": async () => {
+            if (await setMerchantShopRestrictionFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-player-location": async () => {
+            if (await setMerchantShopPlayerLocationFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-player-toggle": async () => {
+            if (await setMerchantShopPlayerAllowedFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-player-all": async () => {
+            if (await setMerchantShopPlayersAllFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-player-none": async () => {
+            if (await setMerchantShopPlayersNoneFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-toggle-shop-tradable": async () => {
+            if (await setMerchantShopTradableFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-tradable-all": async () => {
+            if (await setMerchantShopTradableAllFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-tradable-none": async () => {
+            if (await setMerchantShopTradableNoneFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-bell": async () => {
+            if (await ringMerchantShopBellFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
+          },
+          "merchant-shop-close": async () => {
+            if (await closeMerchantShopsFromElement(element)) {
+              this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            }
           },
           "merchant-open-actor": async () => {
             await openMerchantActorFromElement(element);
@@ -8595,6 +9194,27 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "publish-downtime-hours": async () => {
             await publishDowntimeHoursToPlayers();
           },
+          "downtime-v2-save-config": rerenderAlways(
+            withActionStatus(() => saveDowntimeV2ConfigFromElement(element), {
+              pending: "Saving downtime setup...",
+              success: "Downtime setup saved.",
+              failure: "Unable to save downtime setup."
+            })
+          ),
+          "downtime-v2-add-card": rerenderAlways(
+            withActionStatus(() => addDowntimeV2Card(), {
+              pending: "Adding action card...",
+              success: "Action card added.",
+              failure: "Unable to add action card."
+            })
+          ),
+          "downtime-v2-launch-session": rerenderAlways(
+            withActionStatus(() => launchDowntimeV2Session(element), {
+              pending: "Launching downtime session...",
+              success: "Downtime session launched.",
+              failure: "Unable to launch downtime session."
+            })
+          ),
           "refresh-downtime-submit-selection": async () => {
             syncDowntimeUiDraftFromElement(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8645,6 +9265,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "collect-downtime-result": async () => {
             await collectDowntimeResult(element);
           },
+          "downtime-v2-deliver-result": rerenderAlways(
+            withActionStatus(() => deliverDowntimeV2Result(element), {
+              pending: "Delivering downtime result...",
+              success: "Downtime result delivered.",
+              failure: "Unable to deliver downtime result."
+            })
+          ),
           "apply-upkeep": async () => {
             await applyOperationalUpkeep();
           },
@@ -8749,6 +9376,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await setReputationPlayerImpactField(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "set-reputation-operations-visible": async () => {
+            await setReputationOperationsVisibility(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-reputation-operations-field": async () => {
+            await setReputationOperationsField(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "add-reputation-faction": async () => {
             await addReputationFaction(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8798,7 +9433,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "show-reputation-brief": async () => {
-            await showReputationBrief({ scope: REPUTATION_VIEW_SCOPES.OPERATIONS });
+            await showReputationBrief({
+              scope:
+                this._isCommandCenterShell && this._commandCenterView === "reputation"
+                  ? REPUTATION_VIEW_SCOPES.GM
+                  : REPUTATION_VIEW_SCOPES.OPERATIONS
+            });
           },
           "toggle-loot-pack-sources-collapsed": async () => {
             const current = getLootPackSourcesUiState();
@@ -8819,6 +9459,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
               tab: this._lootRegistryTab,
               storedLootRegistryTab: getActiveLootRegistryTab()
             });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-settings-tab": async () => {
+            setActiveLootSettingsTab(String(element?.dataset?.tab ?? "sources"));
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
           "set-loot-pack-filter": async () => {
@@ -8856,6 +9500,44 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "set-loot-manifest-pack": async () => {
             await setLootManifestPack(element);
           },
+          "import-loot-manifest-compendium": rerenderAlways(
+            withActionStatus(() => importLootManifestCompendiumToWorld(), {
+              pending: "Importing manifest items...",
+              success: "Manifest items imported.",
+              failure: "Manifest import failed."
+            })
+          ),
+          "clear-loot-manifest-imported-items": rerenderAlways(
+            withActionStatus(() => clearLootManifestImportedWorldItems(), {
+              pending: "Clearing imported world items...",
+              success: "Imported world items cleared.",
+              failure: "Unable to clear imported world items."
+            })
+          ),
+          "apply-loot-item-override-search": async () => {
+            setLootItemOverrideSearch(getLootItemOverrideSearchInputFromRoot(this.element));
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "clear-loot-item-override-search": async () => {
+            setLootItemOverrideSearch({ value: "" });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-item-override-filter": async () => {
+            setLootItemOverrideFilter(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "set-loot-item-override-price": rerenderUnlessInput(() => setLootItemOverridePrice(element)),
+          "toggle-loot-item-override-enabled": rerenderAlways(() => toggleLootItemOverrideEnabled(element)),
+          "reset-loot-item-override": rerenderAlways(() => resetLootItemOverride(element)),
+          "enable-selected-loot-item-overrides": rerenderIfTruthy(() =>
+            setLootItemOverridesEnabledByKeys(getSelectedLootItemOverrideKeysFromRoot(this.element), true)
+          ),
+          "disable-selected-loot-item-overrides": rerenderIfTruthy(() =>
+            setLootItemOverridesEnabledByKeys(getSelectedLootItemOverrideKeysFromRoot(this.element), false)
+          ),
+          "reset-selected-loot-item-overrides": rerenderIfTruthy(() =>
+            resetLootItemOverridesByKeys(getSelectedLootItemOverrideKeysFromRoot(this.element))
+          ),
           "set-loot-keyword-include-mode": async () => {
             await setLootKeywordIncludeMode(element);
           },
@@ -8888,6 +9570,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const added = await addLootPreviewItemByPicker();
             if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "edit-loot-preview-item": async () => {
+            const edited = await editLootPreviewItem(element);
+            if (edited) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
           "remove-loot-preview-item": async () => {
             const removed = await removeLootPreviewItem(element);
             if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8908,10 +9594,64 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await depositAndArchiveLootClaimRun(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "set-audio-library-view": rerenderIfTruthy(() => setAudioLibraryView(element)),
+          "set-audio-library-draft-field": rerenderUnlessInput(() => setAudioLibraryDraftField(element)),
+          "browse-audio-library-root": async () => {
+            await openAudioLibraryRootPicker();
+            rerenderShell();
+          },
+          "upload-audio-library-folder": async () => {
+            await uploadLocalAudioFolderToLibrary();
+            rerenderShell();
+          },
+          "scan-audio-library": rerenderAlways(() => scanAudioLibraryCatalog()),
+          "clear-audio-library": rerenderAlways(() => clearAudioLibraryCatalog()),
+          "set-audio-library-filter": rerenderUnlessInput(() => setAudioLibraryFilterField(element)),
+          "select-audio-track": rerenderIfTruthy(() => selectAudioLibraryTrack(element)),
+          "toggle-audio-track-selection": rerenderIfTruthy(() => toggleAudioLibraryTrackSelection(element)),
+          "select-visible-audio-tracks": rerenderIfTruthy(() => selectVisibleAudioLibraryTracks()),
+          "clear-selected-audio-tracks": rerenderIfTruthy(() => clearAudioLibraryTrackSelections()),
+          "set-audio-mix-track-browser-view": rerenderIfTruthy(() => setAudioMixTrackBrowserView(element)),
+          "change-audio-mix-track-browser-page": rerenderIfTruthy(() => changeAudioMixTrackBrowserPage(element)),
+          "toggle-audio-mix-track-selection": rerenderIfTruthy(() => toggleAudioMixTrackSelection(element)),
+          "select-visible-audio-mix-tracks": rerenderIfTruthy(() => selectVisibleAudioMixTracks()),
+          "clear-selected-audio-mix-tracks": rerenderIfTruthy(() => clearAudioMixTrackSelections()),
+          "select-audio-mix-preset": rerenderIfTruthy(() => selectAudioMixPreset(element)),
+          "create-audio-mix-preset": rerenderAlways(() => createAudioMixPresetFromSelection()),
+          "set-audio-mix-preset-text-field": rerenderAlways(() => setSelectedAudioMixPresetTextField(element)),
+          "edit-audio-mix-preset-field": rerenderAlways(() =>
+            promptAndUpdateSelectedAudioMixPresetField(element?.dataset?.field)
+          ),
+          "set-audio-mix-preset-option": rerenderUnlessInput(() => setSelectedAudioMixPresetOption(element)),
+          "delete-audio-mix-preset": rerenderAlways(() => deleteSelectedAudioMixPreset()),
+          "add-audio-mix-track": rerenderAlways(() => addTrackToSelectedAudioMixPreset(element?.dataset?.trackId)),
+          "add-selected-audio-track-to-mix": rerenderAlways(() => addSelectedLibraryTrackToAudioMixPreset()),
+          "add-selected-audio-mix-tracks": rerenderAlways(() => addSelectedAudioMixTracksToPreset()),
+          "clear-audio-mix-track-list": rerenderAlways(() => clearSelectedAudioMixPresetTrackList()),
+          "hide-audio-track": rerenderAlways(() => hideAudioLibraryTrack(element?.dataset?.trackId)),
+          "hide-selected-audio-tracks": rerenderAlways(() => hideSelectedAudioLibraryTracks()),
+          "queue-selected-audio-track-next": rerenderAlways(() => queueSelectedTrackNext(element)),
+          "move-audio-mix-track": rerenderAlways(() =>
+            moveTrackWithinSelectedAudioMixPreset(element?.dataset?.trackId, element?.dataset?.direction)
+          ),
+          "move-audio-mix-track-to-top": rerenderAlways(() =>
+            moveTrackToTopInSelectedAudioMixPreset(element?.dataset?.trackId)
+          ),
+          "remove-audio-mix-track": rerenderAlways(() =>
+            removeTrackFromSelectedAudioMixPreset(element?.dataset?.trackId)
+          ),
+          "restore-hidden-audio-track": rerenderAlways(() => restoreHiddenAudioLibraryTrack(element?.dataset?.trackId)),
+          "restore-all-hidden-audio-tracks": rerenderAlways(() => restoreAllHiddenAudioLibraryTracks()),
+          "play-audio-mix": rerenderAlways(() => playAudioMixPresetById(getSelectedAudioMixPreset().id)),
           "play-audio-scene-preset": async () => {
             const played = await playAudioScenePresetFromElement(element);
             if (played) this.#renderWithPreservedState({ force: true, parts: ["main"] });
           },
+          "play-audio-mix-candidate": rerenderAlways(() => playAudioMixCandidateByTrackId(element?.dataset?.trackId)),
+          "toggle-audio-mix-playback": rerenderAlways(() => toggleAudioMixPlayback()),
+          "play-audio-mix-next": rerenderAlways(() => playNextAudioMixTrack()),
+          "restart-audio-mix-track": rerenderAlways(() => restartCurrentAudioMixTrack()),
+          "stop-audio-mix": rerenderAlways(() => stopAudioMixPlayback()),
           "clear-loot-claims": async () => {
             await clearLootClaimsPool();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -9036,6 +9776,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           "gm-weather-plot-week": async () => {
             await gmWeatherPlotWeek();
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "gm-weather-remove-log": async () => {
+            const removed = await removeWeatherLogById(element?.dataset?.logId);
+            if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          },
+          "open-journal-entry": async () => {
+            await openJournalEntryFromElement(element);
           },
           "set-injury-config": async () => {
             await setInjuryRecoveryConfig(element);
@@ -9214,6 +9961,56 @@ export class OperationsShellApp extends RestWatchApp {
     if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
       clearPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     }
+    return super.close(options);
+  }
+}
+
+export class PartyOperationsCommandCenterApp extends RestWatchApp {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "party-operations-command-center",
+    window: { title: "Party Operations - Command Center" },
+    position: getResponsiveWindowPosition("command-center"),
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/party-operations-shell.hbs" }
+  };
+
+  constructor(...args) {
+    super(...args);
+    this._isCommandCenterShell = true;
+  }
+
+  async _prepareContext() {
+    this._isCommandCenterShell = true;
+    const context = await super._prepareContext();
+    return {
+      ...context,
+      isCommandCenterShell: true,
+      windowToolId: "command-center",
+      windowAriaLabel: "Party Operations Command Center"
+    };
+  }
+
+  async _onRender(context, options) {
+    this._isCommandCenterShell = true;
+    await super._onRender(context, options);
+    if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
+      clearPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    }
+    if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL) === this) {
+      clearPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
+    }
+    if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER) === this) {
+      clearPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER, this);
+    }
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.COMMAND_CENTER, this);
+    syncApplicationWindowTitle(this, "Party Operations - Command Center");
+  }
+
+  async close(options = {}) {
+    clearPartyOpsAppInstance(APP_INSTANCE_KEYS.COMMAND_CENTER, this);
     return super.close(options);
   }
 }
@@ -9697,12 +10494,50 @@ function buildGmLootClaimsBoardContext() {
   };
 }
 
+function closeStandaloneGmToolApps() {
+  for (const key of [
+    APP_INSTANCE_KEYS.GM_FACTIONS_PAGE,
+    APP_INSTANCE_KEYS.GM_WEATHER_PAGE,
+    APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE,
+    APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE,
+    APP_INSTANCE_KEYS.GM_AUDIO_PAGE,
+    APP_INSTANCE_KEYS.GM_LOOT_PAGE
+  ]) {
+    const app = getPartyOpsAppInstance(key);
+    if (app?.element?.isConnected) void app.close?.();
+  }
+}
+
+function openCommandCenterView(view, renderOptions = { force: true }) {
+  const commandCenterView = normalizeCommandCenterView(view, "command");
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("GM permissions are required to view GM panels.");
+    return null;
+  }
+  if (commandCenterView === "settings") {
+    return openPartyOperationsSettingsHub({ ...renderOptions, returnTarget: { type: "main", mainTab: "gm" } });
+  }
+  if (commandCenterView === "resources" || commandCenterView === "gather") {
+    setActiveOperationsPage("planning");
+    setActiveOperationsPlanningTab("resources");
+  } else if (commandCenterView === "command" || isCommandCenterGmToolView(commandCenterView)) {
+    setActiveOperationsPage("gm");
+  }
+  const mainTab = getMainTabForCommandCenterView(commandCenterView);
+  closeStandaloneGmToolApps();
+  return openMainTab(mainTab, {
+    ...renderOptions,
+    commandCenterView
+  });
+}
+
 function openGmFactionsPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
   if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view faction controls.");
     return null;
   }
+  if (!renderOptions?.standalone) return openCommandCenterView("reputation", renderOptions);
   const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
@@ -9716,6 +10551,7 @@ function openGmWeatherPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view weather controls.");
     return null;
   }
+  if (!renderOptions?.standalone) return openCommandCenterView("weather", renderOptions);
   const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_WEATHER_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
@@ -9730,6 +10566,7 @@ function openGmDowntimePage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view downtime controls.");
     return null;
   }
+  if (!renderOptions?.standalone) return openCommandCenterView("downtime", renderOptions);
   const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
@@ -9744,6 +10581,7 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view merchant controls.");
     return null;
   }
+  if (!renderOptions?.standalone) return openCommandCenterView("merchants", renderOptions);
   const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
@@ -9758,6 +10596,7 @@ function openGmAudioPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view audio controls.");
     return null;
   }
+  if (!renderOptions?.standalone) return openCommandCenterView("audio", renderOptions);
   const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
@@ -9772,6 +10611,7 @@ function openGmLootPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view loot controls.");
     return null;
   }
+  if (!renderOptions?.standalone) return openCommandCenterView("loot", renderOptions);
   const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
@@ -9825,6 +10665,16 @@ function getDefaultSettingsHubReturnTarget() {
 }
 
 function buildSettingsHubReturnTargetForRestWatchApp(app = null) {
+  const commandCenterPanelKey =
+    app?._isCommandCenterShell && isCommandCenterGmToolView(app?._commandCenterView)
+      ? getCommandCenterPanelKeyForView(app?._commandCenterView)
+      : "";
+  if (commandCenterPanelKey) {
+    return {
+      type: "gm-panel",
+      panel: commandCenterPanelKey
+    };
+  }
   const mainTab = normalizeMainTabId(app?._activePanel ?? getActiveRestMainTab(), "rest-watch");
   if (mainTab === "gm") {
     const tab = normalizeGmOperationsTab(app?._gmOperationsTab ?? getActiveGmOperationsTab(), "cockpit");
@@ -9863,8 +10713,7 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
 
   let app = null;
   if (key === "cockpit") {
-    setActiveRestMainTab("gm");
-    app = openMainTab("gm", { ...renderOptions, suppressHistory });
+    app = openCommandCenterView("command", { ...renderOptions, suppressHistory });
   } else if (key === "settings") {
     app = openPartyOperationsSettingsHub({ ...renderOptions, suppressHistory });
   } else if (key === "faction") {
@@ -9880,6 +10729,11 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
     app = openGmAudioPage({ ...renderOptions, suppressHistory });
   } else if (key === "loot") {
     app = openGmLootPage({ ...renderOptions, suppressHistory });
+  } else {
+    const commandCenterView = getCommandCenterViewForPanelKey(key);
+    if (commandCenterView) {
+      app = openCommandCenterView(commandCenterView, { ...renderOptions, suppressHistory });
+    }
   }
   queueManagedAudioMixPlaybackResync();
   return app;
@@ -10412,7 +11266,9 @@ export const GmAudioPageApp = createGmAudioPageApp({
   selectVisibleAudioMixTracks,
   clearAudioMixTrackSelections,
   selectAudioMixPreset,
-  createAudioMixPresetFromSelection: wrapAudioAction("Audio preset creation", () => createAudioMixPresetFromSelection()),
+  createAudioMixPresetFromSelection: wrapAudioAction("Audio preset creation", () =>
+    createAudioMixPresetFromSelection()
+  ),
   promptAndUpdateSelectedAudioMixPresetField,
   setSelectedAudioMixPresetTextField,
   setSelectedAudioMixPresetOption,
@@ -10433,9 +11289,15 @@ export const GmAudioPageApp = createGmAudioPageApp({
   removeTrackFromSelectedAudioMixPreset,
   restoreAllHiddenAudioLibraryTracks,
   restoreHiddenAudioLibraryTrack,
-  playSelectedAudioMixPreset: wrapAudioAction("Audio mix", () => playAudioMixPresetById(getSelectedAudioMixPreset().id)),
-  playAudioScenePreset: wrapAudioAction("Audio scene preset", (actionElement) => playAudioScenePresetFromElement(actionElement)),
-  playSelectedAudioMixCandidate: wrapAudioAction("Audio mix", (actionElement) => playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId)),
+  playSelectedAudioMixPreset: wrapAudioAction("Audio mix", () =>
+    playAudioMixPresetById(getSelectedAudioMixPreset().id)
+  ),
+  playAudioScenePreset: wrapAudioAction("Audio scene preset", (actionElement) =>
+    playAudioScenePresetFromElement(actionElement)
+  ),
+  playSelectedAudioMixCandidate: wrapAudioAction("Audio mix", (actionElement) =>
+    playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId)
+  ),
   toggleAudioMixPlayback: wrapAudioAction("Audio mix", () => toggleAudioMixPlayback()),
   playNextAudioMixTrack: wrapAudioAction("Audio mix", () => playNextAudioMixTrack()),
   restartCurrentAudioMixTrack: wrapAudioAction("Audio mix", () => restartCurrentAudioMixTrack()),
@@ -10783,6 +11645,88 @@ export const RestWatchPlayerApp = createRestWatchPlayerAppClass({
   game
 });
 
+function buildMarchingOrderViewContext() {
+  const isGM = canAccessAllPlayerOps();
+  const state = getMarchingOrderState();
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const ranks = buildRanksView(state, isGM);
+  const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
+  const lockBannerTooltip = state.locked
+    ? isGM
+      ? "Players cannot edit while locked."
+      : "Edits are disabled while the GM lock is active."
+    : "";
+  const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
+  const miniVizUi = buildMiniVizUiContext();
+  const lightToggles = buildLightToggles(state, ranks, isGM);
+  const formationBoard = buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks);
+  const spacingGrid = buildMarchSpacingGridContext(state, formationBoard);
+  const laneCounts = Object.fromEntries(
+    getMarchBoardRankIds().map((rankId) => [rankId, ranks.find((rank) => rank.id === rankId)?.entries?.length ?? 0])
+  );
+  const totalAssigned = Object.values(laneCounts).reduce((sum, count) => sum + (Number(count) || 0), 0);
+  const lightSources = lightToggles.filter((entry) => entry.hasLight).length;
+  const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
+  const overview = buildMarchOverviewContext({
+    totalAssigned,
+    allActorCount: formationBoard.restWatchRosterCount,
+    laneCounts,
+    formationLabel: "March Board",
+    formationStateLabel: "Active",
+    lightSources,
+    lockState,
+    unassignedCount: Number(formationBoard?.unassignedRestActors?.length ?? 0),
+    warningCount: 0,
+    leadershipCheckDue: false
+  });
+
+  return {
+    isGM,
+    showGmPageTab: canAccessGmPage(),
+    locked: state.locked,
+    lockBannerText,
+    lockBannerTooltip,
+    lockBannerClass: isGM ? "is-gm" : "",
+    showPopout: false,
+    lastUpdatedAt: state.lastUpdatedAt ?? "-",
+    lastUpdatedBy: state.lastUpdatedBy ?? "-",
+    moduleVersion: getCurrentModuleVersion(),
+    activeTab: "march",
+    usageCollapsed: false,
+    usageToggleLabel: "Collapse",
+    usageToggleIcon: "fa-chevron-up",
+    ranks,
+    formationBoard,
+    spacingGrid,
+    spacingPresets: buildMarchSpacingPresetContext(),
+    gmNotes: state.gmNotes ?? "",
+    lightToggles,
+    gmSections: {
+      formationsCollapsed: false,
+      formationsToggleLabel: "Collapse",
+      formationsToggleIcon: "fa-chevron-up",
+      lightCollapsed: false,
+      lightToggleLabel: "Collapse",
+      lightToggleIcon: "fa-chevron-up",
+      exportCollapsed: false,
+      exportToggleLabel: "Collapse",
+      exportToggleIcon: "fa-chevron-up",
+      snapshotCollapsed: false,
+      snapshotToggleLabel: "Collapse",
+      snapshotToggleIcon: "fa-chevron-up",
+      clearCollapsed: false,
+      clearToggleLabel: "Collapse",
+      clearToggleIcon: "fa-chevron-up",
+      gmNotesCollapsed: false,
+      gmNotesToggleLabel: "Collapse",
+      gmNotesToggleIcon: "fa-chevron-up"
+    },
+    miniViz,
+    ...miniVizUi,
+    overview
+  };
+}
+
 export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
     id: "marching-order-app",
@@ -10797,85 +11741,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   };
 
   async _prepareContext() {
-    const isGM = canAccessAllPlayerOps();
-    const state = getMarchingOrderState();
-    const formationSnapshot = getMarchingFormationSnapshot(state);
-    const ranks = buildRanksView(state, isGM);
-    const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
-    const lockBannerTooltip = state.locked
-      ? isGM
-        ? "Players cannot edit while locked."
-        : "Edits are disabled while the GM lock is active."
-      : "";
-    const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
-    const miniVizUi = buildMiniVizUiContext();
-    const lightToggles = buildLightToggles(state, ranks, isGM);
-    const formationBoard = buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks);
-    const spacingGrid = buildMarchSpacingGridContext(state, formationBoard);
-    const laneCounts = Object.fromEntries(
-      getMarchBoardRankIds().map((rankId) => [rankId, ranks.find((rank) => rank.id === rankId)?.entries?.length ?? 0])
-    );
-    const totalAssigned = Object.values(laneCounts).reduce((sum, count) => sum + (Number(count) || 0), 0);
-    const lightSources = lightToggles.filter((entry) => entry.hasLight).length;
-    const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
-    const overview = buildMarchOverviewContext({
-      totalAssigned,
-      allActorCount: formationBoard.restWatchRosterCount,
-      laneCounts,
-      formationLabel: "March Board",
-      formationStateLabel: "Active",
-      lightSources,
-      lockState,
-      unassignedCount: Number(formationBoard?.unassignedRestActors?.length ?? 0),
-      warningCount: 0,
-      leadershipCheckDue: false
-    });
-
-    return {
-      isGM,
-      showGmPageTab: canAccessGmPage(),
-      locked: state.locked,
-      lockBannerText,
-      lockBannerTooltip,
-      lockBannerClass: isGM ? "is-gm" : "",
-      showPopout: false,
-      lastUpdatedAt: state.lastUpdatedAt ?? "-",
-      lastUpdatedBy: state.lastUpdatedBy ?? "-",
-      moduleVersion: getCurrentModuleVersion(),
-      activeTab: "march",
-      usageCollapsed: false,
-      usageToggleLabel: "Collapse",
-      usageToggleIcon: "fa-chevron-up",
-      ranks,
-      formationBoard,
-      spacingGrid,
-      spacingPresets: buildMarchSpacingPresetContext(),
-      gmNotes: state.gmNotes ?? "",
-      lightToggles,
-      gmSections: {
-        formationsCollapsed: false,
-        formationsToggleLabel: "Collapse",
-        formationsToggleIcon: "fa-chevron-up",
-        lightCollapsed: false,
-        lightToggleLabel: "Collapse",
-        lightToggleIcon: "fa-chevron-up",
-        exportCollapsed: false,
-        exportToggleLabel: "Collapse",
-        exportToggleIcon: "fa-chevron-up",
-        snapshotCollapsed: false,
-        snapshotToggleLabel: "Collapse",
-        snapshotToggleIcon: "fa-chevron-up",
-        clearCollapsed: false,
-        clearToggleLabel: "Collapse",
-        clearToggleIcon: "fa-chevron-up",
-        gmNotesCollapsed: false,
-        gmNotesToggleLabel: "Collapse",
-        gmNotesToggleIcon: "fa-chevron-up"
-      },
-      miniViz,
-      ...miniVizUi,
-      overview
-    };
+    return buildMarchingOrderViewContext();
   }
 
   async _onRender(context, options) {
@@ -10974,7 +11840,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     restorePendingWindowState(this);
     restorePendingUiState(this);
     restorePendingScrollState(this);
-
   }
 
   #onTabClick(tabElement, html, event = null) {
@@ -15985,7 +16850,12 @@ async function importLootManifestCompendiumToWorld() {
 function getAvailableLootItemPackSources() {
   const manifestSource = buildLootManifestSourceEntry({ enabled: true });
   return [manifestSource]
-    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
+    .filter(
+      (
+        (seen) => (entry) =>
+          entry.id && !seen.has(entry.id) && seen.add(entry.id)
+      )(new Set())
+    )
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
@@ -21258,12 +22128,14 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   const ceiling = String(sourceConfig?.filters?.rarityCeiling ?? "");
   const includeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordIncludeTags ?? []);
   const excludeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordExcludeTags ?? []);
-  const includeModeAll = String(LOOT_KEYWORD_INCLUDE_MODES?.ALL ?? "all")
-    .trim()
-    .toLowerCase() || "all";
-  const includeModeAny = String(LOOT_KEYWORD_INCLUDE_MODES?.ANY ?? "any")
-    .trim()
-    .toLowerCase() || "any";
+  const includeModeAll =
+    String(LOOT_KEYWORD_INCLUDE_MODES?.ALL ?? "all")
+      .trim()
+      .toLowerCase() || "all";
+  const includeModeAny =
+    String(LOOT_KEYWORD_INCLUDE_MODES?.ANY ?? "any")
+      .trim()
+      .toLowerCase() || "any";
   const includeModeRaw = String(sourceConfig?.filters?.keywordIncludeMode ?? includeModeAll)
     .trim()
     .toLowerCase();
@@ -24592,6 +25464,14 @@ function buildDefaultOperationsLedger() {
         foodMultiplier: 1,
         waterMultiplier: 1,
         torchPerRest: 0
+      },
+      upkeepCosts: {
+        foodRationGp: OPERATIONAL_UPKEEP_COST_DEFAULTS.foodRationGp,
+        waterRationGp: OPERATIONAL_UPKEEP_COST_DEFAULTS.waterRationGp,
+        torchGp: OPERATIONAL_UPKEEP_COST_DEFAULTS.torchGp,
+        lodgingCampGp: OPERATIONAL_UPKEEP_COST_DEFAULTS.lodgingCampGp,
+        otherDailyGp: OPERATIONAL_UPKEEP_COST_DEFAULTS.otherDailyGp,
+        note: OPERATIONAL_UPKEEP_COST_DEFAULTS.note
       }
     }
   };
@@ -25484,6 +26364,12 @@ function buildOperationsContext() {
   const waterDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.waterPerMember * upkeep.waterMultiplier));
   const torchDrainPerDay = Math.max(0, Math.ceil(upkeep.torchPerRest));
   const upkeepDaysPending = getUpkeepDaysFromCalendar(resourcesState.upkeepLastAppliedTs, getCurrentWorldTimestamp());
+  const upkeepCosts = buildOperationalUpkeepCostContext(resourcesState, {
+    foodDrainPerDay,
+    waterDrainPerDay,
+    torchDrainPerDay,
+    upkeepDaysPending
+  });
   const upkeepSchedule = buildUpkeepScheduleSummary(resourcesState, { upkeepDaysPending });
   const resourcesNumeric = {
     food: Number(resourcesState.food ?? 0),
@@ -25844,6 +26730,7 @@ function buildOperationsContext() {
         selectedBindingCount
       },
       upkeep,
+      upkeepCosts,
       encumbranceOptions: [
         { value: "light", label: "Light", selected: (resourcesState.encumbrance ?? "light") === "light" },
         { value: "moderate", label: "Moderate", selected: (resourcesState.encumbrance ?? "light") === "moderate" },
@@ -26281,7 +27168,12 @@ function ensureReputationState(ledger) {
   }
   ledger.reputation.factions = ledger.reputation.factions
     .map((entry) => normalizeReputationFaction(entry))
-    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()));
+    .filter(
+      (
+        (seen) => (entry) =>
+          entry.id && !seen.has(entry.id) && seen.add(entry.id)
+      )(new Set())
+    );
   return ledger.reputation;
 }
 
@@ -27500,7 +28392,12 @@ function ensureMerchantsState(ledger) {
   merchants.stockStateById = normalizedStockState;
   merchants.accessLog = merchants.accessLog
     .map((entry) => normalizeMerchantAccessLogEntry(entry))
-    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
+    .filter(
+      (
+        (seen) => (entry) =>
+          entry.id && !seen.has(entry.id) && seen.add(entry.id)
+      )(new Set())
+    )
     .sort((a, b) => Number(b.viewedAt ?? 0) - Number(a.viewedAt ?? 0))
     .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
   return merchants;
@@ -30693,8 +31590,7 @@ async function syncMerchantActorOwnership(actor) {
   const nextKeys = Object.keys(nextOwnership);
   const currentKeys = Object.keys(currentOwnership);
   const ownershipChanged =
-    nextKeys.length !== currentKeys.length ||
-    nextKeys.some((k) => currentOwnership[k] !== nextOwnership[k]);
+    nextKeys.length !== currentKeys.length || nextKeys.some((k) => currentOwnership[k] !== nextOwnership[k]);
   if (!ownershipChanged) return actor;
   await actor.update({ ownership: nextOwnership });
   return actor;
@@ -34635,7 +35531,12 @@ function normalizeLootClaimItemsList(values = []) {
         eligibleActorIds: normalizeLootClaimActorIdList(entry?.eligibleActorIds ?? entry?.eligibilityActorIds)
       };
     })
-    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()));
+    .filter(
+      (
+        (seen) => (entry) =>
+          entry.id && !seen.has(entry.id) && seen.add(entry.id)
+      )(new Set())
+    );
 }
 
 function normalizeLootClaimTableRolls(values = []) {
@@ -36556,7 +37457,12 @@ function ensureWeatherState(ledger) {
   if (!Array.isArray(ledger.weather.logs)) ledger.weather.logs = [];
   ledger.weather.logs = ledger.weather.logs
     .map((entry) => normalizeWeatherSnapshot(entry))
-    .filter(((seen) => (entry) => entry.id && !seen.has(entry.id) && seen.add(entry.id))(new Set()))
+    .filter(
+      (
+        (seen) => (entry) =>
+          entry.id && !seen.has(entry.id) && seen.add(entry.id)
+      )(new Set())
+    )
     .slice(0, 100);
 
   const current = ledger.weather.current;
@@ -36751,6 +37657,7 @@ async function setOperationalResource(element) {
   const itemLinkKeys = new Set(RESOURCE_TRACK_KEYS);
   const isItemSelectionActor = resourceKey.startsWith("itemSelectionActor:");
   const isItemSelectionItem = resourceKey.startsWith("itemSelectionItem:");
+  const isUpkeepCostInput = resourceKey.startsWith("upkeepCost:") || resourceKey === "upkeepCostNote";
   const isPlayerAllowedResourceSelection = !canAccessAllPlayerOps() && (isItemSelectionActor || isItemSelectionItem);
   if (!canAccessAllPlayerOps() && !isPlayerAllowedResourceSelection) {
     ui.notifications?.warn("Only the GM can edit resource rules.");
@@ -36770,7 +37677,8 @@ async function setOperationalResource(element) {
     partyWaterRations: "water",
     torches: "torches"
   };
-  const shouldRerender = isItemSelectionActor || isItemSelectionItem;
+  const upkeepCostKeys = new Set(["foodRationGp", "waterRationGp", "torchGp", "lodgingCampGp", "otherDailyGp"]);
+  const shouldRerender = isItemSelectionActor || isItemSelectionItem || isUpkeepCostInput;
 
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
@@ -36817,6 +37725,20 @@ async function setOperationalResource(element) {
       const raw = Number(element?.value ?? 0);
       const value = Number.isFinite(raw) ? Math.max(-10, Math.min(20, Math.floor(raw))) : 0;
       ledger.resources.gather.weatherMods[weatherKey] = value;
+      return;
+    }
+    if (resourceKey.startsWith("upkeepCost:")) {
+      const costKey = String(resourceKey.split(":")[1] ?? "").trim();
+      if (!upkeepCostKeys.has(costKey)) return;
+      ledger.resources.upkeepCosts = normalizeOperationalUpkeepCosts(ledger.resources.upkeepCosts);
+      ledger.resources.upkeepCosts[costKey] = normalizeResourceCostGp(element?.value, 0);
+      return;
+    }
+    if (resourceKey === "upkeepCostNote") {
+      ledger.resources.upkeepCosts = normalizeOperationalUpkeepCosts(ledger.resources.upkeepCosts);
+      ledger.resources.upkeepCosts.note = String(element?.value ?? "")
+        .trim()
+        .slice(0, 180);
       return;
     }
     if (resourceKey.startsWith("stewardPoolMode:")) {
@@ -37302,6 +38224,38 @@ async function applyDowntimeV2DeliveredResultToActor(result = {}) {
   return { ok: true, project: applied.project, completed: applied.completed, completionItemId };
 }
 
+function getDowntimeV2PlayerResultTargetUserIds(result = {}) {
+  const targetUserIds = new Set();
+  const submittedUserId = String(result?.userId ?? "").trim();
+  if (submittedUserId) targetUserIds.add(submittedUserId);
+  const actor = game.actors.get(String(result?.actorId ?? "").trim());
+  if (actor) {
+    for (const user of getConnectedNonGmUsers()) {
+      if (canUserManageDowntimeActor(user, actor)) targetUserIds.add(String(user?.id ?? "").trim());
+    }
+  }
+  targetUserIds.delete("");
+  return Array.from(targetUserIds);
+}
+
+function emitDowntimeV2PlayerResultReady(result = {}) {
+  const resultId = String(result?.id ?? "").trim();
+  for (const userId of getDowntimeV2PlayerResultTargetUserIds(result)) {
+    emitModuleSocket(
+      {
+        type: "ops:player-action-result",
+        userId,
+        ok: true,
+        summary: "Downtime result ready.",
+        scopes: [REFRESH_SCOPE_KEYS.OPERATIONS],
+        hubTab: "downtime",
+        resultId
+      },
+      { channel: SOCKET_CHANNEL }
+    );
+  }
+}
+
 async function deliverDowntimeV2Result(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can deliver downtime results.");
@@ -37342,6 +38296,7 @@ async function deliverDowntimeV2Result(element) {
     return { ok: false, message: delivered?.message ?? "Delivery failed." };
   }
   ui.notifications?.info(`Delivered downtime result for ${delivered.result.actorName || "actor"}.`);
+  emitDowntimeV2PlayerResultReady(delivered.result);
   return { ok: true };
 }
 
@@ -40172,6 +41127,20 @@ function getResourceSyncActors() {
   return getOwnedPcActors();
 }
 
+function getGatherPlanningActors() {
+  const unique = new Map();
+  const addActor = (actor) => {
+    if (!actor || String(actor?.type ?? "") !== "character" || !actor.id) return;
+    unique.set(String(actor.id), actor);
+  };
+  for (const actor of getPartyCharacterActors()) addActor(actor);
+  for (const actor of getResourceSyncActors()) addActor(actor);
+  if (unique.size === 0) {
+    for (const actor of game.actors?.contents ?? []) addActor(actor);
+  }
+  return Array.from(unique.values());
+}
+
 function isWaterskinLikeItem(item) {
   const name = String(item?.name ?? "").trim();
   if (!name) return false;
@@ -42157,7 +43126,7 @@ async function promptGatherBatchDialog(options = {}) {
     return { ok: false, blocked: true, reason: "GM only." };
   }
 
-  const actors = getResourceSyncActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  const actors = getGatherPlanningActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   if (actors.length === 0) {
     ui.notifications?.warn("No eligible party actors found for gather checks.");
     return { ok: false, blocked: true, reason: "No eligible actors." };
@@ -42833,7 +43802,7 @@ async function promptGatherResourceDialog(options = {}) {
     return { ok: false, blocked: true, reason: "GM only." };
   }
 
-  const actors = getResourceSyncActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  const actors = getGatherPlanningActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   if (actors.length === 0) {
     ui.notifications?.warn("No eligible party actors found for gather checks.");
     return { ok: false, blocked: true, reason: "No eligible actors." };
@@ -49986,7 +50955,7 @@ function getMarchingTokenPositions(state = getMarchingOrderState()) {
   return positions;
 }
 
-async function moveActorTokenToMarchSpacingCell({ actorId, cellIndex }) {
+async function moveActorTokenToMarchSpacingCell({ actorId, cellIndex, tokenPositions = null }) {
   const size = 12;
   const encodedCellOffset = 1000;
   const normalizedCellIndex = Number.parseInt(String(cellIndex ?? ""), 10);
@@ -49998,8 +50967,9 @@ async function moveActorTokenToMarchSpacingCell({ actorId, cellIndex }) {
   const tokenDocument = token?.document ?? token;
   if (!token || !tokenDocument || typeof tokenDocument.update !== "function") return false;
 
-  const tokenPositions = getMarchingTokenPositions();
-  const entries = Object.values(tokenPositions);
+  const sourceTokenPositions =
+    tokenPositions && typeof tokenPositions === "object" ? tokenPositions : getMarchingTokenPositions();
+  const entries = Object.values(sourceTokenPositions);
   if (!entries.length) return false;
 
   const encoded = normalizedCellIndex - encodedCellOffset;
@@ -50032,6 +51002,22 @@ async function moveActorTokenToMarchSpacingCell({ actorId, cellIndex }) {
     y: Math.round(targetCenterY - tokenHeight / 2)
   });
   return true;
+}
+
+async function syncMarchSpacingPresetTokens(state = getMarchingOrderState()) {
+  if (!canvas?.ready) return false;
+  const tokenPositions = getMarchingTokenPositions(state);
+  if (!Object.keys(tokenPositions).length) return false;
+
+  let movedAny = false;
+  for (const rankId of getMarchBoardRankIds()) {
+    const placements = state?.rankPlacements?.[rankId] ?? {};
+    for (const [actorId, cellIndex] of Object.entries(placements)) {
+      const moved = await moveActorTokenToMarchSpacingCell({ actorId, cellIndex, tokenPositions });
+      movedAny = movedAny || moved;
+    }
+  }
+  return movedAny;
 }
 
 function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
@@ -52153,6 +53139,7 @@ function refreshSingleAppPreservingView(app) {
 }
 
 function refreshRestWatchAppsImmediately() {
+  refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.COMMAND_CENTER));
   refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
   refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL));
   refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER));
@@ -53440,10 +54427,15 @@ async function applyMarchSpacingPresetFromElement(element) {
   const presetId = String(element?.dataset?.spacingPreset ?? "").trim();
   const preset = MARCH_SPACING_PRESETS.find((entry) => entry.id === presetId);
   if (!preset) return false;
-  const saved = await updateMarchingOrderState((draft) => {
-    applyMarchSpacingPresetToState(draft, presetId);
-  });
+  const saved = await updateMarchingOrderState(
+    (draft) => {
+      applyMarchSpacingPresetToState(draft, presetId);
+    },
+    { skipLocalRefresh: true }
+  );
   if (!saved) return false;
+  await syncMarchSpacingPresetTokens(getMarchingOrderState());
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
   await recordOperationsEvent({
     category: "march",
     title: "March Spacing Preset",
@@ -54555,6 +55547,7 @@ mainTabNavigator = createMainTabNavigator({
   appInstanceKeys: APP_INSTANCE_KEYS,
   RestWatchApp,
   OperationsShellApp,
+  CommandCenterApp: PartyOperationsCommandCenterApp,
   MarchingOrderApp,
   getResponsiveWindowOptions,
   setActiveRestMainTab,
@@ -54614,8 +55607,6 @@ function buildPartyOperationsApi() {
     moduleId: MODULE_ID,
     ensureLauncherUi,
     openMainTab,
-    openGmMerchantsPage,
-    openGmAudioPage,
     refreshOpenApps,
     getOperationsLedger,
     runGatherResourcesAction,

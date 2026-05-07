@@ -21,6 +21,7 @@ function createApp(label) {
 
 {
   const apps = {
+    command: createApp("command"),
     rest: createApp("rest"),
     ops: createApp("ops"),
     march: createApp("march"),
@@ -30,9 +31,7 @@ function createApp(label) {
   const warnings = [];
   const activeTabs = [];
   const queueSignals = [];
-  let createdRestApp = null;
-  let createdOpsApp = null;
-  let createdMarchApp = null;
+  let createdCommandApp = null;
   const navigator = createMainTabNavigator({
     normalizeMainTabId: (value, fallback) =>
       String(value ?? fallback)
@@ -44,6 +43,7 @@ function createApp(label) {
     canAccessGmPage: () => true,
     notifyUiWarnThrottled: (message) => warnings.push(message),
     getAppInstance(key) {
+      if (key === "command") return apps.command;
       if (key === "rest") return apps.rest;
       if (key === "operations") return apps.ops;
       if (key === "march") return apps.march;
@@ -51,27 +51,16 @@ function createApp(label) {
       return null;
     },
     appInstanceKeys: {
+      COMMAND_CENTER: "command",
       REST_WATCH: "rest",
       OPERATIONS_SHELL: "operations",
       MARCHING_ORDER: "march",
       REST_WATCH_PLAYER: "player"
     },
-    RestWatchApp: class {
+    CommandCenterApp: class {
       constructor() {
-        createdRestApp = createApp("rest-new");
-        return createdRestApp;
-      }
-    },
-    OperationsShellApp: class {
-      constructor() {
-        createdOpsApp = createApp("ops-new");
-        return createdOpsApp;
-      }
-    },
-    MarchingOrderApp: class {
-      constructor() {
-        createdMarchApp = createApp("march-new");
-        return createdMarchApp;
+        createdCommandApp = createApp("command-new");
+        return createdCommandApp;
       }
     },
     getResponsiveWindowOptions: (key) => ({ key }),
@@ -84,7 +73,8 @@ function createApp(label) {
   assert.equal(apps.rest.closeCalls, 1);
   assert.equal(apps.ops.closeCalls, 1);
   assert.equal(apps.player.closeCalls, 1);
-  assert.equal(apps.march.renderCalls.length + (createdMarchApp?.renderCalls.length ?? 0), 1);
+  assert.equal(apps.march.closeCalls, 1);
+  assert.equal(apps.command.renderCalls.length + (createdCommandApp?.renderCalls.length ?? 0), 1);
   assert.deepEqual(history.at(-1), { type: "main", tab: "marching-order" });
 
   apps.rest.element.isConnected = true;
@@ -92,7 +82,7 @@ function createApp(label) {
   navigator.openMainTab("operations");
   assert.deepEqual(activeTabs.at(-1), "operations");
   assert.equal(apps.rest.closeCalls, 2);
-  assert.equal(apps.ops.renderCalls.length, 1);
+  assert.equal(apps.command.renderCalls.length + (createdCommandApp?.renderCalls.length ?? 0), 2);
 
   navigator.openMainTab("gm");
   assert.deepEqual(activeTabs.at(-1), "gm");
@@ -100,13 +90,20 @@ function createApp(label) {
 
   navigator.openMainTab("rest-watch");
   assert.deepEqual(activeTabs.at(-1), "rest-watch");
-  assert.equal(apps.rest.renderCalls.length + (createdRestApp?.renderCalls.length ?? 0), 1);
+  assert.equal(apps.command.renderCalls.length + (createdCommandApp?.renderCalls.length ?? 0), 4);
   assert.equal(queueSignals.length, 4);
+
+  navigator.openMainTab("gm", { force: true, commandCenterView: "weather" });
+  assert.deepEqual(activeTabs.at(-1), "gm");
+  assert.equal(apps.command._commandCenterView ?? createdCommandApp?._commandCenterView, "weather");
+  assert.equal(apps.command.renderCalls.length + (createdCommandApp?.renderCalls.length ?? 0), 5);
+  assert.equal(queueSignals.length, 5);
 }
 
 {
   const warnings = [];
   const playerApp = createApp("player-nongm");
+  const commandApp = createApp("command-nongm");
   const restApp = createApp("rest-nongm");
   const opsApp = createApp("ops-nongm");
   const marchApp = createApp("march-nongm");
@@ -125,12 +122,14 @@ function createApp(label) {
     canAccessGmPage: () => false,
     notifyUiWarnThrottled: (message) => warnings.push(message),
     getAppInstance(key) {
+      if (key === "command") return commandApp;
       if (key === "rest") return restApp;
       if (key === "operations") return opsApp;
       if (key === "march") return marchApp;
       return null;
     },
     appInstanceKeys: {
+      COMMAND_CENTER: "command",
       REST_WATCH: "rest",
       OPERATIONS_SHELL: "operations",
       MARCHING_ORDER: "march"
@@ -154,19 +153,25 @@ function createApp(label) {
   assert.equal(warnings.length, 1);
   assert.equal(navigator.openMainTab("rest-watch"), playerApp);
   assert.equal(playerOpenCalls, 1);
+  assert.equal(commandApp.closeCalls, 1);
   assert.deepEqual(activeTabs.at(-1), "rest-watch");
   assert.deepEqual(playerHubTabs.at(-1), "watch");
   assert.deepEqual(playerOpenOptions.at(-1), { force: true, hubTab: "watch" });
   assert.deepEqual(history.at(-1), { type: "player", tab: "watch" });
   assert.equal(queueSignals.length, 1);
-  assert.equal(navigator.openMainTab("marching-order"), playerApp);
+  assert.equal(navigator.openRestWatchUiForCurrentUser({ force: true, hubTab: "downtime" }), playerApp);
   assert.equal(playerOpenCalls, 2);
+  assert.deepEqual(playerHubTabs.at(-1), "downtime");
+  assert.deepEqual(playerOpenOptions.at(-1), { force: true, hubTab: "downtime" });
+  assert.deepEqual(history.at(-1), { type: "player", tab: "downtime" });
+  assert.equal(navigator.openMainTab("marching-order"), playerApp);
+  assert.equal(playerOpenCalls, 3);
   assert.equal(marchApp.closeCalls, 1);
   assert.deepEqual(playerHubTabs.at(-1), "march");
   assert.deepEqual(playerOpenOptions.at(-1), { force: true, hubTab: "march" });
   assert.deepEqual(history.at(-1), { type: "player", tab: "march" });
   assert.equal(navigator.openMainTab("operations"), playerApp);
-  assert.equal(playerOpenCalls, 3);
+  assert.equal(playerOpenCalls, 4);
   assert.equal(opsApp.closeCalls, 1);
   assert.deepEqual(playerHubTabs.at(-1), "downtime");
   assert.deepEqual(playerOpenOptions.at(-1), { force: true, hubTab: "downtime" });
