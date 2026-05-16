@@ -164,6 +164,15 @@ export function createPartyOperationsSettingsHub({
           void this.#saveSettings();
         });
       }
+
+      const priceScaleInput = root.querySelector('input[name="economyPriceScale"]');
+      if (priceScaleInput instanceof HTMLInputElement && priceScaleInput.dataset.poBoundInput !== "1") {
+        priceScaleInput.dataset.poBoundInput = "1";
+        const display = root.querySelector("[data-economy-price-scale-display]");
+        priceScaleInput.addEventListener("input", () => {
+          if (display instanceof HTMLElement) display.textContent = `${priceScaleInput.value}%`;
+        });
+      }
     }
 
     #toBool(value) {

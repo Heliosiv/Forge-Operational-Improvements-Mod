@@ -87,12 +87,9 @@
               </select>
             </label>
 
-            <label class="po-resource-row">
-              <span>Economy Price Scale</span>
-              <div style="display:flex;align-items:center;gap:6px;flex:1;">
-                <input type="range" name="economyPriceScale" min="25" max="300" step="25" value="{{economyPriceScale}}" style="flex:1;" oninput="this.nextElementSibling.textContent=this.value+'%'" />
-                <span style="min-width:3.2em;text-align:right;font-weight:600;">{{economyPriceScale}}%</span>
-              </div>
+            <label class="po-resource-row po-resource-row-stack po-settings-range-row">
+              <span>Economy Price Scale (<output data-economy-price-scale-display>{{economyPriceScale}}%</output>)</span>
+              <input type="range" id="po-settings-economy-price-scale" name="economyPriceScale" min="25" max="300" step="25" value="{{economyPriceScale}}" class="po-input" />
             </label>
             <div class="po-hint">Scales all item prices across loot, merchants, and budgets. 100% is standard D&amp;D pricing.</div>
 

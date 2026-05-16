@@ -2007,6 +2007,10 @@
   font-weight: 700;
 }
 
+.party-operations :is(h2, h3, h4).po-section-title {
+  margin: 0;
+}
+
 .party-operations .po-info-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
