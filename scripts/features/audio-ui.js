@@ -124,6 +124,10 @@ export function createGmAudioPageApp(deps) {
         window.clearInterval(this._audioLiveMonitorTimer);
         this._audioLiveMonitorTimer = null;
       }
+      if (this._audioLiveMonitorVisibilityHandler) {
+        document.removeEventListener("visibilitychange", this._audioLiveMonitorVisibilityHandler);
+        this._audioLiveMonitorVisibilityHandler = null;
+      }
       if (this._audioLiveVolumeSaveTimer) {
         window.clearTimeout(this._audioLiveVolumeSaveTimer);
         this._audioLiveVolumeSaveTimer = null;
@@ -502,6 +506,10 @@ export function createGmAudioPageApp(deps) {
         window.clearInterval(this._audioLiveMonitorTimer);
         this._audioLiveMonitorTimer = null;
       }
+      if (this._audioLiveMonitorVisibilityHandler) {
+        document.removeEventListener("visibilitychange", this._audioLiveMonitorVisibilityHandler);
+        this._audioLiveMonitorVisibilityHandler = null;
+      }
       const root = this.element;
       if (!root) return;
       const cards = Array.from(root.querySelectorAll("[data-po-audio-live-monitor]"));
@@ -513,11 +521,16 @@ export function createGmAudioPageApp(deps) {
       let idleTicks = 0;
       let previousCurrentSeconds = 0;
 
-      const restartMonitor = () => {
+      const stopMonitor = () => {
         if (this._audioLiveMonitorTimer) {
           window.clearInterval(this._audioLiveMonitorTimer);
           this._audioLiveMonitorTimer = null;
         }
+      };
+
+      const restartMonitor = () => {
+        stopMonitor();
+        if (document.hidden) return;
         this._audioLiveMonitorTimer = window.setInterval(syncCards, currentPollMs);
       };
 
@@ -572,6 +585,18 @@ export function createGmAudioPageApp(deps) {
 
       syncCards();
       restartMonitor();
+
+      this._audioLiveMonitorVisibilityHandler = () => {
+        if (document.hidden) {
+          stopMonitor();
+        } else {
+          idleTicks = 0;
+          currentPollMs = FAST_POLL_MS;
+          syncCards();
+          restartMonitor();
+        }
+      };
+      document.addEventListener("visibilitychange", this._audioLiveMonitorVisibilityHandler);
     }
 
     _getActionHandlers() {

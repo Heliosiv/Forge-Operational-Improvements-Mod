@@ -1837,7 +1837,7 @@ async function main() {
   const importedPreview = [];
 
   for (const sourceItemRaw of missingSourceItems) {
-    const sourceItem = JSON.parse(JSON.stringify(sourceItemRaw));
+    const sourceItem = structuredClone(sourceItemRaw);
     if (args.balanced) {
       applyBalancedAdjustments(sourceItem, { deriveSpellPricing: args.deriveSpellPricing });
       if (!isBalancedSourceItem(sourceItem, {
@@ -1848,7 +1848,7 @@ async function main() {
         continue;
       }
     }
-    const clone = JSON.parse(JSON.stringify(sourceItem));
+    const clone = structuredClone(sourceItem);
     stampPartyOperationsMetadata(clone, summary, { collection: args.collection });
     normalizeItemFlags(clone, summary);
     enrichManifestItem(clone, summary);

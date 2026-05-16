@@ -8,11 +8,19 @@
  *   randomIdFn — () => string  (e.g. foundry.utils.randomID)
  *   deepCloneFn — (obj) => obj  (e.g. foundry.utils.deepClone)
  */
+function defaultDeepClone(value) {
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value));
+  }
+}
+
 export function createReputationDraftStorage({
   gameRef,
   storage,
   randomIdFn = () => Math.random().toString(36).slice(2),
-  deepCloneFn = (v) => JSON.parse(JSON.stringify(v))
+  deepCloneFn = defaultDeepClone
 } = {}) {
   // ── Storage key helpers ──────────────────────────────────────────────────
 

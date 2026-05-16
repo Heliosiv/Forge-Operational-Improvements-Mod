@@ -24,3 +24,19 @@ tmp-*.css
 tmp-*.csv
 tmp-*.md
 .build-verify-*/
+
+# Diff/comparison snapshots (generated, never commit)
+baseline-*/
+head-*/
+*.tar
+.tmp_*.js
+.tmp_*.mjs
+.tmp_*.cjs
+
+# Local audit/debug dumps (generated)
+ALL_CODE.txt
+audit-report.txt
+check-output.txt
+check_output.txt
+isolate-*.log
+*.v8.log
