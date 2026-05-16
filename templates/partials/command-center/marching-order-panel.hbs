@@ -73,7 +73,6 @@
         <div>
           <div class="po-section-title">Spacing Grid</div>
           <div class="po-op-summary">{{spacingGrid.sourceLabel}} - 60 ft by 60 ft - each square is 5 ft</div>
-          <div class="po-op-summary">Click an actor, then click a square to place. Shift-click another actor to swap.</div>
         </div>
         <div class="po-march-spacing-summary" aria-label="Party marching summary">
           <span class="po-pill">Roster {{formationBoard.restWatchRosterCount}}</span>
@@ -96,6 +95,10 @@
         {{/each}}
       </div>
       {{/if}}
+      <div class="po-march-grid-tip" role="note">
+        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        <span>Click an actor, then click a square to place. <kbd>Shift</kbd>+click another actor to swap.</span>
+      </div>
       <div class="po-march-spacing-grid" role="grid" aria-label="Party spacing grid">
         {{#each spacingGrid.rows}}
         <div class="po-march-spacing-row" role="row">

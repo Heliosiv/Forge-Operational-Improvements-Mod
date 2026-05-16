@@ -3266,14 +3266,24 @@
 .party-operations .po-reputation-list-summary::after {
   content: "\f078";
   font-family: "Font Awesome 6 Free";
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   font-weight: 900;
-  color: var(--po-muted);
-  transition: transform 140ms ease;
+  color: color-mix(in srgb, var(--po-text) 75%, transparent);
+  margin-left: 4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: transform 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.party-operations .po-reputation-list-summary:hover::after,
+.party-operations .po-reputation-list-summary:focus-visible::after {
+  color: var(--po-text-strong);
+  background: color-mix(in srgb, var(--po-accent) 14%, transparent);
 }
 
 .party-operations details[open] > .po-reputation-list-summary::after {
   transform: rotate(180deg);
+  color: var(--po-text-strong);
 }
 
 .party-operations .po-reputation-list-main,
@@ -5482,6 +5492,37 @@
 .party-operations [data-tool="marching-order"] .po-march-spacing-row {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.party-operations .po-march-grid-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: var(--po-space-2) 0;
+  padding: 6px 10px;
+  border-radius: var(--po-radius);
+  border: 1px solid color-mix(in srgb, var(--po-accent) 28%, var(--po-border));
+  background: color-mix(in srgb, var(--po-accent) 8%, var(--po-bg-alt));
+  font-size: 0.84rem;
+  color: var(--po-text);
+}
+
+.party-operations .po-march-grid-tip i {
+  color: var(--po-accent);
+  font-size: 0.92rem;
+}
+
+.party-operations .po-march-grid-tip kbd {
+  display: inline-block;
+  padding: 0 4px;
+  margin: 0 2px;
+  border-radius: 3px;
+  border: 1px solid var(--po-border);
+  background: color-mix(in srgb, var(--po-bg) 80%, transparent);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .party-operations [data-tool="marching-order"] .po-march-spacing-cell {
