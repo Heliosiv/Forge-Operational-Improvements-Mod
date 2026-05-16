@@ -57,7 +57,7 @@
         {{else}}
         <div class="po-empty"><div class="po-empty-text">No assignments in this slot yet.</div></div>
         {{/if}}
-        <div class="po-slot-chip {{playerCoverageStateClass}}">Coverage: {{playerCoverageLabel}}</div>
+        <div class="po-slot-chip {{playerCoverageStateClass}}" title="{{playerCoverageTooltip}}" aria-label="Coverage: {{playerCoverageLabel}} — {{playerCoverageTooltip}}">Coverage: {{playerCoverageLabel}}</div>
         <div class="po-assign-actions">
           {{#if canAssignMe}}
           <button type="button" class="po-btn is-primary" data-action="assign-me">Assign Me</button>

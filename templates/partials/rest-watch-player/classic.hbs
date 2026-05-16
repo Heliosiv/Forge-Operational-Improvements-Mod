@@ -206,7 +206,7 @@
         </div>
         {{/unless}}
 
-        <div class="po-slot-chip {{playerCoverageStateClass}}">Coverage: {{playerCoverageLabel}}</div>
+        <div class="po-slot-chip {{playerCoverageStateClass}}" title="{{playerCoverageTooltip}}" aria-label="Coverage: {{playerCoverageLabel}} — {{playerCoverageTooltip}}">Coverage: {{playerCoverageLabel}}</div>
 
         <div class="po-assign-actions">
           {{#if canAssignMe}}

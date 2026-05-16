@@ -54005,6 +54005,14 @@ function buildWatchSlotsView(state, isGM, visibility) {
             ? "No Darkvision"
             : "Covered";
     const playerCoverageStateClass = entriesView.length === 0 ? "" : slotNoDarkvision ? "is-warn" : "is-ready";
+    const playerCoverageTooltip =
+      entriesView.length === 0
+        ? "No characters are assigned to this watch yet."
+        : slotNoDarkvision
+          ? "At least one assigned character has no darkvision and cannot see in dim or dark conditions without a torch or campfire light."
+          : detailSummary.coverageLabel === "No Darkvision"
+            ? "No assigned character has darkvision. Bring a light source or stay close to the campfire."
+            : "All assigned characters can see in the dark or have a sufficient light source.";
 
     const assignmentRows = buildVisibleRestWatchAssignmentRows(
       entries,
@@ -54029,6 +54037,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
       slotNoDarkvision,
       playerCoverageLabel,
       playerCoverageStateClass,
+      playerCoverageTooltip,
       visibleEntryCount,
       detailSummary,
       assignmentRows,

@@ -793,9 +793,8 @@
         <div id="po-ops-merchants" class="po-gm-section po-merchants-page po-merchants-player-view">
           <div class="po-section-title">Merchants</div>
           {{#unless operations.merchants.shopOpen}}
-          <div class="po-op-role-row">
-            <div class="po-section-title">Shops Closed</div>
-            <div class="po-op-summary">The GM has not opened merchant access.</div>
+          <div class="po-empty po-empty-merchants">
+            <div class="po-empty-text">No merchants are currently open. The GM will let you know when shops are available.</div>
           </div>
           {{else}}
           <div class="po-hint">Review your GM-assigned location, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
@@ -920,7 +919,7 @@
                   </select>
                 </label>
                 <div class="po-op-action-row po-merchant-gm-options-actions">
-                  <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-open-merchants">Open Merchant Editor</button>
+                  <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-open-merchants">Open Merchant Workspace</button>
                 </div>
               </div>
             </details>

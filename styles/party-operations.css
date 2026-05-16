@@ -5627,12 +5627,18 @@
 }
 
 .party-operations .po-gm-panel {
-  position: sticky;
-  top: 0;
   align-self: start;
-  max-height: calc(100vh - 240px);
-  overflow: auto;
   padding-right: 2px;
+  min-height: 0;
+}
+
+@media (min-height: 720px) {
+  .party-operations .po-gm-panel {
+    position: sticky;
+    top: 0;
+    max-height: calc(100dvh - 240px);
+    overflow: auto;
+  }
 }
 
 .party-operations .po-card,
