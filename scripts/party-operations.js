@@ -4863,7 +4863,7 @@ async function upsertManagedEffect(actor, existing, data, contextLabel = "sync")
 
   const existingComparable = normalizeManagedEffectData(existing?.toObject?.() ?? existing);
   const nextComparable = normalizeManagedEffectData(data);
-  if (JSON.stringify(existingComparable) === JSON.stringify(nextComparable)) return;
+  if (foundry.utils.objectsEqual(existingComparable, nextComparable)) return;
 
   try {
     await existing.update(data);

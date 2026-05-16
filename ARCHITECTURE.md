@@ -6,9 +6,7 @@ The canonical runtime for this module is the JavaScript tree that ships in relea
 
 - `module.json` must load `scripts/module.js` as the only entrypoint.
 - Runtime behavior changes must land in the JavaScript runtime path used by packaging.
-- TypeScript files currently in `scripts/*.ts` are not release artifacts and are not an authoritative runtime source.
-
-If a future migration makes TypeScript canonical, that change needs its own decision record and build pipeline update first. Until then, contributors should assume JavaScript is the source of truth.
+- The project has no TypeScript sidecar. If a future migration makes TypeScript canonical, that change needs its own decision record and build pipeline update first. Until then, contributors should assume JavaScript is the source of truth.
 
 ## Runtime Shape
 
@@ -33,7 +31,7 @@ The module is currently hybrid, not fully stripped. Rebuild work should move beh
 - Treat `legacy/party-operations-monolith.js` as read-only reference material until a feature is rebuilt.
 - Regenerate legacy slices with `node scripts/refactor/split-legacy-runtime.mjs` after changing the source map.
 - Keep temporary legacy source-text tests slice-scoped through `scripts/test-utils/legacy-runtime-source.mjs`.
-- Do not reference `.ts` files from `module.json`, release packaging, or runtime imports.
+- The repo has no TypeScript sidecar; do not introduce `.ts` files without an explicit migration decision.
 
 ## Release And Validation Policy
 
@@ -56,4 +54,4 @@ Current enforcement lives in:
 2. Use `scripts/runtime/rebuild/legacy-source-map.js` to locate the old line range before extracting a feature.
 3. Move rebuilt behavior into bounded modules with focused checks before reconnecting UI.
 4. Replace slice-scoped legacy source-text tests as features move into active modules.
-5. Remove or formalize the TypeScript sidecar tree once a real migration decision is made.
+5. (TypeScript sidecar — none currently exists; revisit only if a migration decision is made.)

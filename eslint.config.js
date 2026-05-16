@@ -89,6 +89,28 @@ export default [
     }
   },
   {
+    // Modular runtime: use the central logger (scripts/core/logger.js) rather than raw console.*
+    // so logs share the [party-operations][scope] prefix and respect the debug toggle.
+    files: [
+      "scripts/apps/**/*.js",
+      "scripts/core/**/*.js",
+      "scripts/features/**/*.js",
+      "scripts/hooks/**/*.js",
+      "scripts/runtime/**/*.js",
+      "scripts/bootstrap/**/*.js"
+    ],
+    rules: {
+      "no-console": "warn"
+    }
+  },
+  {
+    // The logger is the one place raw console.* is the correct API.
+    files: ["scripts/core/logger.js"],
+    rules: {
+      "no-console": "off"
+    }
+  },
+  {
     files: ["scripts/**/*.cjs", "*.cjs"],
     languageOptions: {
       ecmaVersion: "latest",

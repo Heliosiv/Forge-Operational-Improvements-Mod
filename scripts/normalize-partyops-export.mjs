@@ -72,7 +72,7 @@ function ensureDirectory(filePath) {
 }
 
 function clone(value) {
-  return JSON.parse(JSON.stringify(value));
+  return structuredClone(value);
 }
 
 function isPlainObject(value) {
