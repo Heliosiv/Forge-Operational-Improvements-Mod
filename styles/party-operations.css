@@ -2013,6 +2013,10 @@
   gap: var(--po-space-1);
 }
 
+.party-operations .po-player-operations-summary {
+  margin-top: var(--po-space-2);
+}
+
 .party-operations .po-info-chip {
   border: 1px solid var(--po-border);
   border-radius: 8px;
@@ -5171,6 +5175,20 @@
 .party-operations .po-subtitle {
   font-size: 0.82rem;
   color: color-mix(in srgb, var(--po-muted) 90%, var(--po-text));
+}
+
+.party-operations .po-header.po-header-compact {
+  padding: 4px 14px;
+  min-height: 0;
+}
+
+.party-operations .po-header.po-header-compact .po-header-main {
+  gap: 0;
+}
+
+.party-operations .po-header.po-header-compact .po-subtitle {
+  font-size: 0.74rem;
+  opacity: 0.9;
 }
 
 .party-operations .po-context-pill {

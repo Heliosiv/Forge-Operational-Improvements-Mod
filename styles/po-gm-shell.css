@@ -1491,18 +1491,36 @@
 }
 
 .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-actions {
-  width: 250px;
-  white-space: nowrap;
+  width: auto;
+  min-width: 180px;
+  white-space: normal;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
 }
 
 .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-actions .po-btn {
-  margin: 1px 2px 1px 0;
+  margin: 0;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-detail-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .party-operations .po-window[data-main-tab="gm"] .po-gm-cockpit-climate-select {
-  width: 132px;
+  width: auto;
+  min-width: 132px;
   min-height: 26px;
-  margin: 1px 4px 1px 0;
 }
 
 .party-operations .po-gather-batch-dialog {

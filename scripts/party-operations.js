@@ -47782,6 +47782,16 @@ async function depositAndArchiveLootClaimRun(element) {
     return;
   }
 
+  const confirmed = await Dialog.confirm({
+    title: "Deposit and Archive Loot",
+    content:
+      "<p>This will deposit the current loot pass into a stash actor and archive the run. Players will no longer be able to claim items from it.</p><p>Continue?</p>",
+    yes: () => true,
+    no: () => false,
+    defaultYes: false
+  });
+  if (!confirmed) return;
+
   const shouldPublishCurrentPreview =
     String(element?.dataset?.source ?? "") === "builder" && Boolean(getLootPreviewResult());
   let runId = getLootClaimRunIdFromElement(element);

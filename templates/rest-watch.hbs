@@ -1094,13 +1094,20 @@
                 <tr>
                   <th scope="row">Weather</th>
                   <td>{{gmCockpit.weather.statusLabel}}</td>
-                  <td>{{gmCockpit.weather.summaryLabel}} - {{gmCockpit.weather.weatherLabel}} - Visibility {{gmCockpit.weather.weatherModifier}} - Darkness {{gmCockpit.weather.weatherDarkness}}</td>
+                  <td>
+                    <div class="po-gm-cockpit-detail-stack">
+                      <div>{{gmCockpit.weather.summaryLabel}} - {{gmCockpit.weather.weatherLabel}} - Visibility {{gmCockpit.weather.weatherModifier}} - Darkness {{gmCockpit.weather.weatherDarkness}}</div>
+                      <label class="po-gm-cockpit-detail-control">
+                        <span class="po-sr-only">Climate</span>
+                        <select class="po-select po-gm-cockpit-climate-select" data-action="gm-cockpit-weather-set-climate" aria-label="Weather climate">
+                          {{#each gmCockpit.weather.climateOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </label>
+                    </div>
+                  </td>
                   <td class="po-gm-cockpit-actions">
-                    <select class="po-select po-gm-cockpit-climate-select" data-action="gm-cockpit-weather-set-climate" aria-label="Weather climate">
-                      {{#each gmCockpit.weather.climateOptions}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                      {{/each}}
-                    </select>
                     <button type="button" class="po-btn po-btn-sm is-primary" data-action="{{gmCockpit.weather.primaryAction}}" {{#if gmCockpit.weather.primaryDisabled}}disabled{{/if}}>{{gmCockpit.weather.primaryLabel}}</button>
                     <button type="button" class="po-btn po-btn-sm" data-action="gm-panel-tab" data-panel="weather">Open</button>
                   </td>
@@ -1167,11 +1174,19 @@
           <div class="po-section-head-row">
             <div>
               <div class="po-section-title">Player Operations</div>
-              <div class="po-hint">Open the player workflow for downtime actions, rewards, and submitted results.</div>
+              <div class="po-hint">Quick read on the party's supplies, standing, and active loot. Use the player workflow below for downtime actions and submitted results.</div>
             </div>
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-player-downtime">
               Downtime
             </button>
+          </div>
+          <div class="po-info-strip po-player-operations-summary" role="list" aria-label="Player operations summary">
+            <div class="po-info-chip" role="listitem" title="Estimated long-rest cycles before food is depleted"><span>Food Cycles</span><strong>{{operations.resources.summary.foodCyclesLeft}}</strong></div>
+            <div class="po-info-chip" role="listitem" title="Estimated long-rest cycles before water is depleted"><span>Water Cycles</span><strong>{{operations.resources.summary.waterCyclesLeft}}</strong></div>
+            <div class="po-info-chip" role="listitem" title="Factions currently visible to players"><span>Reputation</span><strong>{{operations.reputation.visibleCount}}</strong></div>
+            {{#if operations.lootClaims.hasOpenRuns}}
+            <div class="po-info-chip" role="listitem" title="Active loot runs awaiting claims"><span>Loot Runs</span><strong>{{operations.lootClaims.openRunCount}}</strong></div>
+            {{/if}}
           </div>
         </div>
       </section>

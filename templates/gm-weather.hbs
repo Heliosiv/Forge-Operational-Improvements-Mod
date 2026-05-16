@@ -1,12 +1,11 @@
 <div class="po-window po-window-rest" data-tool="gm-weather" role="region" aria-label="Party Operations GM Weather">
-  <header class="po-header">
+  <header class="po-header po-header-compact">
     <div class="po-header-main">
-      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
-      <div class="po-subtitle" aria-live="polite">GM Weather - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
+      <div class="po-subtitle" aria-live="polite">Generated {{generatedAtLabel}} by {{generatedBy}}</div>
     </div>
     <div class="po-controls">
-      <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-page-back">Back to Cockpit</button>
-      <button type="button" class="po-icon-btn" data-action="gm-weather-page-refresh" aria-label="Refresh">
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-weather-page-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Cockpit</button>
+      <button type="button" class="po-icon-btn" data-action="gm-weather-page-refresh" aria-label="Refresh" title="Refresh">
         <i class="fa-solid fa-rotate"></i>
       </button>
     </div>
