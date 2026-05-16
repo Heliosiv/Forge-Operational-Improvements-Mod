@@ -35633,7 +35633,7 @@ function normalizeLootClaimLogEntries(values = []) {
 function normalizeLootClaimBoardRecord(value = {}, fallback = {}) {
   const source = value && typeof value === "object" ? value : {};
   const base = fallback && typeof fallback === "object" ? fallback : {};
-  const id = normalizeLootClaimRunId(source.id ?? base.id) || foundry.utils.randomID();
+  const id = normalizeLootClaimRunId(source.id ?? source.runId ?? base.id ?? base.runId) || foundry.utils.randomID();
   const publishedAtRaw = Number(source.publishedAt ?? base.publishedAt ?? 0);
   const publishedAt = Number.isFinite(publishedAtRaw) && publishedAtRaw > 0 ? publishedAtRaw : 0;
   const archivedAtRaw = Number(source.archivedAt ?? base.archivedAt ?? 0);
@@ -35654,6 +35654,7 @@ function normalizeLootClaimBoardRecord(value = {}, fallback = {}) {
   const claimsLog = normalizeLootClaimLogEntries(source.claimsLog ?? base.claimsLog);
   return {
     id,
+    runId: id,
     status,
     publishedAt,
     publishedBy,
@@ -35664,7 +35665,15 @@ function normalizeLootClaimBoardRecord(value = {}, fallback = {}) {
     currencyClaimedActorIds,
     items,
     tableRolls,
-    claimsLog
+    claimsLog,
+    ...(source.audit ? { audit: source.audit } : {}),
+    ...(source.stats ? { stats: source.stats } : {}),
+    ...(source.draft ? { draft: source.draft } : {}),
+    ...(source.generatedAt ? { generatedAt: source.generatedAt } : {}),
+    ...(source.generatedBy ? { generatedBy: source.generatedBy } : {}),
+    ...(source.sourceSummary ? { sourceSummary: source.sourceSummary } : {}),
+    ...(source.claimMetadata ? { claimMetadata: source.claimMetadata } : {}),
+    ...(source.warnings ? { warnings: source.warnings } : {})
   };
 }
 
@@ -46601,48 +46610,63 @@ async function publishLootPreviewToClaims(options = {}) {
   await updateOperationsLedger((ledger) => {
     const claims = ensureLootClaimsState(ledger);
     const nextPublishedAt = Date.now();
-    const board = normalizeLootClaimBoardRecord({
-      id: foundry.utils.randomID(),
-      status: "open",
-      publishedAt: nextPublishedAt,
-      publishedBy: String(game.user?.name ?? "GM"),
-      currency: publishedCurrency,
-      currencyRemaining: publishedCurrency,
-      currencyClaimedActorIds: [],
-      items: items.map((entry) => ({
+    const isBoardReady = result?.claimMetadata?.boardReady === true;
+    let baseRecord;
+
+    if (isBoardReady) {
+      baseRecord = {
+        ...foundry.utils.deepClone(result),
+        id: String(result.runId || result.id || foundry.utils.randomID()),
+        status: "open",
+        publishedAt: nextPublishedAt,
+        publishedBy: String(game.user?.name ?? "GM"),
+        currencyClaimedActorIds: []
+      };
+    } else {
+      baseRecord = {
         id: foundry.utils.randomID(),
-        uuid: String(entry?.uuid ?? "").trim(),
-        name: String(entry?.name ?? "Item").trim() || "Item",
-        img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
-        quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
-        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
-        itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
-        baseItemValueGp: Math.max(0, Number(entry?.baseItemValueGp ?? entry?.itemValueGp ?? 0) || 0),
-        baseItemWeightLb: roundLootWeightLb(
-          Math.max(0, Number(entry?.baseItemWeightLb ?? entry?.itemWeightLb ?? 0) || 0)
-        ),
-        variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
-        itemType: String(entry?.itemType ?? "").trim(),
-        rarity: String(entry?.rarity ?? "").trim(),
-        sourceClass: normalizeLootSourceClass(entry?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED),
-        sourcePolicy: normalizeLootSourcePolicy(entry?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL),
-        curationScore: Math.max(0, Math.min(10, Number(entry?.curationScore ?? 0) || 0)),
-        isCurated:
-          Boolean(entry?.isCurated) ||
-          normalizeLootSourceClass(entry?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED) === LOOT_SOURCE_CLASSES.CURATED,
-        identified: entry?.identified !== false,
-        jackpotRoll: Boolean(entry?.jackpotRoll),
-        jackpotBleedType: String(entry?.jackpotBleedType ?? "")
-          .trim()
-          .toLowerCase(),
-        hiddenTrueName: String(entry?.hiddenTrueName ?? "").trim(),
-        sourceLabel: String(entry?.sourceLabel ?? "").trim(),
-        majorItem: isLootItemLikelyMajor(entry),
-        vouchedByActorIds: []
-      })),
-      tableRolls: publishedTableRolls,
-      claimsLog: []
-    });
+        status: "open",
+        publishedAt: nextPublishedAt,
+        publishedBy: String(game.user?.name ?? "GM"),
+        currency: publishedCurrency,
+        currencyRemaining: publishedCurrency,
+        currencyClaimedActorIds: [],
+        items: items.map((entry) => ({
+          id: foundry.utils.randomID(),
+          uuid: String(entry?.uuid ?? "").trim(),
+          name: String(entry?.name ?? "Item").trim() || "Item",
+          img: normalizeFoundryAssetImagePath(entry?.img, { fallback: "icons/svg/item-bag.svg" }),
+          quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+          itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+          itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+          baseItemValueGp: Math.max(0, Number(entry?.baseItemValueGp ?? entry?.itemValueGp ?? 0) || 0),
+          baseItemWeightLb: roundLootWeightLb(
+            Math.max(0, Number(entry?.baseItemWeightLb ?? entry?.itemWeightLb ?? 0) || 0)
+          ),
+          variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
+          itemType: String(entry?.itemType ?? "").trim(),
+          rarity: String(entry?.rarity ?? "").trim(),
+          sourceClass: normalizeLootSourceClass(entry?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED),
+          sourcePolicy: normalizeLootSourcePolicy(entry?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL),
+          curationScore: Math.max(0, Math.min(10, Number(entry?.curationScore ?? 0) || 0)),
+          isCurated:
+            Boolean(entry?.isCurated) ||
+            normalizeLootSourceClass(entry?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED) === LOOT_SOURCE_CLASSES.CURATED,
+          identified: entry?.identified !== false,
+          jackpotRoll: Boolean(entry?.jackpotRoll),
+          jackpotBleedType: String(entry?.jackpotBleedType ?? "")
+            .trim()
+            .toLowerCase(),
+          hiddenTrueName: String(entry?.hiddenTrueName ?? "").trim(),
+          sourceLabel: String(entry?.sourceLabel ?? "").trim(),
+          majorItem: isLootItemLikelyMajor(entry),
+          vouchedByActorIds: []
+        })),
+        tableRolls: publishedTableRolls,
+        claimsLog: []
+      };
+    }
+    const board = normalizeLootClaimBoardRecord(baseRecord);
     if (!Array.isArray(claims.boards)) claims.boards = [];
     claims.boards.unshift(board);
     claims.activeBoardId = String(board.id ?? "");
