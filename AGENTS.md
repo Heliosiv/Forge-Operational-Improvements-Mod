@@ -18,6 +18,8 @@ Run these tools automatically when they apply:
 - For formatting-supported files you touched (`.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.css`), run `npm run format:check -- <touched-files>`. Use `npm run format -- <touched-files>` to format only those explicit files.
 - Do not run Prettier on Foundry `.hbs` templates unless a future template-aware formatter is added; this repo uses Handlebars partials and inline blocks that Prettier rejects.
 - If performance is the topic, do not rely only on `npm run check` timing. Run direct `node scripts/test-*.mjs` commands multiple times around the feature path being measured.
+- For GM shell, navigation, template, or style changes, include the focused UI checks that cover the touched surface, especially `check:template-loader`, `check:gm-compact-navigation-css`, `check:main-tab-navigation`, `check:navigation-ui-state`, and `check:window-position-profiles`.
+- When extracting behavior from `scripts/party-operations.js` or changing `scripts/runtime/rebuild/feature-manifest.js`, run `npm run check:refactor-feature-manifest` and `npm run check:party-operations-monolith-guards` along with the touched feature's focused checks.
 - For player-facing rest, march, operations, or gather delivery changes, include the focused checks that cover the path: `check:player-ui-overrides`, `check:player-hub-actions`, `check:rest-feature`, `check:march-feature`, `check:operations-player-handlers`, `check:socket-routes`, `check:socket-route-deps`, and gather-specific `check:downtime-submission-ui` / `check:bootstrap-lifecycle` when gather prompts are involved.
 - For test-channel package bumps, use `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bump-test-version.ps1`, then format `module.json` if needed before rerunning `npm run format:check -- module.json`.
 - When release packaging is the goal, inspect `release/module.json`, `release/module.zip`, `release/module.zip.sha256.txt`, and `tar -tf release\module.zip` after `npm run prepare:release`; release outputs are intentionally ignored, so verify the artifact rather than expecting every output in `git status`.
@@ -25,6 +27,7 @@ Run these tools automatically when they apply:
 ## Installed Tooling
 
 - ESLint is configured by `eslint.config.js` for ES modules, Node scripts, browser APIs, and common Foundry globals.
+- `package.json` requires Node `>=24.0.0 <25`; check `node --version` before diagnosing tooling failures that look environment-specific.
 - Prettier is configured by `.prettierrc.json` and `.prettierignore` for JSON, Markdown, JavaScript, CSS, and Handlebars.
 - The existing bespoke validation remains the authority for module behavior: `scripts/run-checks.mjs`, `scripts/validate-module.mjs`, `scripts/validate-governance.mjs`, and the focused `scripts/test-*.mjs` files.
 - Legacy runtime slices are regenerated with `node scripts/refactor/split-legacy-runtime.mjs`; if `legacy/party-operations-monolith.js` line ranges or `scripts/runtime/rebuild/legacy-source-map.js` change, rerun that script and `npm run check:legacy-source-map`.
