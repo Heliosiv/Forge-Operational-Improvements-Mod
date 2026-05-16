@@ -1469,6 +1469,37 @@
   margin: 0;
 }
 
+.party-operations .po-loot-undo-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.party-operations .po-loot-undo-btn.is-expired {
+  opacity: 0.6;
+}
+
+.party-operations .po-loot-undo-btn .po-loot-undo-label {
+  position: relative;
+  z-index: 1;
+}
+
+.party-operations .po-loot-undo-progress {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--po-accent) 70%, transparent);
+  transform-origin: left center;
+  animation: po-loot-undo-countdown 5s linear forwards;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes po-loot-undo-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
 .party-operations .po-loot-claim-currency-card {
   display: flex;
   flex-direction: column;

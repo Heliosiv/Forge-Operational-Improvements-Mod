@@ -11399,6 +11399,10 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
 
   async close(options = {}) {
     clearPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
+    if (this.#undoCountdownInterval) {
+      clearInterval(this.#undoCountdownInterval);
+      this.#undoCountdownInterval = null;
+    }
     return super.close(options);
   }
 
@@ -11560,10 +11564,64 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
     bindItemCardIconOpeners(this.element, {
       datasetKey: "poBoundLootClaimItemCardOpeners"
     });
+    this.#bindUndoCountdownTimer();
     restorePendingWindowState(this);
     restorePendingUiState(this);
     restorePendingScrollState(this);
   }
+
+  #bindUndoCountdownTimer() {
+    if (this.#undoCountdownInterval) {
+      clearInterval(this.#undoCountdownInterval);
+      this.#undoCountdownInterval = null;
+    }
+    const root = this.element instanceof HTMLElement ? this.element : null;
+    if (!root) return;
+    const buttons = root.querySelectorAll("[data-undo-deadline-ts]");
+    if (buttons.length === 0) return;
+
+    for (const button of buttons) {
+      if (!(button instanceof HTMLElement)) continue;
+      const progress = button.querySelector(".po-loot-undo-progress");
+      if (!(progress instanceof HTMLElement)) continue;
+      const deadline = Number(button.dataset.undoDeadlineTs ?? 0) || 0;
+      const remainingMs = Math.max(0, deadline - Date.now());
+      if (remainingMs > 0) {
+        progress.style.animationDuration = `${remainingMs}ms`;
+      } else {
+        progress.style.animation = "none";
+        progress.style.transform = "scaleX(0)";
+      }
+    }
+
+    const tick = () => {
+      const now = Date.now();
+      let activeCount = 0;
+      for (const button of buttons) {
+        if (!(button instanceof HTMLElement)) continue;
+        const deadline = Number(button.dataset.undoDeadlineTs ?? 0) || 0;
+        const remainingMs = Math.max(0, deadline - now);
+        const display = button.querySelector("[data-undo-seconds-display]");
+        if (display instanceof HTMLElement) {
+          display.textContent = String(Math.max(0, Math.ceil(remainingMs / 1000)));
+        }
+        if (remainingMs <= 0) {
+          if (button instanceof HTMLButtonElement) button.disabled = true;
+          button.classList.add("is-expired");
+        } else {
+          activeCount += 1;
+        }
+      }
+      if (activeCount === 0 && this.#undoCountdownInterval) {
+        clearInterval(this.#undoCountdownInterval);
+        this.#undoCountdownInterval = null;
+      }
+    };
+    tick();
+    this.#undoCountdownInterval = setInterval(tick, 250);
+  }
+
+  #undoCountdownInterval = null;
 }
 
 export const RestWatchPlayerApp = createRestWatchPlayerAppClass({

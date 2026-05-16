@@ -148,11 +148,14 @@
         </div>
       </div>
       {{#if lootClaims.hasUndoEntries}}
-      <div class="po-loot-claims-undo-panel">
+      <div class="po-loot-claims-undo-panel" aria-live="polite" aria-atomic="false">
         <div class="po-op-summary"><strong>Undo Window (5s)</strong></div>
         <div class="po-op-action-row">
           {{#each lootClaims.undoEntries}}
-          <button type="button" class="po-btn po-btn-sm" data-action="undo-loot-claim" data-claim-run-id="{{@root.lootClaims.selectedRunId}}" data-log-id="{{id}}">Undo {{itemName}} ({{undoRemainingSeconds}}s)</button>
+          <button type="button" class="po-btn po-btn-sm po-loot-undo-btn" data-action="undo-loot-claim" data-claim-run-id="{{@root.lootClaims.selectedRunId}}" data-log-id="{{id}}" data-undo-deadline-ts="{{undoExpiresAt}}">
+            <span class="po-loot-undo-progress" aria-hidden="true" style="--po-undo-deadline-ms: {{undoExpiresAt}};"></span>
+            <span class="po-loot-undo-label">Undo {{itemName}} (<span data-undo-seconds-display>{{undoRemainingSeconds}}</span>s)</span>
+          </button>
           {{/each}}
         </div>
       </div>

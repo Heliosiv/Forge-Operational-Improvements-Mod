@@ -28,9 +28,9 @@
           <strong>Status:</strong> {{downtime.publication.statusLabel}} | <strong>Launched:</strong> {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}
         </div>
         {{#if uiActionStatusMessage}}
-        <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status>{{uiActionStatusMessage}}</div>
+        <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status role="status" aria-live="polite" aria-atomic="true">{{uiActionStatusMessage}}</div>
         {{else}}
-        <div class="po-op-summary" data-page-action-status></div>
+        <div class="po-op-summary" data-page-action-status role="status" aria-live="polite" aria-atomic="true"></div>
         {{/if}}
 
         <div class="po-info-strip po-gm-page-stat-grid" role="list" aria-label="Downtime summary">
